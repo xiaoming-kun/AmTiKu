@@ -172,6 +172,7 @@ export type CBlock = {
   lineHeight?: number  // 行距倍数，空=默认 DEFAULT_LH
   headers?: string[]   // 表格：表头
   rows?: string[][]    // 表格：数据行
+  showSource?: boolean // 高考题是否标出处（不设则跟讲义级开关）
 }
 
 /* ══ 调参常量 ══════════════════════════════════════
@@ -282,8 +283,29 @@ export function QuestionRow({ q, onAdd }: { q: Q; onAdd: () => void }) {
   )
 }
 
-export function CBlockView({ b, qmap, fs }:
-  { b: CBlock; qmap: Map<string, Q>; fs: number }) {
+/** 高考题出处标签，如「2024新高考I卷 第1题」。
+ *
+ *  ⚠️ 与后端 `slidev_handout.source_label()` **必须保持一致** ——
+ *  预览和导出不一致是本项目反复踩的坑。
+ *  只给高考题加（模拟题出处杂乱，用户要求只标高真题）。
+ */
+export function sourceLabel(q: Q | undefined): string {
+  if (!q || q.kind !== '高考') return ''
+  const meta = (q.meta || {}) as Record<string, any>
+  let region = String(meta.region || '').trim()
+  if (!region && q.key.includes('/')) {
+    const parts = q.key.split('/')
+    if (parts.length >= 3) region = parts[parts.length - 1].split('#')[0].trim()
+  }
+  const year = String(meta.year || '').trim()
+  const no = q.key.includes('#') ? q.key.split('#').pop()!.trim() : ''
+  const head = `${year}${region}`
+  if (!head && !no) return ''
+  return no ? `${head} 第${no}题` : head
+}
+
+export function CBlockView({ b, qmap, fs, showSource = true }:
+  { b: CBlock; qmap: Map<string, Q>; fs: number; showSource?: boolean }) {
   const lh = b.lineHeight ?? DEFAULT_LH
   const q = b.type === 'question' ? qmap.get(b.key || '') : undefined
 
@@ -349,7 +371,12 @@ export function CBlockView({ b, qmap, fs }:
     // 关键：必须走 transformStem/transformOption —— 题库是 LaTeX + newtxmath，
     // 原始题干里的 \paren[A]、\symbfit、enumerate 等 KaTeX 不认，
     // 直接渲染会显示成源码（前端包必须重新构建才生效）
+    const src = (b.showSource ?? showSource) ? sourceLabel(q) : ''
+    // 出处标签放在 `.p-ex` **之外**（与后端 render_canvas_block 一致）：
+    // 它是出处，不属于题目正文的排版。
     return (
+      <>
+      {src && <div className="p-src" style={{ fontSize: fs * 0.86 }}>{src}</div>}
       <div className="p-ex" style={{ margin: 0, fontSize: fs, lineHeight: lh }}>
         <MarkdownBody text={stemText} />
         {!!opts.length && (
@@ -364,6 +391,7 @@ export function CBlockView({ b, qmap, fs }:
           </div>
         )}
       </div>
+      </>
     )
   }
   return <div className="p-t" style={{ margin: 0, fontSize: fs, lineHeight: lh }}>

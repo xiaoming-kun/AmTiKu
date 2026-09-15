@@ -1275,6 +1275,7 @@ class CanvasBody(BaseModel):
     compile: bool = True
     title_font: str = ""       # 标题字体（CSS font-family）
     body_font: str = ""        # 正文字体
+    show_source: bool = True   # 高考题是否标出处（2024新高考I卷 第1题）
 
 
 class CanvasSaveBody(BaseModel):
@@ -1285,6 +1286,7 @@ class CanvasSaveBody(BaseModel):
     with_answers: bool = False
     title_font: str = ""
     body_font: str = ""
+    show_source: bool = True
 
 
 class HandoutSaveBody(BaseModel):
@@ -1382,7 +1384,8 @@ def export_slidev_canvas(body: CanvasBody) -> dict:
     r = sh.export_canvas(body.pages, title=body.title, out=body.out,
                          ratio=body.ratio, with_answers=body.with_answers,
                          do_compile=body.compile,
-                         title_font=body.title_font, body_font=body.body_font)
+                         title_font=body.title_font, body_font=body.body_font,
+                         show_source=body.show_source)
     if not r.get("ok") and r.get("error"):
         raise HTTPException(400, r["error"])
     _usage_bump(b.get("key") for pg in body.pages
@@ -1400,7 +1403,8 @@ def save_canvas(body: CanvasSaveBody) -> dict:
                            blocks=body.pages, ratio=body.ratio,
                            with_answers=body.with_answers,
                            extra={"title_font": body.title_font,
-                                  "body_font": body.body_font})
+                                  "body_font": body.body_font,
+                                  "show_source": body.show_source})
 
 
 @app.post("/api/canvas/save", deprecated=True)

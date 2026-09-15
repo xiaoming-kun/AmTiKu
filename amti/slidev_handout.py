@@ -481,6 +481,35 @@ def convert_math(text: str) -> str:
     return "".join(parts)
 
 
+def source_label(q) -> str:
+    r"""高考题的出处标签，如「2024新高考I卷 第1题」。
+
+    为什么只给高考题加（用户要求）：讲义里注明「这是 2026 新课标 I 卷
+    第 7 题」会显得正式、也方便学生回查原卷。模拟题/练习册的出处
+    五花八门，加上反而杂乱。
+
+    数据来自题库元数据：
+        meta.year    2024            （年份）
+        meta.region  新高考I卷        （卷别）
+        key 里的 #N  第几题
+    """
+    if getattr(q, "kind", "") != "高考":
+        return ""
+    meta = getattr(q, "meta", None) or {}
+    year = str(meta.get("year") or "").strip()
+    region = str(meta.get("region") or "").strip()
+    # 卷别兜底：老数据可能没有 region，从 key 里取（高考真题汇编/2024/新高考I卷#1）
+    if not region and "/" in q.key:
+        parts = q.key.split("/")
+        if len(parts) >= 3:
+            region = parts[-1].split("#")[0].strip()
+    no = q.key.rsplit("#", 1)[1].strip() if "#" in q.key else ""
+    head = f"{year}{region}"
+    if not head and not no:
+        return ""
+    return f"{head} 第{no}题" if no else head
+
+
 def _run_slidev_export(md: Path, pdf: Path, env: dict) -> tuple[bool, str]:
     r"""跑一次 `slidev export`，**带超时与进程组强杀**。
 
@@ -1167,7 +1196,8 @@ def _font_size(b: dict, kind: str) -> float:
     return DEFAULT_FS
 
 
-def render_canvas_block(b: dict, *, with_answers: bool = False) -> str:
+def render_canvas_block(b: dict, *, with_answers: bool = False,
+                        show_source: bool = True) -> str:
     """一个块 → 绝对定位的 HTML，**内部使用讲义的模板类**。
 
     模板类（来自 `.dsh` 里那份讲稿版讲义，一级标题的做法）：
@@ -1231,6 +1261,12 @@ def render_canvas_block(b: dict, *, with_answers: bool = False) -> str:
             inner = f'<div class="p-ex">\n\n<span style="opacity:.5">（题目未找到）</span>\n\n</div>'
         else:
             body = transform(q, with_answers)
+            # 高考题标出处（用户要求）：标签在前，题目在后。
+            # 块可单独覆盖（b["showSource"]），讲义级开关是 show_source。
+            # 标签放在 `.p-ex` **外面** —— 它是出处，不属于题目正文的排版。
+            lab = ""
+            if b.get("showSource", show_source):
+                lab = source_label(q)
 
             # 拆出图片段（transform 用 <!--FIGS--> 包起来了）
             fig_html = ""
@@ -1248,6 +1284,9 @@ def render_canvas_block(b: dict, *, with_answers: bool = False) -> str:
             opt_txt = "\n".join(opt_lines).strip()
 
             segs = []
+            # ⓪ 高考题出处（在题干之前；放在 .p-ex 之外）
+            if lab:
+                segs.append(f'<div class="p-src">\n\n{lab}\n\n</div>')
             # ① 题干
             if stem_txt:
                 segs.append(f'<div class="p-ex" style="line-height:{lh}">'
@@ -1347,7 +1386,8 @@ def _render_table(b: dict, fs: float) -> str:
 
 def build_canvas_pages(pages: list[dict], *, title: str, ratio: str = "16/9",
                        with_answers: bool = False,
-                       title_font: str = "", body_font: str = "") -> str:
+                       title_font: str = "", body_font: str = "",
+                       show_source: bool = True) -> str:
     """画布页列表 → 完整讲义 markdown。
 
     `pages` 结构：[{ "blocks": [ {type,x,y,w,h,...}, ... ] }, ...]
@@ -1369,7 +1409,8 @@ def build_canvas_pages(pages: list[dict], *, title: str, ratio: str = "16/9",
         blocks = pg.get("blocks", []) if isinstance(pg, dict) else []
         # 按 z 排序，保证图层顺序
         ordered = sorted(blocks, key=lambda b: int(b.get("z", 0) or 0))
-        body = "".join(render_canvas_block(b, with_answers=with_answers)
+        body = "".join(render_canvas_block(b, with_answers=with_answers,
+                                           show_source=show_source)
                        for b in ordered)
         tpl = FIRST_PAGE if i == 0 else CANVAS_PAGE
         parts.append(tpl.format(body=body or "\n"))
@@ -1379,7 +1420,8 @@ def build_canvas_pages(pages: list[dict], *, title: str, ratio: str = "16/9",
 def export_canvas(pages: list[dict], *, title: str = "", out: str = "",
                   ratio: str = "16:9", with_answers: bool = False,
                   do_compile: bool = True, retries: int = 3,
-                  title_font: str = "", body_font: str = "") -> dict:
+                  title_font: str = "", body_font: str = "",
+                  show_source: bool = True) -> dict:
     """从画布页导出讲义（绝对定位）。"""
     import datetime as _dt
 
@@ -1404,7 +1446,8 @@ def export_canvas(pages: list[dict], *, title: str = "", out: str = "",
                                      ratio=RATIOS[ratio],
                                      with_answers=with_answers,
                                      title_font=title_font,
-                                     body_font=body_font),
+                                     body_font=body_font,
+                                     show_source=show_source),
                   encoding="utf-8")
 
     nq = sum(1 for pg in pages for b in (pg.get("blocks") or [])

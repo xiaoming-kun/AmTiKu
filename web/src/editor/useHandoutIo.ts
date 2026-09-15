@@ -28,10 +28,12 @@ export function useHandoutIo(params: {
   bodyFont: string
   setBodyFont: (s: string) => void
   fits: Record<string, number>
+  showSource: boolean
+  setShowSource: (b: boolean) => void
 }) {
   const { pages, setPages, setCur, setSel, title, setTitle, name, setName,
           ratio, setRatio, withAns, setWithAns, titleFont, setTitleFont,
-          bodyFont, setBodyFont, fits } = params
+          bodyFont, setBodyFont, fits, showSource, setShowSource } = params
 
   const [busy, setBusy] = useState(false)
   const [res, setRes] = useState<any>(null)
@@ -55,6 +57,7 @@ export function useHandoutIo(params: {
     send('/api/export/slidev-canvas', 'POST', {
       title, out: name, pages: clean, ratio, with_answers: withAns,
       compile: true, title_font: titleFont, body_font: bodyFont,
+      show_source: showSource,
     })
       .then(setRes)
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
@@ -64,7 +67,7 @@ export function useHandoutIo(params: {
   const doSave = () => {
     send('/api/canvas/save', 'POST', {
       name, title, pages: serialize(), ratio, with_answers: withAns,
-      title_font: titleFont, body_font: bodyFont,
+      title_font: titleFont, body_font: bodyFont, show_source: showSource,
     })
       .then(loadList)
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
@@ -81,6 +84,7 @@ export function useHandoutIo(params: {
       setRatio(h.ratio || '16:9'); setWithAns(!!h.with_answers)
       setTitleFont(h.title_font || DEFAULT_TITLE_FONT)
       setBodyFont(h.body_font || DEFAULT_BODY_FONT)
+      setShowSource(h.show_source !== false)      // 默认开
     }).catch((e) => setErr(e instanceof Error ? e.message : String(e)))
   }
 

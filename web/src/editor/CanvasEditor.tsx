@@ -21,6 +21,8 @@ export default function CanvasEditor({ handoutQs }: { handoutQs: Q[] }) {
   const [name, setName] = useState('未命名讲义')
   const [ratio, setRatio] = useState('16:9')
   const [withAns, setWithAns] = useState(false)
+  // 高考题标出处（默认开）：用户要求讲义里显示「2024新高考I卷 第1题」
+  const [showSource, setShowSource] = useState(true)
   const [titleFont, setTitleFont] = useState(DEFAULT_TITLE_FONT)
   const [bodyFont, setBodyFont] = useState(DEFAULT_BODY_FONT)
   // 左栏（考点树 / 搜索 / 懒加载）→ useDrawer
@@ -51,7 +53,7 @@ export default function CanvasEditor({ handoutQs }: { handoutQs: Q[] }) {
   const { busy, res, err, saved, run, doSave, doLoad } = useHandoutIo({
     pages, setPages, setCur, setSel, title, setTitle, name, setName,
     ratio, setRatio, withAns, setWithAns, titleFont, setTitleFont,
-    bodyFont, setBodyFont, fits,
+    bodyFont, setBodyFont, fits, showSource, setShowSource,
   })
 
   const selBlock = blocks.find((b) => b.id === sel) || null
@@ -69,6 +71,7 @@ export default function CanvasEditor({ handoutQs }: { handoutQs: Q[] }) {
         title={title} setTitle={setTitle} name={name} setName={setName}
         titleFont={titleFont} setTitleFont={setTitleFont}
         bodyFont={bodyFont} setBodyFont={setBodyFont}
+        showSource={showSource}
         run={run} busy={busy} doSave={doSave} err={err} res={res}
         canvasRef={canvasRef} aspect={aspect}
         pages={pages} cur={cur} setCur={setCur} setPages={setPages}
@@ -81,6 +84,7 @@ export default function CanvasEditor({ handoutQs }: { handoutQs: Q[] }) {
         selBlock={selBlock} patch={patch} remove={remove} bringToFront={bringToFront}
         ratio={ratio} setRatio={setRatio} withAns={withAns} setWithAns={setWithAns}
         saved={saved} doLoad={doLoad} natural={natural} canvasRef={canvasRef}
+        showSource={showSource} setShowSource={setShowSource}
       />
     </div>
   )

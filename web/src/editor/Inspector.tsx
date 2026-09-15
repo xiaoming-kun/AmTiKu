@@ -8,13 +8,15 @@ import {
 } from '@/editor/shared'
 
 export default function Inspector({ selBlock, patch, remove, bringToFront,
-  ratio, setRatio, withAns, setWithAns, saved, doLoad, natural, canvasRef }: {
+  ratio, setRatio, withAns, setWithAns, saved, doLoad, natural, canvasRef,
+  showSource, setShowSource }: {
   selBlock: CBlock | null
   patch: (id: string, p: Partial<CBlock>) => void
   remove: (id: string) => void
   bringToFront: (id: string) => void
   ratio: string; setRatio: (s: string) => void
   withAns: boolean; setWithAns: (b: boolean) => void
+  showSource: boolean; setShowSource: (b: boolean) => void
   saved: any[]; doLoad: (n: string) => void
   natural: Record<string, { w: number; h: number }>
   canvasRef: React.MutableRefObject<HTMLDivElement | null>
@@ -42,6 +44,12 @@ export default function Inspector({ selBlock, patch, remove, bringToFront,
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={withAns} onChange={(e) => setWithAns(e.target.checked)}
                 className="accent-[var(--color-brand)]" />显示答案
+            </label>
+            {/* 高考题标出处：讲义里显示「2024新高考I卷 第1题」 */}
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={showSource}
+                onChange={(e) => setShowSource(e.target.checked)}
+                className="accent-[var(--color-brand)]" />高考题标出处
             </label>
 
             <div>

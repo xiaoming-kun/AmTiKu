@@ -13,7 +13,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
   titleFont, setTitleFont, bodyFont, setBodyFont, run, busy, doSave, err, res,
   canvasRef, aspect, pages, cur, setCur, setPages, blocks, sel, setSel,
   fits, overflowed, startDrag, measRef, probeRef, blockQs,
-  addBlock, fontCss }: {
+  addBlock, fontCss, showSource }: {
   title: string; setTitle: Dispatch<SetStateAction<string>>
   name: string; setName: Dispatch<SetStateAction<string>>
   titleFont: string; setTitleFont: Dispatch<SetStateAction<string>>
@@ -36,6 +36,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
   blockQs: Map<string, Q>
   addBlock: (b: Partial<CBlock>) => void
   fontCss: string
+  showSource: boolean
 }) {
   return (
         <div className="flex min-w-0 flex-1 flex-col">
@@ -110,7 +111,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
               <div ref={(el) => { measRef.current[b.id] = el }}
                 style={{ zoom: fits[b.id] || 1 }}>
                 <CBlockView b={b} qmap={blockQs}
-                  fs={blockFontSize(b)} />
+                  fs={blockFontSize(b)} showSource={showSource} />
               </div>
               {overflowed.has(b.id) && (
                 <div title="内容超出框高，拖右下角放大，或在右侧调大「高 %」"
@@ -142,7 +143,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
               <div key={`probe-${b.id}`}
                 ref={(el) => { probeRef.current[b.id] = el }}
                 style={{ width: '100%', lineHeight: b.lineHeight ?? DEFAULT_LH }}>
-                <CBlockView b={b} qmap={blockQs} fs={blockFontSize(b)} />
+                <CBlockView b={b} qmap={blockQs} fs={blockFontSize(b)} showSource={showSource} />
               </div>
             ))}
           </div>
