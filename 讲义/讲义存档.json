@@ -1,0 +1,96 @@
+[
+ {
+  "name": "集合运算专题",
+  "title": "集合运算专题",
+  "blocks": [
+   {
+    "type": "chapter",
+    "text": "集合运算专题"
+   },
+   {
+    "type": "section",
+    "text": "1.1　基本概念"
+   },
+   {
+    "type": "point",
+    "text": "元素与集合的关系"
+   },
+   {
+    "type": "text",
+    "text": "判断元素是否属于集合，关键看**符号**：$\\in$ 表示属于，$\\notin$ 表示不属于。"
+   },
+   {
+    "type": "question",
+    "key": "高考真题汇编/2024/新高考I卷#1"
+   },
+   {
+    "type": "point",
+    "text": "集合的运算"
+   },
+   {
+    "type": "question",
+    "key": "高考真题汇编/2026/全国I卷#3"
+   }
+  ],
+  "ratio": "16:9",
+  "density": "normal",
+  "with_answers": false,
+  "n": 2,
+  "at": "2026-09-14 22:33:28"
+ },
+ {
+  "name": "集合运算专题精讲",
+  "title": "集合运算专题精讲",
+  "blocks": [
+   {
+    "type": "chapter",
+    "text": "集合运算专题精讲"
+   },
+   {
+    "type": "section",
+    "text": "一、元素与集合的关系"
+   },
+   {
+    "type": "point",
+    "text": "符号的含义"
+   },
+   {
+    "type": "text",
+    "text": "判断元素是否属于集合，关键看符号：$\\in$ 表示属于，$\\notin$ 表示不属于。注意空集 $\\varnothing$ 的特殊性——它是任何集合的子集。"
+   },
+   {
+    "type": "formula",
+    "text": "$$A \\subseteq B \\iff \\forall x \\in A,\\ x \\in B$$"
+   },
+   {
+    "type": "question",
+    "key": "高考真题汇编/2024/新高考I卷#1"
+   },
+   {
+    "type": "section",
+    "text": "二、集合的运算"
+   },
+   {
+    "type": "point",
+    "text": "交集与并集"
+   },
+   {
+    "type": "text",
+    "text": "交集取公共部分，并集取全部。口诀：**交少并多**。"
+   },
+   {
+    "type": "question",
+    "key": "高考真题汇编/2026/全国I卷#3"
+   },
+   {
+    "type": "question",
+    "key": "高考真题汇编/2026/全国II卷#2"
+   }
+  ],
+  "ratio": "16:9",
+  "density": "normal",
+  "with_answers": false,
+  "n": 3,
+  "at": "2026-09-14 22:36:30"
+ }
+]

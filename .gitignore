@@ -1,0 +1,29 @@
+# ══ 依赖与构建产物（可重建，不入库）══
+web/node_modules/
+web/dist/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.DS_Store
+
+# ══ 程序自身的备份与缓存 ══
+# 这些是**应用运行时生成的**，会不断增长；真正的历史由 git 负责。
+题目/备份/
+备份/
+回收站/
+图片/_transparent/
+待录入图片/
+_handout_build/
+
+# ══ 生成的 PDF ══
+# 试卷/讲义 PDF 可随时重新生成；要留档就 git add -f 指定文件。
+试卷/*.pdf
+
+# ══ 编辑器/工具临时文件 ══
+*.bak
+*.bak_*
+*.tmp

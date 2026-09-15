@@ -1,0 +1,220 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+/* AmTiKu 设计令牌
+   粉色主题（沿用旧项目用户指定的主色），但做了三处减法：
+   1. 字号分三层：题干 15px / 选项 14px / 元信息 11px
+   2. 补语义色：有(绿) 缺(灰) 注意(琥珀) —— 旧 UI 只有品牌粉，看不出状态
+   3. 留白放大：题目间距 16px，筛选组间距 20px */
+@theme {
+  --color-bg:        oklch(0.9935 0.005 350);
+  --color-surface:   oklch(1 0 0);
+  --color-border:    oklch(0.926 0.011 348);
+  --color-muted:     oklch(0.972 0.010 348);
+  --color-ink:       oklch(0.235 0.032 342);
+  --color-ink-soft:  oklch(0.482 0.030 342);
+  --color-ink-faint: oklch(0.645 0.026 344);
+
+  --color-brand:      oklch(0.585 0.205 351);
+  --color-brand-soft: oklch(0.958 0.033 348);
+  --color-brand-ink:  oklch(0.498 0.196 351);
+
+  /* 语义色：状态一眼可辨 */
+  --color-has:      oklch(0.62 0.14 158);   /* ✓ 有 */
+  --color-has-soft: oklch(0.962 0.030 158);
+  --color-gap:      oklch(0.70 0.012 340);  /* ✗ 缺（灰，不刺眼） */
+  --color-gap-soft: oklch(0.965 0.006 340);
+  --color-warn:      oklch(0.70 0.15 72);   /* ⚠ 注意 */
+  --color-warn-soft: oklch(0.972 0.040 80);
+
+  --radius-card: 12px;
+  --font-sans: "Inter", -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 滚动条低调一点 */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb {
+  background: oklch(0.88 0.012 348); border-radius: 5px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: oklch(0.80 0.02 348); background-clip: content-box; }
+
+/* ── 题目排版 ─────────────────────────────────────── */
+
+/* 题干：主字号 */
+.q-stem { font-size: 15px; line-height: 1.85; }
+/* 选项：次字号，悬挂缩进 */
+.q-options { font-size: 14px; line-height: 1.9; }
+.q-options li { list-style: none; display: flex; gap: 8px; }
+.q-options .lbl {
+  flex: 0 0 auto; font-weight: 600; color: var(--color-ink-soft);
+  min-width: 1.3em;
+}
+/* 解析：与题干同字号但配色略淡 */
+.q-solution { font-size: 14px; line-height: 1.9; color: var(--color-ink-soft); }
+
+/* KaTeX 行间公式：居中 + 上下留白 */
+.katex-display { margin: 0.7em 0; overflow-x: auto; overflow-y: hidden; }
+.katex { font-size: 1.03em; }
+
+/* 填空：下划线空位 */
+.blank {
+  display: inline-block; min-width: 3.2em; height: 1em;
+  border-bottom: 1.2px solid var(--color-ink-soft);
+  vertical-align: -0.12em; margin: 0 2px;
+}
+/* exam-zh 的 \paren：一对空括号 */
+.q-paren { color: var(--color-ink-soft); }
+/* \quad：行内空白 */
+.q-sp { display: inline-block; width: 1.1em; }
+
+/* ══ 块级 IR（amti/latex_blocks.py 的输出） ══════════════
+   前端只画块，不做语法解析。下面每条规则对应 IR 里的一种块。 */
+
+/* 段落 */
+.q-p { margin: 0.4em 0; }
+.q-p:first-child { margin-top: 0; }
+.q-p:last-child { margin-bottom: 0; }
+
+/* 行间公式：宽公式横向滚动，不撑破三栏布局 */
+.q-math { margin: 0.7em 0; overflow-x: auto; overflow-y: hidden; }
+
+/* 列表：支持任意层嵌套。
+   旧前端在这里按 `\item` 无脑切分，内层 enumerate 被拍平成同级、
+   `\end{enumerate}` 直接漏到页面上——25.1% 的题会中招。 */
+.q-list { margin: 0.4em 0; padding-left: 1.8em; }
+.q-list .q-list { margin: 0.15em 0; }
+.q-list li { margin: 0.22em 0; }
+.q-list li > .q-p { margin: 0; }
+.q-list > li::marker { color: var(--color-ink-faint); }
+
+/* 表格：外层容器负责横向滚动，宽对数表不会把栏撑开 */
+.q-table-wrap { margin: 0.7em 0; overflow-x: auto; }
+.q-table {
+  border-collapse: collapse; margin: 0 auto;
+  font-size: 13.5px; line-height: 1.5;
+}
+.q-table td {
+  border: 1px solid var(--color-border); padding: 4px 10px;
+  text-align: center; white-space: nowrap;
+}
+.q-table tr:first-child td { background: var(--color-muted); font-weight: 500; }
+.q-table .q-p { margin: 0; }
+
+/* center / minipage / figure 等容器 */
+.q-box { margin: 0.6em 0; }
+.q-center, .q-figure, .q-table-env { text-align: center; }
+
+/* 题图 */
+.q-fig { margin: 0.7em 0; text-align: center; }
+.q-img {
+  display: inline-block; vertical-align: middle;
+  max-width: 100%; height: auto; border-radius: 6px;
+}
+
+/* TikZ 等 HTML 画不了的内容：显式说明，不静默消失。
+   PDF 走 XeLaTeX 编译，那边是正常渲染的。 */
+.q-raw {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0.6em 0; padding: 8px 12px;
+  border: 1px dashed var(--color-border); border-radius: 8px;
+  background: var(--color-muted); font-size: 12px;
+}
+.q-raw-tag { font-weight: 600; color: var(--color-ink-soft); }
+.q-raw-note { color: var(--color-ink-faint); }
+
+/* 解析器没见过的宏：标成琥珀色小标签，看得见才好补 */
+.latex-unknown {
+  font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--color-warn); background: var(--color-warn-soft);
+  padding: 0 4px; border-radius: 4px;
+}
+.latex-err { color: oklch(0.55 0.2 25); font-size: 12px; }
+
+/* ══ 动效 ══════════════════════════════════════════════════════════
+   库里 17,000 多道题，筛选、翻页、编译都是几百毫秒到几十秒的事。
+   没有过渡的话，界面会「跳」——人看不出发生了什么，只觉得卡。
+   动效在这里不是装饰，是**让人知道东西在动、还在动、动完了**。
+   三条原则：① 短（120–220ms，超过 300ms 就嫌慢）；
+   ② 只动 opacity/transform（合成层，不触发重排）；
+   ③ 尊重系统的「减少动态效果」设置。 */
+
+@keyframes fade-up   { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in    { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes slide-in-r{ from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+@keyframes spin      { to { transform: rotate(360deg); } }
+@keyframes shimmer   { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes bar-slide { 0% { left: -35%; width: 35%; } 50% { left: 40%; width: 45%; } 100% { left: 100%; width: 30%; } }
+@keyframes pulse-soft{ 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
+.anim-fade-up  { animation: fade-up 180ms cubic-bezier(.22,.61,.36,1) both; }
+.anim-fade-in  { animation: fade-in 140ms ease-out both; }
+.anim-pop      { animation: pop-in 150ms cubic-bezier(.22,.61,.36,1) both; }
+.anim-slide-r  { animation: slide-in-r 200ms cubic-bezier(.22,.61,.36,1) both; }
+.anim-pulse    { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+/* 列表逐条入场。**只给前 12 条**延迟，再多就是"等动画"而不是"看内容" */
+.anim-stagger > * { animation: fade-up 200ms cubic-bezier(.22,.61,.36,1) both; }
+.anim-stagger > *:nth-child(1) { animation-delay: 0ms }
+.anim-stagger > *:nth-child(2) { animation-delay: 18ms }
+.anim-stagger > *:nth-child(3) { animation-delay: 36ms }
+.anim-stagger > *:nth-child(4) { animation-delay: 54ms }
+.anim-stagger > *:nth-child(5) { animation-delay: 72ms }
+.anim-stagger > *:nth-child(6) { animation-delay: 90ms }
+.anim-stagger > *:nth-child(7) { animation-delay: 108ms }
+.anim-stagger > *:nth-child(8) { animation-delay: 126ms }
+.anim-stagger > *:nth-child(9) { animation-delay: 144ms }
+.anim-stagger > *:nth-child(10){ animation-delay: 162ms }
+.anim-stagger > *:nth-child(11){ animation-delay: 180ms }
+.anim-stagger > *:nth-child(12){ animation-delay: 198ms }
+.anim-stagger > *:nth-child(n+13){ animation-delay: 210ms }
+
+/* 加载骨架：比转圈更早给出「内容大概长这样」 */
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--color-muted) 25%, var(--color-border) 37%, var(--color-muted) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+
+/* 不定长进度条：编译耗时不可预知，**不假装知道百分比**，
+   只表示"还在动"。 */
+.progress-track {
+  position: relative; overflow: hidden;
+  height: 3px; border-radius: 2px; background: var(--color-brand-soft);
+}
+.progress-track::after {
+  content: ''; position: absolute; top: 0; bottom: 0;
+  background: var(--color-brand); border-radius: 2px;
+  animation: bar-slide 1.5s ease-in-out infinite;
+}
+
+/* 交互反馈：按下去要有回应 */
+.press { transition: transform 90ms ease-out, background-color 140ms ease-out; }
+.press:active { transform: scale(.97); }
+
+/* 面板/弹层出现 */
+.pop { animation: pop-in 140ms cubic-bezier(.22,.61,.36,1) both;
+       transform-origin: top left; }
+
+/* 尊重系统的「减少动态效果」——这不是可选项，是无障碍要求 */
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r, .anim-pulse,
+  .anim-stagger > *, .skeleton, .progress-track::after, .pop {
+    animation: none !important;
+  }
+  .press:active { transform: none; }
+}

@@ -1,0 +1,119 @@
+/* ══════════════════════════════════════════════════════════════
+   讲义样式（编辑器预览用）
+   
+   与 Slidev 工程的 styles/index.css **保持一致** ——
+   否则「编辑器预览」和「导出 PDF」会不一样（这个 bug 犯过）。
+   
+   作用域：.handout-canvas 下的元素（不污染 AmTiKu 自己的界面）。
+   颜色取自「一数」视频逐像素采样：
+       底色 #fef8ec   荧光笔 #e7e026   强调红 #d22116
+   ══════════════════════════════════════════════════════════════ */
+
+.handout-canvas {
+  --hc-bg: #fef8ec;
+  --hc-fg: #1b1a18;
+  --hc-muted: #6b6558;
+  --hc-accent: #d22116;
+  --hc-hl: #e7e026;
+  --hc-font-hand: "Source Han Sans SC", "Alibaba PuHuiTi 3.0", "PingFang SC", sans-serif;
+  --hc-font-song: "LXGW WenKai GB", "LXGW WenKai", "Source Han Serif SC", serif;
+
+  background: var(--hc-bg);
+  color: var(--hc-fg);
+  font-family: var(--hc-font-song);
+}
+
+/* 一级标题：粗黑体 + 荧光笔 */
+.handout-canvas .p-hand {
+  font-family: var(--hc-font-hand);
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+  margin: 0;
+}
+
+/* 二级标题 */
+.handout-canvas .p-sec {
+  font-family: var(--hc-font-hand);
+  font-weight: 900;
+  line-height: 1.35;
+  margin: 0;
+}
+
+/* 荧光笔高亮 */
+.handout-canvas .p-hl {
+  background: linear-gradient(transparent 52%, var(--hc-hl) 52%,
+              var(--hc-hl) 94%, transparent 94%);
+  padding: 0 0.08em;
+}
+
+/* 知识点：红点 + 文字 */
+.handout-canvas .p-tag {
+  font-family: var(--hc-font-hand);
+  display: flex;
+  align-items: center;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+.handout-canvas .p-tag::before {
+  content: "";
+  width: 0.54em;
+  height: 0.54em;
+  border-radius: 50%;
+  background: var(--hc-accent);
+  margin-right: 0.45em;
+  flex: 0 0 auto;
+}
+
+/* 正文 / 题目 */
+.handout-canvas .p-t,
+.handout-canvas .p-ti,
+.handout-canvas .p-ex {
+  font-family: var(--hc-font-song);
+  margin: 0;
+}
+.handout-canvas .p-ti { padding-left: 1.2em; }
+
+/* 留白 */
+.handout-canvas .p-space { height: 4.4rem; }
+.handout-canvas .p-space-lg { height: 7rem; }
+
+/* ── 表格：三线表（学术规范）────────────────────────────
+   Slidev 自带给每行加线，讲义用三线表更干净：
+   顶线 + 表头下线 + 底线，不要竖线和中间线。 */
+.handout-canvas table {
+  border-collapse: collapse;
+  width: 100%;
+  border-top: 1.5px solid #333;
+  border-bottom: 1.5px solid #333;
+}
+.handout-canvas table tr { border-bottom: none; }
+.handout-canvas table th,
+.handout-canvas table td {
+  border: none;
+  padding: 4px 8px;
+  vertical-align: middle;
+}
+.handout-canvas table th {
+  font-weight: 700;
+  text-align: center;
+  border-bottom: 1.5px solid #333;
+}
+.handout-canvas table tr:last-child td {
+  border-bottom: 1.5px solid #333;
+}
+
+/* KaTeX 在讲义里的行距微调（与 Slidev 侧一致） */
+.handout-canvas .katex { font-size: 1.02em; }
+.handout-canvas .katex-display { margin: 0.4em 0; }
+
+/* 换行显示：题干/正文里的 \n 要真的换行（HTML 默认当空格）。
+   真实试卷里解答题的（1）①②（2）各占一行 —— 与之保持一致。 */
+.handout-canvas .p-hand,
+.handout-canvas .p-sec,
+.handout-canvas .p-tag,
+.handout-canvas .p-t,
+.handout-canvas .p-ti,
+.handout-canvas .p-ex {
+  white-space: pre-wrap;
+}

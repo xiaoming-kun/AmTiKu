@@ -1,0 +1,85 @@
+#!/bin/bash
+# AmTiKu 题库 · 全局命令
+#
+# 装到 PATH 上之后，**在任何目录**都能用：
+#
+#   AmTiKu            启动（等于 AmTiKu 启动）
+#   AmTiKu 启动        起题库 + 本地模型（**不含求解任务**）
+#   AmTiKu 停止        停掉题库和求解
+#   AmTiKu 状态        看现在跑着什么、解了多少题
+#   AmTiKu 网页        只起题库服务，并打开浏览器
+#   AmTiKu 求解        只起求解任务
+#   AmTiKu 验收        跑四层验收
+#   AmTiKu 去           cd 到题库目录
+#
+# 拼音也认（qidong / tingzhi / zhuangtai / wangye / qiu jie / yanshou / qu），
+# 省得切输入法。
+
+ROOT="/Users/ximing/Documents/AmTiKu"
+PORT=8899
+
+cd "$ROOT" 2>/dev/null || { echo "题库目录不见了：$ROOT"; exit 1; }
+
+c_ok()   { printf "  \033[32m✓\033[0m %s\n" "$1"; }
+c_bad()  { printf "  \033[31m✗\033[0m %s\n" "$1"; }
+c_info() { printf "    %s\n" "$1"; }
+
+web_up()   { pgrep -f "amti\.web\.server" >/dev/null; }
+lm_up()    { curl -s --max-time 2 -o /dev/null http://127.0.0.1:1234/v1/models; }
+solve_up() { pgrep -f "amti.solve" >/dev/null; }
+
+do_status() {
+  echo "AmTiKu 运行状态"
+  web_up   && c_ok "题库服务  http://127.0.0.1:$PORT" || c_bad "题库服务没跑"
+  lm_up    && c_ok "本地模型  :1234"                 || c_bad "本地模型没跑"
+  solve_up && c_ok "求解任务  在跑"                   || c_bad "求解任务没跑"
+  echo
+  python3 - <<'PY' 2>/dev/null
+import sys; sys.path.insert(0, '.')
+from amti import store
+qs = store.load_all()
+print("  库内 %d 道   模拟题已解 %d / %d   重复 key %d"
+      % (len(qs),
+         sum(1 for q in qs if q.kind == '模拟' and q.solution.strip()),
+         sum(1 for q in qs if q.kind == '模拟'),
+         len(store.duplicate_keys())))
+PY
+}
+
+do_web() { ./启动.sh web; }
+
+do_open() {
+  do_web
+  if web_up; then
+    open "http://127.0.0.1:$PORT" 2>/dev/null && c_ok "已打开浏览器"
+  fi
+}
+
+case "${1:-启动}" in
+  启动|qidong|start|"")   ./启动.sh ;;
+  停止|tingzhi|stop)      ./启动.sh stop ;;
+  状态|zhuangtai|status)  do_status ;;
+  网页|wangye|web|open)   do_open ;;
+  求解|qiujie|solve)      ./启动.sh solve ;;
+  验收|yanshou|accept)
+    echo "跑四层验收（求解任务在跑的话，先 ./启动.sh stop，否则快照会报内容变化）"
+    python3 amti.py accept
+    ;;
+  去|qu|cd)               echo "$ROOT" ;;
+  *)
+    cat <<EOF
+AmTiKu 题库
+
+  AmTiKu 启动     起题库 + 本地模型（默认；求解任务要另外开）
+  AmTiKu 停止     停掉题库和求解（LM Studio 不动）
+  AmTiKu 状态     看现在跑着什么、解了多少题
+  AmTiKu 网页     起题库并打开浏览器
+  AmTiKu 求解     起求解任务（长任务，占本地模型，用完 AmTiKu 停止）
+  AmTiKu 验收     跑四层验收
+  AmTiKu 去       显示题库目录
+
+  网页：http://127.0.0.1:$PORT
+  拼音也认：qidong / tingzhi / zhuangtai / wangye / qiujie / yanshou / qu
+EOF
+    ;;
+esac
