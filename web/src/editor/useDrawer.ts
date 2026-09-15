@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import type { Q } from '@/lib/types'
 import { request, reportErr } from '@/lib/api'
-import { SEARCH_DEBOUNCE_MS, POINT_LIMIT } from '@/editor/shared'
+import { SEARCH_DEBOUNCE_MS, POINT_PAGE, POINT_MAX } from '@/editor/shared'
 
 export type TopicGroup = { name: string; count: number; points: any[] }
 
@@ -60,8 +60,25 @@ export function useDrawer() {
     setOpenPoint(pv)
     if (!pointQs[pv]) {
       setLoadingPt(pv)
-      request(`/api/questions?point=${encodeURIComponent(pv)}&limit=${POINT_LIMIT}`)
-        .then((d) => setPointQs((m) => ({ ...m, [pv]: d.items || d.questions || [] })))
+      // 后端 limit 上限是 1000（审查报告 Important #1），所以**分页取全**：
+      // 一页 1000，直到取完或达到 POINT_MAX 为止。
+      const load = async (): Promise<Q[]> => {
+        const acc: Q[] = []
+        let offset = 0
+        for (;;) {
+          const d = await request(
+            `/api/questions?point=${encodeURIComponent(pv)}` +
+            `&limit=${POINT_PAGE}&offset=${offset}`)
+          const page: Q[] = d.items || d.questions || []
+          acc.push(...page)
+          offset += page.length
+          if (page.length < POINT_PAGE) break        // 取完了
+          if (acc.length >= POINT_MAX) break         // 到上限，别把浏览器拖垮
+        }
+        return acc
+      }
+      load()
+        .then((qs) => setPointQs((m) => ({ ...m, [pv]: qs })))
         .catch(reportErr)
         .finally(() => setLoadingPt(''))
     }

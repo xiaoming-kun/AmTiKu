@@ -33,6 +33,10 @@ from pathlib import Path
 
 from . import store
 
+from amti.logutil import get_logger
+
+log = get_logger(__name__)
+
 PKG = Path(__file__).resolve().parent.parent
 TRASH_DIR = PKG / "回收站"
 TRASH = TRASH_DIR / "回收站.json"
@@ -63,7 +67,16 @@ DEFAULT_REASON = DELETE_REASONS[0]
 
 
 def check_password(given: str) -> bool:
-    return (given or "").strip() == DELETE_PASSWORD
+    r"""口令校验。
+
+    用 `hmac.compare_digest` 而不是 `==`：字符串比较会在首个不同字符处短路，
+    理论上可通过响应时间逐位试出（这里主要防手滑，但既然是一行的事就做对）。
+    """
+    import hmac
+    # 必须比 bytes：compare_digest 对 str 只支持 ASCII，
+    # 而口令可能是中文（界面里输中文口令就崩了）。
+    return hmac.compare_digest((given or "").strip().encode("utf-8"),
+                               DELETE_PASSWORD.encode("utf-8"))
 
 
 def _load() -> list[dict]:
@@ -348,6 +361,7 @@ def _selftest() -> int:
                     store.rewrite_all([x for _f, x in store.iter_questions()
                                        if x.key != _K])
             except Exception:
+                log.warning("自检清理失败", exc_info=True)
                 pass
             _save([x for x in _load() if x.get("key") != _K])
             if store.find(_K) is None:

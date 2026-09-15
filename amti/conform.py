@@ -30,6 +30,10 @@ from . import images as im
 from . import knowledge as kb
 from .schema import Question
 
+from amti.logutil import get_logger
+
+log = get_logger(__name__)
+
 # ── 私有宏：**只有本项目自己发明过、现已废弃**的写法 ──────────────
 #
 # ⚠️ 别把 exam-zh / unicode-math 自带的宏列进来。实测踩过：
@@ -370,6 +374,7 @@ def chk_render_leak(q: Question):
         try:
             blocks = lb.parse_blocks(t)
         except Exception:
+            log.warning("块解析失败，跳过该字段", exc_info=True)
             continue
         for b in blocks:
             # ⚠️ **块自己的 `s` 也要查**。只查 `in` 会漏掉整块没被识别的情况

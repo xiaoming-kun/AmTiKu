@@ -96,6 +96,23 @@ export default function App() {
     activeFilters, scopeName,
   } = useQuestionList()
   const [base, setBase] = useState<Base | null>(null)
+
+  /** 详情页用的**全量**记录。
+   *
+   *  列表接口为了省 CPU 只返回题干块 IR（审查报告 💡#3），
+   *  而详情要画答案/解析 → 选中后按 key 补一次全量。
+   */
+  const [full, setFull] = useState<Q | null>(null)
+  useEffect(() => {
+    const k = sel?.key
+    if (!k) { setFull(null); return }
+    let alive = true
+    api.get(k)
+      .then((d) => { if (alive) setFull(d) })
+      .catch(reportErr)
+    return () => { alive = false }
+  }, [sel?.key])
+
   // 顶栏的「存量未改动」状态（与 facets 一起随 reload 刷新）
   useEffect(() => {
     api.baseline().then(setBase).catch(reportErr)
@@ -885,7 +902,7 @@ export default function App() {
               </div>
             ) : tab === 'detail' ? (
             <div key={sel?.key} className="anim-slide-r h-full">
-            <Detail q={sel} facets={facets} onFindPoint={findPoint}
+            <Detail q={full && full.key === sel?.key ? full : sel} facets={facets} onFindPoint={findPoint}
               onDeleteAsk={() => sel && setDeleteAsk({ qs: [sel] })}
               onSaved={(d) => {
               setSel(d)                              // 详情立刻反映新标签

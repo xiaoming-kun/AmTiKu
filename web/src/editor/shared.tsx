@@ -178,7 +178,8 @@ export type CBlock = {
    审查报告 RDY-3：这些数字原来散落在代码里、没有名字，
    改的时候要靠搜索猜含义。集中到这里。 */
 export const SEARCH_DEBOUNCE_MS = 350      // 搜索防抖（输入停顿多久才发请求）
-export const POINT_LIMIT = 5000            // 单个考点一次拉多少（最大考点 717 道）
+export const POINT_PAGE = 1000              // 单次请求上限（后端 limit ≤ 1000）
+export const POINT_MAX = 3000               // 一个考点最多取这么多（最大考点实测 717）
 export const MEASURE_DELAY_MS = 120        // 内容测量延迟（等 DOM 稳定）
 export const FIT_MIN = 0.4                 // 自动缩放下限（再小就没法看了）
 export const FIT_MARGIN = 0.015            // 适配时页底保留的空白比例

@@ -24,6 +24,10 @@ from pathlib import Path
 from . import normalize as norm, store
 from .schema import Question
 
+from amti.logutil import get_logger
+
+log = get_logger(__name__)
+
 API = "http://127.0.0.1:1234/v1/chat/completions"
 MODEL = "qwen/qwen3.8-27b"
 # 推理模型的额度**思考 + 正文一起算**，给少了正文就是空的。
@@ -201,6 +205,7 @@ def _bump_attempts(q: Question, raw: str = "") -> None:
     try:
         store.rewrite_all(qs)
     except Exception:
+        log.error("求解结果写库失败（这批结果会丢）", exc_info=True)
         pass
 
 

@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter, OrderedDict
 import os
 import re
 import sys
@@ -28,6 +29,7 @@ import urllib.parse
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from typing import Annotated
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -36,6 +38,7 @@ from pydantic import BaseModel
 PKG = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PKG))
 
+from amti.logutil import get_logger                       # noqa: E402
 from amti import knowledge                               # noqa: E402
 from amti import latex_blocks as lb                       # noqa: E402
 from amti import store                                    # noqa: E402
@@ -60,6 +63,7 @@ def _usage() -> dict:
         try:
             _usage_cache = json.loads(USAGE_PATH.read_text(encoding="utf-8"))
         except Exception:
+            log.warning("使用频次文件损坏，按空处理：%s", "", exc_info=True)
             _usage_cache = {}
     return _usage_cache
 
@@ -82,11 +86,66 @@ def _usage_bump(keys) -> None:
                 json.dumps(d, ensure_ascii=False, sort_keys=True),
                 encoding="utf-8")
         except Exception:
+            log.warning("使用频次写盘失败（本次计数丢失）", exc_info=True)
             pass
 UI_DIST = PKG / "web" / "dist"
 OUT_DIR = PKG / "试卷"
 
+log = get_logger(__name__)
+
+# ── 导出串行化 ────────────────────────────────────────────
+# 后端审查报告 Important #6：导出是 30s~分钟级的长任务，且都往同一个
+# Slidev 临时目录写、共用一份 node_modules。并发跑会互相踩（一个在清理
+# 临时文件，另一个正在读）。用非阻塞锁：忙就回 429，而不是排队堆线程。
+_EXPORT_LOCK = threading.Lock()
+
+
+def _serialized_export(fn):
+    """导出端点装饰器：**串行化**执行，且无论如何都释放锁。
+
+    直接在每个端点里手写 acquire/finally 容易漏（早期版本就是这么漏掉
+    timeout 的），装饰器只加一行、不会漏。
+    """
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        lock = _export_guard()
+        try:
+            return fn(*a, **kw)
+        finally:
+            lock.release()
+    return wrapper
+
+
+def _export_guard() -> threading.Lock:
+    if not _EXPORT_LOCK.acquire(blocking=False):
+        raise HTTPException(429, "已有一个导出在进行，请稍候再试")
+    return _EXPORT_LOCK
+
+
 app = FastAPI(title="AmTiKu")
+
+
+@app.middleware("http")
+async def _same_origin_only(request, call_next):
+    r"""只接受本机来源的请求。
+
+    后端审查报告 Important #4：只 bind 127.0.0.1 是**对的一半** ——
+    浏览器允许**任意网页**向 http://127.0.0.1:8899 发 POST（同源策略
+    只挡"读取响应"，不挡"发送"）。而删除口令默认写死在源码里，
+    于是任意网页都能触发 `/api/trash/delete`。
+    校验 Origin 同时挡住 CSRF 与 DNS-rebinding。
+
+    curl / 同源页面不带或带本机 Origin，都放行。
+    """
+    origin = request.headers.get("origin")
+    if origin and not origin.startswith(
+            ("http://127.0.0.1", "http://localhost", "http://[::1]")):
+        log.warning("拒绝跨站请求：Origin=%s path=%s", origin, request.url.path)
+        return JSONResponse({"detail": "拒绝跨站请求（只允许本机页面调用）"},
+                            status_code=403)
+    return await call_next(request)
 
 
 # ── 题目 ──────────────────────────────────────────────────────────────
@@ -126,18 +185,42 @@ def _source_of(q) -> str:
 # `_brief` 要跑块级 IR 解析，一道题几毫秒；17,554 道全跑就是几秒。
 # **按内容指纹缓存**：题没改就复用上一次的结果。
 # 指纹只覆盖正文，所以改标签不会失效——那正好，标签每次都现算（很便宜）。
-_BRIEF: dict[str, tuple[str, dict]] = {}
+# 有上限的 LRU 缓存。
+# 审查报告 Important #2：原本是只增不减的 dict，而值里含**解析后的块 IR**，
+# 把 17k 道题翻一遍能涨到数百 MB。留最近 2000 道足够（列表翻页/详情往返都命中）。
+_BRIEF: "OrderedDict[str, tuple[str, dict]]" = OrderedDict()
+_BRIEF_MAX = 2000
+
+
+def _brief_cached_lite(q) -> dict:
+    r"""列表用：**不带答案/解析的块 IR**。
+
+    审查报告 💡#3：列表/卡片只需要题干（卡片画的就是题干），
+    答案与解析的块 IR 只有详情页用。而 `parse_blocks` 是纯 CPU ——
+    一页 20 题本要跑 60 次解析（题干+答案+解析），现在只跑 20 次。
+    详情页走 `/api/questions/{key}` 拿全量（那里才需要）。
+    """
+    d = _brief_cached(q)
+    b = d.get("blocks")
+    if isinstance(b, dict):
+        d = dict(d)                      # 必须复制：cache 里那份不能改
+        d["blocks"] = {"stem": b.get("stem"), "options": b.get("options")}
+        d["lite"] = True
+    return d
 
 
 def _brief_cached(q) -> dict:
     h = q.content_hash()
     hit = _BRIEF.get(q.key)
     if hit and hit[0] == h:
+        _BRIEF.move_to_end(q.key)
         d = dict(hit[1])
         d.update(_cheap_fields(q))          # 标签/难度/元数据每次现取
         return d
     d = _brief(q)
     _BRIEF[q.key] = (h, d)
+    if len(_BRIEF) > _BRIEF_MAX:            # 超上限淘汰最久未用的
+        _BRIEF.popitem(last=False)
     return d
 
 
@@ -236,7 +319,11 @@ def list_questions(
     missing: str = "",        # 逗号分隔：只列**缺**的
     sort: str = "",           # "" 原序 / new 新录入 / old 旧录入 / solved 刚解出的
     keys: str = "",           # 逗号分隔的题号 → 只要这些，且**按给定顺序**返回
-    limit: int = 200, offset: int = 0,
+    # 后端审查报告 Important #1：原本没有上界，而前端就在传 limit=5000。
+    # limit=999999 会让服务端构造 17k 条 _brief（每条都要把 LaTeX 解析成
+    # 块 IR，纯 CPU），足以让服务卡住几十秒。
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict:
     has_set = {x.strip() for x in has.split(",") if x.strip()}
     miss_set = {x.strip() for x in missing.split(",") if x.strip()}
@@ -314,7 +401,7 @@ def list_questions(
     out = []
     usage = _usage()
     for item in page:
-        b = _brief_cached(item)
+        b = _brief_cached_lite(item)
         b["seq"] = _seq_of(item.key)
         b["used"] = usage.get(item.key, 0)
         out.append(b)
@@ -454,6 +541,28 @@ def _convert_type(q, new_type: str) -> str:
     return "%s → %s" % (QTYPE_LABEL[old], QTYPE_LABEL[new_type])
 
 
+def _audit_tag_change(q, *, before: str, fields) -> None:
+    r"""把「界面改标签」记一份档。
+
+    只记标签变化，不记正文 —— 正文根本走不到这里（指纹校验会拦住）。
+    记档失败**不阻断**修改，但必须留下日志：审查报告 Important #3 指出，
+    原本全项目 0 处 logging，"改了但没记录"这种事没人知道。
+    """
+    from amti.audit import CHANGE_DIR
+    try:
+        CHANGE_DIR.mkdir(parents=True, exist_ok=True)
+        f = CHANGE_DIR / ("%s_界面改标签.md" % time.strftime("%Y%m%d_%H%M%S"))
+        f.write_text(
+            "# 界面改标签\n\n"
+            "- 时间：%s\n- 题目：`%s`\n- 改动：%s\n"
+            "- 内容指纹：%s → %s（**没变**，改的只是标签）\n"
+            % (time.strftime("%Y-%m-%d %H:%M:%S"), q.key,
+               "、".join(sorted(fields)), before, q.content_hash()),
+            encoding="utf-8")
+    except Exception:
+        log.warning("标签变更记档失败（修改已生效）：%s", q.key, exc_info=True)
+
+
 @app.patch("/api/questions/{key:path}")
 def patch_question(key: str, body: dict) -> dict:
     r"""改标签：**考点**和**难度**。
@@ -579,22 +688,8 @@ def patch_question(key: str, body: dict) -> dict:
     # 后者会把所有卷的题都写进第 1 卷，而其它卷还在 → 整库重复。
     store.rewrite_all(qs)
 
-    # **记档**：标签是人工改的，要留痕。
-    # 只记标签变化，不记正文——正文根本走不到这里。
-    try:
-        from amti.audit import CHANGE_DIR
-        CHANGE_DIR.mkdir(parents=True, exist_ok=True)
-        import time as _t
-        f = CHANGE_DIR / ("%s_界面改标签.md" % _t.strftime("%Y%m%d_%H%M%S"))
-        f.write_text(
-            "# 界面改标签\n\n"
-            "- 时间：%s\n- 题目：`%s`\n- 改动：%s\n"
-            "- 内容指纹：%s → %s（**没变**，改的只是标签）\n"
-            % (_t.strftime("%Y-%m-%d %H:%M:%S"), q.key,
-               "、".join(sorted(body)), before, q.content_hash()),
-            encoding="utf-8")
-    except Exception:
-        pass                                # 记档失败不该挡住改标签
+    # **记档**：标签是人工改的，要留痕（只记标签，不记正文）
+    _audit_tag_change(q, before=before, fields=body)
 
     d = _brief(q)
     d["tex"] = question_to_tex(q)
@@ -804,6 +899,7 @@ def question_solution(key: str, body: SolutionBody) -> dict:
                "、".join(fixed) if fixed else "无"),
             encoding="utf-8")
     except Exception:
+        log.warning("解析变更记档失败（修改已生效）：%s", "", exc_info=True)
         pass
 
     d = _brief(q)
@@ -1127,6 +1223,7 @@ def figure(path: str, raw: int = 0):
             Image.fromarray(a).save(dst)
         return FileResponse(dst, media_type="image/png")
     except Exception:
+        log.debug("图片透明处理失败，返回原图：%s", "", exc_info=True)
         return FileResponse(p)          # 处理失败就给原图，不阻断
 
 
@@ -1213,6 +1310,7 @@ class SlidevHandoutBody(BaseModel):
 
 
 @app.post("/api/export")
+@_serialized_export
 def export(body: ExportBody) -> dict:
     r"""导出套卷。
 
@@ -1234,6 +1332,7 @@ def export(body: ExportBody) -> dict:
 
 
 @app.post("/api/export/slidev")
+@_serialized_export
 def export_slidev(body: SlidevHandoutBody) -> dict:
     r"""导出 Slidev 讲义（幻灯片式）。
 
@@ -1256,6 +1355,7 @@ def export_slidev(body: SlidevHandoutBody) -> dict:
 
 
 @app.post("/api/export/slidev-blocks")
+@_serialized_export
 def export_slidev_blocks(body: BlocksBody) -> dict:
     r"""从内容块导出讲义（支持自己写的讲解 + 题库选题）。"""
     from amti import slidev_handout as sh
@@ -1271,6 +1371,7 @@ def export_slidev_blocks(body: BlocksBody) -> dict:
 
 
 @app.post("/api/export/slidev-canvas")
+@_serialized_export
 def export_slidev_canvas(body: CanvasBody) -> dict:
     r"""从画布导出讲义（绝对定位 + 模板类）。"""
     from amti import slidev_handout as sh
@@ -1286,7 +1387,7 @@ def export_slidev_canvas(body: CanvasBody) -> dict:
     return r
 
 
-@app.post("/api/canvas/save")
+@app.post("/api/canvas")
 def save_canvas(body: CanvasSaveBody) -> dict:
     """保存画布讲义（复用讲义存档，按 name 覆盖）。"""
     from amti import slidev_handout as sh
@@ -1296,6 +1397,16 @@ def save_canvas(body: CanvasSaveBody) -> dict:
                            with_answers=body.with_answers,
                            extra={"title_font": body.title_font,
                                   "body_font": body.body_font})
+
+
+@app.post("/api/canvas/save", deprecated=True)
+def save_canvas_legacy(body: CanvasSaveBody) -> dict:
+    """旧路径（`/api/canvas/save`）→ 语义与 `POST /api/canvas` 相同。
+
+    审查报告 🟡「REST 命名」：路径里不该带动词。这里保留旧路径做兼容，
+    新代码请用 `POST /api/canvas`。
+    """
+    return save_canvas(body)
 
 
 @app.get("/api/canvas/{name:path}")
@@ -1473,7 +1584,7 @@ class BatchDeleteBody(BaseModel):
     password: str = ""
 
 
-@app.post("/api/trash/delete")
+@app.post("/api/trash")
 def trash_delete_batch(body: BatchDeleteBody) -> dict:
     r"""**批量删题**。一次移进回收站，原因和口令与单题删除同一套规矩。
 
@@ -1541,7 +1652,19 @@ def trash_restore(body: TrashBody) -> dict:
     return r
 
 
-@app.post("/api/trash/purge")
+@app.post("/api/trash/delete", deprecated=True)
+def trash_delete_batch_legacy(body: BatchDeleteBody) -> dict:
+    """旧路径 → 同 `POST /api/trash`（REST：往回收站这个集合里放东西）。"""
+    return trash_delete_batch(body)
+
+
+@app.delete("/api/trash")
+def trash_purge_rest(body: BatchDeleteBody) -> dict:
+    """REST 版清空：`DELETE /api/trash`（旧路径 `/api/trash/purge` 保留）。"""
+    return trash_purge(body)
+
+
+@app.post("/api/trash/purge", deprecated=True)
 def trash_purge(body: TrashBody) -> dict:
     """**真删**，之后恢复不了。`keys` 为空 = 清空整个回收站。"""
     from amti import trash as T
@@ -1673,6 +1796,14 @@ def main() -> int:
         import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
+    # 预热「录入序号」表：原本首个列表请求要全库走一遍才建好
+    try:
+        _seq_of("")
+        log.info("录入序号表已预热：%s 道", len(_SEQ))
+    except Exception:
+        log.warning("预热录入序号表失败（不影响启动）", exc_info=True)
+
+    log.info("AmTiKu 服务启动：http://%s:%s", a.host, a.port)
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
     return 0
 

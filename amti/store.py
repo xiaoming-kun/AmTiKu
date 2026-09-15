@@ -31,6 +31,10 @@ from pathlib import Path
 from .latex_ir import parse_question, split_questions
 from .schema import Question, from_dict, to_dict
 
+from amti.logutil import get_logger
+
+log = get_logger(__name__)
+
 PKG = Path(__file__).resolve().parent.parent
 TOPIC_DIR = PKG / "题目"
 PER_VOLUME = 5000
@@ -737,6 +741,7 @@ def diff() -> dict:
         from . import trash as _tr
         in_trash = _tr.keys()
     except Exception:
+        log.debug("回收站列表不可用，本次对比不排除回收站题", exc_info=True)
         in_trash = set()
     trashed = [k for k in removed if k in in_trash]
     if trashed:

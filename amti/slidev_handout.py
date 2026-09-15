@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +25,14 @@ SLIDEV_STYLES = SLIDEV_PROJ / "styles" / "index.css"
 NODE_BIN = Path.home() / ".local" / "node24" / "bin"
 AMTIKU = Path.home() / "Documents" / "AmTiKu"
 OUT_DIR = AMTIKU / "试卷"
-PUBLIC_IMG = SLIDEV_PROJ / "public" / "img"      # 讲义引用的图片放这里
+PUBLIC_IMG = SLIDEV_PROJ / "public" / "img"
+
+# 单次 Slidev 导出的硬上限。
+# ⚠️ 后端审查报告 Critical #1：这里原本**没有 timeout**。
+# FastAPI 的同步路由跑在有界线程池（默认 40 个 worker）里，子进程一旦卡死
+# （Slidev/Playwright 卡住是已知现象），worker 永远不归还 → 请求永不返回，
+# 重复几次就耗光线程池，服务"看着活着但所有接口排队"。
+EXPORT_TIMEOUT_SEC = 900      # 15 分钟：大讲义留足，但绝不无限等      # 讲义引用的图片放这里
 
 # 页面比例（Slidev 的 aspectRatio 语法）
 RATIOS = {
@@ -44,6 +52,11 @@ DENSITIES = {
 # ══════════════════════════════════════════════════════════════
 #  LaTeX 转换规则（全部经 500 道随机题压测验证）
 # ══════════════════════════════════════════════════════════════
+
+
+from amti.logutil import get_logger
+
+log = get_logger(__name__)
 
 def normalize_delims(text: str) -> str:
     r"""R1: \[...\] → $$...$$，\(...\) → $...$"""
@@ -468,6 +481,45 @@ def convert_math(text: str) -> str:
     return "".join(parts)
 
 
+def _run_slidev_export(md: Path, pdf: Path, env: dict) -> tuple[bool, str]:
+    r"""跑一次 `slidev export`，**带超时与进程组强杀**。
+
+    返回 `(是否超时, 日志尾巴)`。
+
+    为什么用 Popen 而不是 subprocess.run：
+    `npx` 会再 fork 出 node/chromium，超时后只杀 npx 会留下孤儿进程继续占 CPU。
+    用 `start_new_session=True` 让子进程自成进程组，超时就 `killpg` **整组**杀掉。
+    """
+    cmd = ["npx", "slidev", "export", str(md), "--format", "pdf",
+           "--output", str(pdf), "--wait-until", "load", "--wait", "3000"]
+    # 关键：必须 --wait-until load --wait 3000。
+    # 默认 networkidle 会超时；wait=0 会在公式渲染完成前截图（产出空 PDF）。
+    # 也不要传 slidev 自己的 --timeout，它会干扰内部等待。
+    try:
+        proc = subprocess.Popen(
+            cmd, cwd=str(SLIDEV_PROJ), env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            start_new_session=True)
+    except FileNotFoundError:
+        return True, "找不到 npx（检查 NODE_BIN / PATH）"
+
+    try:
+        out, _ = proc.communicate(timeout=EXPORT_TIMEOUT_SEC)
+        return False, (out or "")[-600:]
+    except subprocess.TimeoutExpired:
+        log.error("Slidev 导出超时（>%ss），强杀进程组 %s",
+                  EXPORT_TIMEOUT_SEC, proc.pid)
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        try:
+            proc.communicate(timeout=10)
+        except Exception:
+            log.warning("等待被杀的导出进程退出超时", exc_info=True)
+        return True, f"导出超时（>{EXPORT_TIMEOUT_SEC}s），已终止子进程"
+
+
 def _copy_trimmed(src: Path, dst: Path) -> None:
     r"""复制图片，并把**近白背景转成透明**。
 
@@ -484,7 +536,9 @@ def _copy_trimmed(src: Path, dst: Path) -> None:
         a[:, :, 3] = np.where(near_white, 0, al)
         Image.fromarray(a).save(dst)
     except Exception:
-        shutil.copy2(src, dst)      # 失败就原样复制，不阻断
+        # 失败就原样复制，不阻断 —— 但要知道自己失败了
+        log.debug("白底转透明失败，按原图复制：%s", src.name, exc_info=True)
+        shutil.copy2(src, dst)
 
 
 def copy_figures(text: str, width_pct: int = 55) -> tuple[str, str]:
@@ -511,6 +565,7 @@ def copy_figures(text: str, width_pct: int = 55) -> tuple[str, str]:
             if not dst.exists():
                 _copy_trimmed(src, dst)
         except Exception:
+            log.warning("配图复制失败，跳过：%s", name, exc_info=True)
             continue
         # 图居中 + **限宽限高**：
         # 只给 width 的话，竖长图（如 610×620）会算出 800px 高，
@@ -674,7 +729,10 @@ def _load_all() -> list[dict]:
     import json
     try:
         return json.loads(HANDOUTS.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
     except Exception:
+        log.warning("讲义存档读取失败，按空处理：%s", HANDOUTS, exc_info=True)
         return []
 
 
@@ -921,11 +979,12 @@ def export(keys: list[str], *, title: str = "", out: str = "",
         # 关键：必须 --wait-until load --wait 3000
         # 默认 networkidle 会超时；wait=0 会在公式渲染完成前截图（产出空 PDF）。
         # 也不要传 --timeout，它会干扰内部等待。
-        r = subprocess.run(
-            ["npx", "slidev", "export", str(md), "--format", "pdf",
-             "--output", str(pdf),
-             "--wait-until", "load", "--wait", "3000"],
-            cwd=str(SLIDEV_PROJ), env=env, capture_output=True, text=True)
+        timed_out, last = _run_slidev_export(md, pdf, env)
+        if timed_out:
+            res["ok"] = False
+            res["error"] = last
+            res["log"] = last
+            return res
 
         if pdf.exists() and pdf.stat().st_size > 10_000:
             OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -935,11 +994,11 @@ def export(keys: list[str], *, title: str = "", out: str = "",
             res["saved_hint"] = f"{name}.pdf 已保存到 试卷/"
             return res
 
-        last = (r.stderr or r.stdout)[-400:]
         if attempt < retries:
             import time
             time.sleep(3)
 
+    log.error("Slidev 导出失败（重试 %s 次后）：%s", retries, last[:200])
     res["ok"] = False
     res["error"] = "Slidev 导出失败"
     res["log"] = last
@@ -1008,10 +1067,12 @@ def export_blocks(blocks: list[dict], *, title: str = "", out: str = "",
     for attempt in range(1, retries + 1):
         if pdf.exists():
             pdf.unlink()
-        r = subprocess.run(
-            ["npx", "slidev", "export", str(md), "--format", "pdf",
-             "--output", str(pdf), "--wait-until", "load", "--wait", "3000"],
-            cwd=str(SLIDEV_PROJ), env=env, capture_output=True, text=True)
+        timed_out, last = _run_slidev_export(md, pdf, env)
+        if timed_out:
+            res["ok"] = False
+            res["error"] = last
+            res["log"] = last
+            return res
         if pdf.exists() and pdf.stat().st_size > 10_000:
             OUT_DIR.mkdir(parents=True, exist_ok=True)
             final = OUT_DIR / f"{name}.pdf"
@@ -1019,11 +1080,11 @@ def export_blocks(blocks: list[dict], *, title: str = "", out: str = "",
             res["pdf_abs"] = str(final)
             res["saved_hint"] = f"{name}.pdf 已保存到 试卷/"
             return res
-        last = (r.stderr or r.stdout)[-400:]
         if attempt < retries:
             import time
             time.sleep(3)
 
+    log.error("Slidev 导出失败（重试 %s 次后）：%s", retries, last[:200])
     res["ok"] = False
     res["error"] = "Slidev 导出失败"
     res["log"] = last
@@ -1364,10 +1425,12 @@ def export_canvas(pages: list[dict], *, title: str = "", out: str = "",
     for attempt in range(1, retries + 1):
         if pdf.exists():
             pdf.unlink()
-        r = subprocess.run(
-            ["npx", "slidev", "export", str(md), "--format", "pdf",
-             "--output", str(pdf), "--wait-until", "load", "--wait", "3000"],
-            cwd=str(SLIDEV_PROJ), env=env, capture_output=True, text=True)
+        timed_out, last = _run_slidev_export(md, pdf, env)
+        if timed_out:
+            res["ok"] = False
+            res["error"] = last
+            res["log"] = last
+            return res
         if pdf.exists() and pdf.stat().st_size > 10_000:
             OUT_DIR.mkdir(parents=True, exist_ok=True)
             final = OUT_DIR / f"{name}.pdf"
@@ -1375,11 +1438,11 @@ def export_canvas(pages: list[dict], *, title: str = "", out: str = "",
             res["pdf_abs"] = str(final)
             res["saved_hint"] = f"{name}.pdf 已保存到 试卷/"
             return res
-        last = (r.stderr or r.stdout)[-400:]
         if attempt < retries:
             import time
             time.sleep(3)
 
+    log.error("Slidev 导出失败（重试 %s 次后）：%s", retries, last[:200])
     res["ok"] = False
     res["error"] = "Slidev 导出失败"
     res["log"] = last
