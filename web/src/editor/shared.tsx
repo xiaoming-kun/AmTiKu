@@ -304,6 +304,47 @@ export function sourceLabel(q: Q | undefined): string {
   return no ? `${head} 第${no}题` : head
 }
 
+/** 选项尺寸：**必须与后端 option_html() 一致**
+ *  （后端：max-height:108px; max-width:22%）。 */
+const OPT_IMG_STYLE = {
+  // ⚠️ display 必须是 inline-block：Slidev 的 CSS reset 让 `img` 变 block，
+  //    不加就会「预览一行、导出四行」。尺寸与后端 option_html() 保持一致。
+  display: 'inline-block',
+  maxHeight: 108,
+  width: 'auto',
+  height: 'auto',
+  verticalAlign: 'middle',
+} as const
+
+/** 选项内容：文字 + 图片混排。
+ *
+ *  选项常常**整条就是一张图**（四个图象选项），而 RichText 只认行内公式、
+ *  不认图片 —— 直接塞给它会把 `![](...)` 当文字显示出来。
+ *  所以这里把 markdown 图片/`<img>` 切成片段，图片用真 `<img>` 渲染。
+ */
+export function OptionBody({ text }: { text: string }) {
+  const parts = useMemo(() => {
+    const out: { kind: 'text' | 'img'; v: string }[] = []
+    // 与 transformOption 的产物对应：![alt](url)，同时兼容 <img src="...">
+    const re = /!\[[^\]]*\]\(([^)]+)\)|<img[^>]*src="([^"]+)"[^>]*\/?>/g
+    let last = 0
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      if (m.index > last) out.push({ kind: 'text', v: text.slice(last, m.index) })
+      out.push({ kind: 'img', v: m[1] || m[2] || '' })
+      last = m.index + m[0].length
+    }
+    if (last < text.length) out.push({ kind: 'text', v: text.slice(last) })
+    return out
+  }, [text])
+  return (
+    <>
+      {parts.map((p, i) => p.kind === 'img'
+        ? <img key={i} src={p.v} alt="" style={OPT_IMG_STYLE} />
+        : <RichText key={i} text={p.v} />)}
+    </>
+  )
+}
+
 export function CBlockView({ b, qmap, fs, showSource = true }:
   { b: CBlock; qmap: Map<string, Q>; fs: number; showSource?: boolean }) {
   const lh = b.lineHeight ?? DEFAULT_LH
@@ -381,11 +422,13 @@ export function CBlockView({ b, qmap, fs, showSource = true }:
         <MarkdownBody text={text} />
         {!!opts.length && (
           // 选项不换行：拉宽块时字号自动变大，一行能放下
-          <div className="mt-1 flex flex-nowrap gap-x-3" style={{ fontSize: fs * 0.92 }}>
+          // 选项走**普通内联流**（不用 flex）：flex 容器里 markdown 段落会变成
+          // 被压窄的 flex item，图片选项会小到 13px 且各占一行（用户报的 bug）。
+          <div className="mt-1" style={{ fontSize: fs * 0.92 }}>
             {opts.map((o, oi) => (
-              <span key={o.label}>
+              <span key={o.label} className="mr-5 whitespace-nowrap">
                 <span>({o.label})</span>
-                <RichText text={optTexts[oi] || ''} />
+                <OptionBody text={optTexts[oi] || ''} />
               </span>
             ))}
           </div>

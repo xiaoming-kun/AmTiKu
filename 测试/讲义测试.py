@@ -91,6 +91,74 @@ def test_canvas_markdown_contains_label():
     assert sh.source_label(q) in md
 
 
+# ── 选项里的图片（用户报过的 bug）────────────────────────────
+#
+# 现象：卷面上选项显示成 `(A)\includegraphics[width=0.15\paperwidth]{x.png}` 源码。
+# 四个原因叠在一起，这条测试把它们全钉住：
+#   ① transform() 只对题干做了 copy_figures，选项原样丢给 KaTeX；
+#   ② 选项的图**包在 $…$ 里**，不脱定界符 KaTeX 就只显示命令；
+#   ③ Slidev 的 CSS reset 让 `img` 是 block → 每个选项各占一行；
+#   ④ 外面套 display:flex + markdown 空行 → 选项变成被压窄的 <p> flex item，
+#      图小到 13px。
+
+IMG_OPT_Q = "高考真题汇编/2013/江西卷（文）#10"
+
+
+def _img_opt_question():
+    q = store.find(IMG_OPT_Q)
+    assert q, "测试用题不在库里：%s" % IMG_OPT_Q
+    return q
+
+
+def test_option_images_converted():
+    r"""选项里的 \includegraphics 要变成 <img>，且不能留数学定界符包着。"""
+    out = sh.render_canvas_block({"type": "question", "key": IMG_OPT_Q,
+                                  "x": 4, "y": 6, "w": 92, "h": 0, "z": 0})
+    assert "includegraphics" not in out, "选项还在漏 LaTeX 源码"
+    assert out.count("<img") >= 4, "四个图象选项都要有图"
+    # 不允许 `$<img …>$` 这种把图片又塞回数学模式的形式。
+    # ⚠️ 不能用 `\$[^$]*<img`：公式后面正常跟一张图（`$l_2$ … <img>`）也会被误判。
+    #    只认「$ 紧跟图片」或「图片紧跟 $」。
+    assert not re.search(r"\$\s*<img", out), "图片开头被 $ 包住（数学模式）"
+    assert not re.search(r"/>\s*\$", out), "图片结尾被 $ 包住（数学模式）"
+
+
+def test_option_images_are_inline_block():
+    """图片必须 display:inline-block。
+
+    Slidev 的 reset 把 `img` 设成 block，不加这句**每个选项占一行**（实测）。
+    """
+    out = sh.render_canvas_block({"type": "question", "key": IMG_OPT_Q,
+                                  "x": 4, "y": 6, "w": 92, "h": 0, "z": 0})
+    imgs = re.findall(r"<img[^>]*>", out)
+    opt_imgs = [t for t in imgs if "108px" in t]
+    assert len(opt_imgs) >= 4, f"应有 4 张选项图：{len(opt_imgs)}"
+    for t in opt_imgs:
+        assert "display:inline-block" in t, f"选项图缺 inline-block：{t[:70]}"
+
+
+def test_options_not_wrapped_in_flex():
+    """选项不要再套 display:flex。
+
+    flex + markdown 空行会把选项行包成 <p>（flex item），
+    宽度被压到几十 px → 图 13px 且各占一行。
+    """
+    out = sh.render_canvas_block({"type": "question", "key": IMG_OPT_Q,
+                                  "x": 4, "y": 6, "w": 92, "h": 0, "z": 0})
+    tail = out[out.find("(A)"):] if "(A)" in out else ""
+    assert "display:flex" not in tail, "选项又被 flex 包住了"
+
+
+def test_text_options_keep_math():
+    """普通文字/公式选项不受影响（图片处理不能吃掉数学）。"""
+    q = next(q for q in store.load_cached()
+             if q.kind == "高考" and q.options and "$" in q.options[0].text)
+    out = sh.render_canvas_block({"type": "question", "key": q.key,
+                                  "x": 4, "y": 6, "w": 92})
+    assert "(A)" in out and "$" in out, "文字选项应保留公式"
+    assert "includegraphics" not in out
+
+
 # ── 前后端一致性（前端实现用 node 跑）────────────────────────
 
 _JS = """

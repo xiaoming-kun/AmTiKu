@@ -401,6 +401,7 @@ def show_answers(text: str) -> str:
 
 def extract_figures(text: str) -> tuple[str, list[str]]:
     r"""抽出 \includegraphics，返回（清理后的文本, 图片名列表）。"""
+    text = strip_image_math(text)
     imgs = re.findall(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}", text)
     text = re.sub(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\}", "", text)
     return text, imgs
@@ -570,6 +571,63 @@ def _copy_trimmed(src: Path, dst: Path) -> None:
         shutil.copy2(src, dst)
 
 
+# 「整条就是一张图」的数学段：$\includegraphics[...]{x.png}$ 或 $$…$$
+# ⚠️ 用户报的 bug：选项写成 `$\includegraphics[width=0.15\paperwidth]{x.png}$`，
+#    数学定界符不脱掉的话，KaTeX 拿到的是 \includegraphics 命令 →
+#    卷面上直接显示 `(A)\includegraphics[...]{...}` 这种源码。
+_IMG_IN_MATH = re.compile(
+    r"\$\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$\$"
+    r"|\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$")
+_IMG_CMD = re.compile(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}")
+
+
+def strip_image_math(text: str) -> str:
+    r"""把「只包一张图」的 `$…$` / `$$…$$` 定界符脱掉。
+
+    只处理**整条就是图片**的数学段；`$x+\includegraphics…$` 这种混合内容不动。
+    """
+    def repl(m):
+        return m.group(1) or m.group(2)
+    prev = None
+    while prev != text:                 # 嵌套/连续的情况多跑几轮
+        prev = text
+        text = _IMG_IN_MATH.sub(repl, text)
+    return text
+
+
+def option_html(text: str, max_h: int = 108, max_w_pct: int = 22) -> str:
+    r"""选项里的图片 → 行内 `<img>`（并复制到 Slidev 的 public/img）。
+
+    选项和题干一样可能带图，而且**常常整条就是一张图**（四个图象选项）。
+    原来 `transform()` 只对题干做了 `copy_figures`，选项原样丢给 KaTeX →
+    卷面上显示 `(A)\includegraphics[...]{...}` 源码（用户报的 bug）。
+    """
+    text = strip_image_math(text)
+
+    def repl(m):
+        name = m.group(1).strip()
+        src = AMTIKU / "图片" / name
+        if not src.exists():
+            log.warning("选项配图不存在：%s", name)
+            return ""
+        try:
+            PUBLIC_IMG.mkdir(parents=True, exist_ok=True)
+            dst = PUBLIC_IMG / name
+            if not dst.exists():
+                _copy_trimmed(src, dst)
+        except Exception:
+            log.warning("选项配图复制失败：%s", name, exc_info=True)
+            return ""
+        # ⚠️ 必须显式 display:inline-block：Slidev 的 CSS reset 里
+        #    `img { display: block }`，不改的话**每个选项占一行**（实测过）。
+        #    也不设 max-width 百分比：图片在 flex 项里算百分比会小到 13px。
+        return (f'<img src="/img/{name}" alt="" '
+                f'style="display:inline-block;max-height:{max_h}px;'
+                f'width:auto;height:auto;vertical-align:middle" />')
+
+    return _IMG_CMD.sub(repl, text)
+
+
 def copy_figures(text: str, width_pct: int = 55) -> tuple[str, str]:
     r"""把题干里的 \includegraphics 换成真实图片引用。
 
@@ -641,9 +699,16 @@ def transform(q, with_answers: bool = False, with_figures: bool = True) -> str:
         # 用标记包起来，后端据此分段包裹（避免破坏选项行的 flex 处理）
         out.append(f"\n<!--FIGS-->{fig_tags}<!--/FIGS-->\n")
     if q.options:
-        opts = "　　".join(
-            f"({o.label}) {tighten_math(convert_math(normalize_delims(fix_macros(o.text))))}"
-            for o in q.options)
+        def _opt(o):
+            # 先处理图片（选项常整条是图，且包在 $…$ 里），再走数学/宏流水线。
+            # 顺序很重要：反过来 KaTeX 会把 \includegraphics 当数学命令显示成源码。
+            t = option_html(o.text) if with_figures else strip_image_math(o.text)
+            if not with_figures:
+                t = _IMG_CMD.sub("", t)
+            t = tighten_math(convert_math(normalize_delims(fix_macros(t))))
+            return f"({o.label}) {t}"
+
+        opts = "　　".join(_opt(o) for o in q.options)
         out.append(f"\n{opts}\n")
     return "".join(out)
 
@@ -1305,9 +1370,13 @@ def render_canvas_block(b: dict, *, with_answers: bool = False,
                             f'\n\n{fig_html}\n\n</div>')
             # ③ 选项（flex 不换行）
             if opt_txt:
+                # 选项直接作为普通段落：文字选项照旧一行，**图片选项**也能
+                # 靠 inline-block 并排一行。
+                # 原来外面套 `display:flex`：配合 markdown 的空行，选项会被
+                # 包成 <p> 变成 flex item，宽度被压到几十 px，
+                # 图小成 13px 且各占一行（用户报的 bug）。
                 segs.append(f'<div class="p-ex" style="line-height:{lh}">'
-                            f'\n\n<div style="display:flex;flex-wrap:nowrap;'
-                            f'gap:0 1.2em">\n\n{opt_txt}\n\n</div>\n\n</div>')
+                            f'\n\n{opt_txt}\n\n</div>')
 
             inner = "\n\n".join(segs)
 

@@ -290,6 +290,11 @@ function tightenMath(t: string): string {
   return text
 }
 
+/** 题库图片的 URL（编辑器走接口；后端导出时换成 /img/，两边路径不同但都要有图）。 */
+export function figureUrl(name: string): string {
+  return `/api/figure?path=${encodeURIComponent(name)}`
+}
+
 /** 图形环境 → 占位（老师自己画图） */
 /** 图形环境处理。
  *
@@ -320,8 +325,29 @@ export function transformStem(stem: string, withAnswers = false): string {
 }
 
 /** 选项文字 → 可渲染 */
+/** 图片被包在 `$…$`（整条就是一张图）时脱掉数学定界符。
+ *
+ *  ⚠️ 用户报的 bug：选项写成 `$\includegraphics[width=0.15\paperwidth]{x.png}$`，
+ *  不脱定界符的话数学渲染器拿到的是 `\includegraphics` 命令 →
+ *  卷面上直接显示 `(A)\includegraphics[...]{...}` 源码。
+ *  （后端 `slidev_handout.strip_image_math()` 是同一套规则。）
+ */
+export function stripImageMath(t: string): string {
+  const re = /\$\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$\$|\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$/g
+  let prev = ''
+  let out = t
+  while (prev !== out) {           // 连续/嵌套多跑几轮
+    prev = out
+    out = out.replace(re, (_m, a, b) => a || b)
+  }
+  return out
+}
+
 export function transformOption(text: string): string {
-  let t = text || ''
+  // 图片：选项常**整条就是一张图**，必须先处理（顺序与后端一致）
+  let t = stripImageMath(text || '')
+  t = t.replace(/\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}/g,
+                (_, name) => `![](${figureUrl(String(name).trim())})`)
   for (const [pat, rep] of MACRO_FIXES) t = t.replace(pat, rep)
   t = normalizeDelims(t)
   t = convertMathSafe(t)
