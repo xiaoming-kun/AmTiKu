@@ -177,3 +177,19 @@ export function useWidth(key: string, init: number, min: number, max: number) {
   useEffect(() => { localStorage.setItem(key, String(w)) }, [key, w])
   return [w, setW] as const
 }
+
+/** 顶栏明细里的一行：名称 + 数字 + 一句解释。 */
+export function BaseRow({ label, n, hint, tone }: {
+  label: string; n: number; hint: string; tone?: 'warn'
+}) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className={`tabular-nums font-medium ${
+        n === 0 ? 'text-ink-faint' : tone === 'warn' ? 'text-warn' : 'text-ink-soft'}`}>
+        {n}
+      </span>
+      <span className={n === 0 ? 'text-ink-faint' : 'text-ink'}>{label}</span>
+      <span className="truncate text-[10px] text-ink-faint">{hint}</span>
+    </div>
+  )
+}
