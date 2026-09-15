@@ -150,6 +150,10 @@ def test_patch_difficulty_roundtrip():
     key = client.get("/api/questions?limit=1").json()["items"][0]["key"]
     enc = _enc(key)
     orig = client.get(f"/api/questions/{enc}").json().get("meta", {}).get("difficulty", "")
+    # 这个接口会写一份「变更记档」，测试跑完要把**自己产生的**记档删掉，
+    # 否则每跑一次测试就往仓库里丢两个文件。
+    audit_dir = ROOT / "变更记录"
+    before_logs = set(audit_dir.glob("*界面改标签*")) if audit_dir.exists() else set()
     try:
         r = client.patch(f"/api/questions/{enc}", json={"difficulty": "难题"})
         assert r.status_code == 200, r.status_code
@@ -160,6 +164,9 @@ def test_patch_difficulty_roundtrip():
         # 无论断言成败都还原，别把测试的痕迹留在题库里
         back = client.patch(f"/api/questions/{enc}", json={"difficulty": orig or ""})
         assert back.status_code == 200, back.status_code
+        # 清掉本次新产生的记档文件
+        for f in set(audit_dir.glob("*界面改标签*")) - before_logs:
+            f.unlink(missing_ok=True)
 
 
 # ── 无 pytest 时的运行器 ──────────────────────────────────────
