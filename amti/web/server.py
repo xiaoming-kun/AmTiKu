@@ -324,6 +324,10 @@ def list_questions(
     # 块 IR，纯 CPU），足以让服务卡住几十秒。
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
     offset: Annotated[int, Query(ge=0)] = 0,
+    # 默认**瘦身**：列表只带题干块 IR（答案/解析留给详情页）。
+    # 全量校验脚本（`web/check.mjs`）需要答案/解析的块 IR —— 它显式传 lite=0，
+    # 并且**分页**取，所以既拿到全量又不会一次压垮服务。
+    lite: bool = True,
 ) -> dict:
     has_set = {x.strip() for x in has.split(",") if x.strip()}
     miss_set = {x.strip() for x in missing.split(",") if x.strip()}
@@ -401,7 +405,7 @@ def list_questions(
     out = []
     usage = _usage()
     for item in page:
-        b = _brief_cached_lite(item)
+        b = _brief_cached_lite(item) if lite else _brief_cached(item)
         b["seq"] = _seq_of(item.key)
         b["used"] = usage.get(item.key, 0)
         out.append(b)

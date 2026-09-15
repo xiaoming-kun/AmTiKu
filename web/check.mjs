@@ -30,10 +30,29 @@ const MACROS = {
 
 const LEAK = /\\(?:begin|end)\{[a-zA-Z*]+\}|\\item(?![a-zA-Z])/
 
+/**
+ * 取全库。
+ *
+ * ⚠️ 两个约束（后端审查后新增）：
+ *   1. `limit` 上限是 **1000**（防一次请求打爆服务）→ 必须**分页**；
+ *   2. 列表默认**瘦身**（只带题干块 IR）→ 必须显式 `lite=0`，
+ *      否则答案/解析的块 IR 缺失，这个脚本就会**静默漏检**——
+ *      而它下面的 walk() 正是要逐个校验 answer/solution 里的公式。
+ */
 async function fetchAll() {
-  const r = await fetch(`${BASE}/api/questions?limit=100000`)
-  if (!r.ok) throw new Error(`接口返回 ${r.status}——后端在跑吗？`)
-  return r.json()
+  const PAGE = 500
+  const items = []
+  let total = 0
+  for (let offset = 0; ; offset += PAGE) {
+    const r = await fetch(
+      `${BASE}/api/questions?lite=0&limit=${PAGE}&offset=${offset}`)
+    if (!r.ok) throw new Error(`接口返回 ${r.status}——后端在跑吗？`)
+    const d = await r.json()
+    total = d.total
+    items.push(...d.items)
+    if (items.length >= total || d.items.length === 0) break
+  }
+  return { total, items }
 }
 
 /** 遍历块级 IR，回调每一个数学 / 文本 / 图片节点。 */
@@ -108,17 +127,42 @@ for (const q of items) {
   }
 }
 
-// 图片：并发 HEAD 一下，确认 /api/figure 真能取到
+// 图片：确认 /api/figure 真能取到。
+//
+// ⚠️ 原来是 `Promise.all(ids.map(fetch))` —— **3491 个并发 GET**，
+//    而且把每张图**整个下载**下来。后端每张图都要过一遍透明处理
+//    （PIL，跑在线程池，默认 40 个 worker），并发一上来就有一两个连接
+//    被 reset，检查于是报"图片取不到"，而后端其实是好的（curl 一把就 200）。
+//    现在：并发上限 6 + 拿到响应头就 cancel 掉 body + 失败重试一次。
 const ids = [...figIds]
-const results = await Promise.all(ids.map(async (id) => {
+const CONCURRENCY = 6
+const results = []
+let cursor = 0
+
+async function probeOnce(id) {
+  const ac = new AbortController()
   try {
-    const r = await fetch(`${BASE}/api/figure?path=${encodeURIComponent(id)}`, { method: 'GET' })
+    const r = await fetch(`${BASE}/api/figure?path=${encodeURIComponent(id)}`,
+                          { signal: ac.signal })
+    try { await r.body?.cancel() } catch { /* 某些实现没有 body.cancel */ }
     return r.ok ? null : { id, status: r.status }
   } catch (e) {
-    return { id, status: String(e) }
+    return { id, status: String(e.message || e) }
   }
-}))
-fail.fig = results.filter(Boolean)
+}
+
+async function worker() {
+  for (;;) {
+    const i = cursor++
+    if (i >= ids.length) return
+    const id = ids[i]
+    let bad = await probeOnce(id)
+    if (bad) bad = await probeOnce(id)          // 抖动，重试一次
+    if (bad) results.push({ id, status: bad.status })
+  }
+}
+await Promise.all(Array.from({ length: CONCURRENCY }, worker))
+fail.fig = results
 
 console.log(`题目 ${total} 道   数学节点 ${nMath}   图片引用 ${nFig}（去重 ${ids.length}）`)
 const report = [
