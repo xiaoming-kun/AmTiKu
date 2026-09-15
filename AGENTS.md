@@ -132,17 +132,24 @@ AmTiKu/
 > **新增功能前先问**：这件事是不是已经有唯一入口了？
 > 有 → 改那个模块；没有 → 才新建。
 
-## 五、⚠️ 前端重构进行中（重要）
+## 五、✅ 前端结构（重构已完成，2026-09-15）
 
-`App.tsx` 当前 **3424 行**，正在拆分：
+`App.tsx` 从 **4741 行降到 1014 行**（−79%）。当前结构：
 
-| 状态 | 内容 |
-|---|---|
-| ✅ 已拆出 | `editor/`（CanvasEditor 554 行、shared 370、useCanvas 259、useDrawer 74）<br>`lib/`（qlatex 330、render 237、api 105、types 42、utils） |
-| 🚧 待拆 | `pages/`（**空目录**，页面组件还没迁入） |
-| 🎯 目标 | 继续给 `App.tsx` 瘦身 |
+| 目录 | 文件 | 职责 |
+|---|---|---|
+| `web/src/` | `App.tsx`（1014） | 页面级状态 + 三栏布局组装 |
+| `web/src/editor/` | `CanvasEditor` 87 / `useCanvas` 253 / `CanvasStage` 180 / `Inspector` 243 / `PointDrawer` 117 / `useDrawer` 74 / `useHandoutIo` 91 / `shared` 370 | 讲义编辑器：一整块独立模块，新功能加在这里 |
+| `web/src/app/` | `Detail` / `ExportPage` / `IngestDrawer` / `Stats` / `Trash` / `QuestionCard` / `ui` | 页面级组件 |
+| `web/src/lib/` | `api`（统一请求+错误上报）/ `types` / `qlatex` / `render` / `paper` / `display` / `useQuestionList` | 与后端打交道、共享类型与转换 |
 
-**动前端代码时请先说明你要改哪一块**，避免与进行中的拆分冲突（例如：不要往 App.tsx 里加新组件，应放到对应目录）。
+**动前端代码时的约定**：
+
+- ❗**不要往 `App.tsx` 里加新组件** —— 页面组件放 `app/`，编辑器相关放 `editor/`
+- 请求一律走 `lib/api.ts` 的 `request()`（它统一处理 `r.ok` + 错误提示），
+  不要裸 `fetch(...).then(r => r.json())`
+- 类型放 `lib/types.ts`（`Q` / `Facets` / `Base` / `ExportResult`）
+- 转换规则改动 → 见第九节「预览与导出不一致」
 
 ## 六、协作约定（减少返工的 5 条）
 
