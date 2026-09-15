@@ -371,14 +371,14 @@ export function CBlockView({ b, qmap, fs, showSource = true }:
     // 关键：必须走 transformStem/transformOption —— 题库是 LaTeX + newtxmath，
     // 原始题干里的 \paren[A]、\symbfit、enumerate 等 KaTeX 不认，
     // 直接渲染会显示成源码（前端包必须重新构建才生效）
-    const src = (b.showSource ?? showSource) ? sourceLabel(q) : ''
-    // 出处标签放在 `.p-ex` **之外**（与后端 render_canvas_block 一致）：
-    // 它是出处，不属于题目正文的排版。
+    const lab = (b.showSource ?? showSource) ? sourceLabel(q) : ''
+    // 出处**并进题干同一行**（用户要求：括号 + 与题目同排）。
+    // ⚠️ 必须是纯文本，不能用 <span>：MarkdownBody 不解析 HTML，
+    //    用 span 会变成"预览有、导出没有"（本项目最忌讳的不一致）。
+    const text = lab ? `（${lab}）${stemText}` : stemText
     return (
-      <>
-      {src && <div className="p-src" style={{ fontSize: fs * 0.86 }}>{src}</div>}
       <div className="p-ex" style={{ margin: 0, fontSize: fs, lineHeight: lh }}>
-        <MarkdownBody text={stemText} />
+        <MarkdownBody text={text} />
         {!!opts.length && (
           // 选项不换行：拉宽块时字号自动变大，一行能放下
           <div className="mt-1 flex flex-nowrap gap-x-3" style={{ fontSize: fs * 0.92 }}>
@@ -391,7 +391,6 @@ export function CBlockView({ b, qmap, fs, showSource = true }:
           </div>
         )}
       </div>
-      </>
     )
   }
   return <div className="p-t" style={{ margin: 0, fontSize: fs, lineHeight: lh }}>

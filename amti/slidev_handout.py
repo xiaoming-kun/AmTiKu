@@ -1267,6 +1267,8 @@ def render_canvas_block(b: dict, *, with_answers: bool = False,
             lab = ""
             if b.get("showSource", show_source):
                 lab = source_label(q)
+                # 加括号（用户要求）：「2024上海卷（春） 第2题」→「（…）」
+                lab = f"（{lab}）" if lab else "" 
 
             # 拆出图片段（transform 用 <!--FIGS--> 包起来了）
             fig_html = ""
@@ -1284,13 +1286,19 @@ def render_canvas_block(b: dict, *, with_answers: bool = False,
             opt_txt = "\n".join(opt_lines).strip()
 
             segs = []
-            # ⓪ 高考题出处（在题干之前；放在 .p-ex 之外）
-            if lab:
-                segs.append(f'<div class="p-src">\n\n{lab}\n\n</div>')
-            # ① 题干
+            # ① 题干（高考题出处**并进同一行**，用户要求：括号 + 与题目同排）
+            #
+            # 用**纯文本**而不是 <span class="p-src"> 有两个原因：
+            #   1. 编辑器预览的 MarkdownBody 不解析 HTML，用 span 会导致
+            #      **预览里有标签、导出后没有**（本项目最忌讳的不一致）；
+            #   2. 纯文本在任何渲染路径下都稳，不会被 markdown 当 HTML 块。
             if stem_txt:
                 segs.append(f'<div class="p-ex" style="line-height:{lh}">'
-                            f'\n\n{stem_txt}\n\n</div>')
+                            f'\n\n{lab}{stem_txt}\n\n</div>')
+            elif lab:
+                # 极端情况：只有选项没有题干 —— 别把出处弄丢
+                segs.append(f'<div class="p-ex" style="line-height:{lh}">'
+                            f'\n\n{lab}\n\n</div>')
             # ② 配图（单独一段，前后空行，否则图片不显示）
             if fig_html:
                 segs.append(f'<div style="text-align:center">'

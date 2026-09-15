@@ -118,11 +118,3 @@
   white-space: pre-wrap;
 }
 
-/* 高考题出处（与 Slidev 侧 styles/index.css 保持一致） */
-.handout-canvas .p-src {
-  font-family: var(--hc-font-hand);
-  font-size: 0.86em;
-  color: var(--hc-muted);
-  letter-spacing: 0.02em;
-  margin-bottom: 0.15em;
-}

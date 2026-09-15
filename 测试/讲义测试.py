@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,14 +48,26 @@ def test_non_gaokao_has_no_label():
     assert sh.source_label(q) == "", f"{q.key} 不该有标签"
 
 
-def test_render_prepends_label_before_stem():
-    """渲染时标签在**题干之前**（用户原话：然后才是题目本身）。"""
-    q = next(q for q in store.load_cached() if q.kind == "高考" and q.meta.get("year"))
+def test_render_puts_label_inline_with_stem():
+    """出处**和题目同一行**，且加括号（用户要求）。
+
+    实现细节：标签是**纯文本**并进题干第一段，不能是独立的
+    `<div class="p-src">`（那样会换行），也不能是 `<span>`
+    （编辑器 MarkdownBody 不解析 HTML → 预览与导出不一致）。
+    """
+    q = next(q for q in store.load_cached()
+             if q.kind == "高考" and q.meta.get("year"))
     out = sh.render_canvas_block({"type": "question", "key": q.key,
                                   "x": 4, "y": 4, "w": 92})
-    assert 'class="p-src"' in out, "缺少 p-src 标签块"
-    assert out.index('class="p-src"') < out.index('class="p-ex"'), "标签必须在题干前"
-    assert sh.source_label(q) in out
+    lab = sh.source_label(q)
+    assert f"（{lab}）" in out, f"标签要带括号：{lab!r}"
+    assert 'class="p-src"' not in out, "标签不该是独立块（会被换行）"
+    assert "<span" not in out.split("p-ex", 1)[1][:200], "标签不该用 span"
+
+    # 标签与题干正文必须落在**同一段**里
+    para = out.split('class="p-ex"')[1].split("</div>")[0]
+    assert f"（{lab}）" in para, "标签不在题干那一段里"
+    assert re.search(rf"（{re.escape(lab)}）\s*\S", para), "标签后面应紧跟题干正文"
 
 
 def test_switch_off_hides_label():
@@ -62,11 +75,11 @@ def test_switch_off_hides_label():
     q = next(q for q in store.load_cached() if q.kind == "高考" and q.meta.get("year"))
     off = sh.render_canvas_block({"type": "question", "key": q.key,
                                   "x": 4, "y": 4, "w": 92}, show_source=False)
-    assert "p-src" not in off
+    assert sh.source_label(q) not in off, "关掉后不该出现出处"
     # 讲义级关、块级开 → 仍显示
     on = sh.render_canvas_block({"type": "question", "key": q.key, "showSource": True,
                                  "x": 4, "y": 4, "w": 92}, show_source=False)
-    assert "p-src" in on
+    assert f"（{sh.source_label(q)}）" in on
 
 
 def test_canvas_markdown_contains_label():
