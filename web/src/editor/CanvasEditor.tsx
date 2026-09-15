@@ -50,7 +50,7 @@ export default function CanvasEditor({ handoutQs }: { handoutQs: Q[] }) {
 
 
   // 存取与导出 → useHandoutIo
-  const { busy, res, err, saved, run, doSave, doLoad } = useHandoutIo({
+  const { busy, busySince, res, err, saved, run, doSave, doLoad } = useHandoutIo({
     pages, setPages, setCur, setSel, title, setTitle, name, setName,
     ratio, setRatio, withAns, setWithAns, titleFont, setTitleFont,
     bodyFont, setBodyFont, fits, showSource, setShowSource,
@@ -72,7 +72,7 @@ export default function CanvasEditor({ handoutQs }: { handoutQs: Q[] }) {
         titleFont={titleFont} setTitleFont={setTitleFont}
         bodyFont={bodyFont} setBodyFont={setBodyFont}
         showSource={showSource}
-        run={run} busy={busy} doSave={doSave} err={err} res={res}
+        run={run} busy={busy} busySince={busySince} doSave={doSave} err={err} res={res}
         canvasRef={canvasRef} aspect={aspect}
         pages={pages} cur={cur} setCur={setCur} setPages={setPages}
         blocks={blocks} sel={sel} setSel={setSel}

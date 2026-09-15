@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
 import { SCORE, SECTION_LABEL } from '@/lib/paper'
+import CompileOverlay, { LATEX_STAGES, SLIDEV_STAGES } from '@/app/CompileOverlay'
 
 export default function ExportPage({ init, pool, from, filters, onClose }: {
   init: Q[]; pool: Q[]; from: string
@@ -527,7 +528,15 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
           {/* 编译遮罩：**盖住整块预览区**。原先只有右上角一小行字，
               人会以为卡死了反复点。现在有秒表在跳、有进度条在动、
               还分阶段说清楚到哪一步了。 */}
-          {busy && <CompileOverlay since={busySince} label="正在编译 PDF" />}
+          {busy && (
+            <CompileOverlay since={busySince}
+              label={mode === 'slidev' ? '正在生成幻灯片讲义' : '正在编译 PDF'}
+              // 幻灯片讲义走 Slidev（起 Chromium）：阶段与耗时都和 xelatex 不同
+              stages={mode === 'slidev' ? SLIDEV_STAGES : LATEX_STAGES}
+              hint={mode === 'slidev'
+                ? '第一次要冷启动浏览器内核；页数越多越慢。中途不用重复点。'
+                : '两遍 xelatex，题越多越慢；中途不用重复点，编译完会自动出预览'} />
+          )}
           {res?.pdf_abs ? (
             <iframe key={res.pdf_abs}
               src={'/api/pdf?path=' + encodeURIComponent(res.name + '.pdf')}
@@ -547,47 +556,6 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
 }
 
 
-const COMPILE_STAGES: [number, string][] = [
-  [0,  '排版：把题目拼成 LaTeX 源文件'],
-  [3,  '第一遍编译：写辅助文件'],
-  [12, '第二遍编译：交叉引用与目录'],
-  [28, '收尾：生成 PDF'],
-]
-
-function CompileOverlay({ since, label }: { since: number; label: string }) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 100)
-    return () => clearInterval(t)
-  }, [])
-  const sec = Math.max(0, (now - since) / 1000)
-  // 取最后一个已达到的阶段
-  let stage = COMPILE_STAGES[0][1]
-  for (const [at, text] of COMPILE_STAGES) if (sec >= at) stage = text
-  return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center
-                    bg-surface/85 backdrop-blur-[2px] anim-fade-in">
-      <div className="w-[380px] max-w-[86%] rounded-2xl border border-border bg-surface
-                      px-6 py-5 shadow-xl anim-pop">
-        <div className="mb-3 flex items-center gap-2.5">
-          {/* 转圈：和进度条一起，一个表示"在动"，一个表示"到哪了" */}
-          <span className="inline-block h-4 w-4 shrink-0 rounded-full border-2
-                           border-brand-soft border-t-brand"
-            style={{ animation: 'spin .8s linear infinite' }} />
-          <span className="text-[13px] font-medium text-ink">{label}</span>
-          <span className="ml-auto font-mono text-[12px] tabular-nums text-ink-faint">
-            {sec.toFixed(1)}s
-          </span>
-        </div>
-        <div className="progress-track mb-3" />
-        <div className="text-[11.5px] text-ink-soft" key={stage}>{stage}</div>
-        <div className="mt-2 text-[10.5px] leading-relaxed text-ink-faint">
-          两遍 xelatex，题越多越慢；中途不用重复点，编译完会自动出预览
-        </div>
-      </div>
-    </div>
-  )
-}
 
 
 /* ══ 导出抽屉 ══════════════════════════════════════ */

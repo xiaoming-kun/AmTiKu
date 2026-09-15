@@ -8,9 +8,10 @@ import {
   CBlockView, blockFontSize, CB_TYPES, TITLE_FONTS, BODY_FONTS,
   DEFAULT_LH, type CBlock,
 } from '@/editor/shared'
+import CompileOverlay, { SLIDEV_STAGES } from '@/app/CompileOverlay'
 
 export default function CanvasStage({ title, setTitle, name, setName,
-  titleFont, setTitleFont, bodyFont, setBodyFont, run, busy, doSave, err, res,
+  titleFont, setTitleFont, bodyFont, setBodyFont, run, busy, busySince, doSave, err, res,
   canvasRef, aspect, pages, cur, setCur, setPages, blocks, sel, setSel,
   fits, overflowed, startDrag, measRef, probeRef, blockQs,
   addBlock, fontCss, showSource }: {
@@ -18,7 +19,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
   name: string; setName: Dispatch<SetStateAction<string>>
   titleFont: string; setTitleFont: Dispatch<SetStateAction<string>>
   bodyFont: string; setBodyFont: Dispatch<SetStateAction<string>>
-  run: () => void; busy: boolean; doSave: () => void
+  run: () => void; busy: boolean; busySince: number; doSave: () => void
   err: string; res: any
   canvasRef: MutableRefObject<HTMLDivElement | null>
   aspect: number
@@ -86,7 +87,13 @@ export default function CanvasStage({ title, setTitle, name, setName,
       </div>
 
       {/* 画布本体 */}
-      <div className="min-h-0 flex-1 overflow-auto bg-muted/40 p-5">
+      <div className="relative min-h-0 flex-1 overflow-auto bg-muted/40 p-5">
+        {/* 生成中：转圈 + 阶段清单 + 计时（等 30~60 秒，得让人知道在干嘛） */}
+        {busy && (
+          <CompileOverlay since={busySince} label="正在生成讲义 PDF"
+            stages={SLIDEV_STAGES}
+            hint="第一次导出要冷启动浏览器内核，会慢一些；页数越多越慢。中途不用重复点。" />
+        )}
         <style>{fontCss}</style>
         <div ref={canvasRef}
           onClick={() => setSel(null)}

@@ -36,6 +36,8 @@ export function useHandoutIo(params: {
           bodyFont, setBodyFont, fits, showSource, setShowSource } = params
 
   const [busy, setBusy] = useState(false)
+  // 生成开始的时间戳：进度浮层用它显示已用时间/当前阶段
+  const [busySince, setBusySince] = useState(0)
   const [res, setRes] = useState<any>(null)
   const [err, setErr] = useState('')
   const [saved, setSaved] = useState<any[]>([])
@@ -53,7 +55,7 @@ export function useHandoutIo(params: {
   const run = () => {
     const clean = serialize()
     if (!clean.some((p) => p.blocks.length)) { setErr('画布是空的'); return }
-    setBusy(true); setErr(''); setRes(null)
+    setBusy(true); setBusySince(Date.now()); setErr(''); setRes(null)
     send('/api/export/slidev-canvas', 'POST', {
       title, out: name, pages: clean, ratio, with_answers: withAns,
       compile: true, title_font: titleFont, body_font: bodyFont,
@@ -91,5 +93,5 @@ export function useHandoutIo(params: {
   const removeSaved = (n: string) =>
     api.deleteHandout(n).then(loadList).catch(reportErr)
 
-  return { busy, res, err, setErr, saved, loadList, run, doSave, doLoad, removeSaved }
+  return { busy, busySince, res, err, setErr, saved, loadList, run, doSave, doLoad, removeSaved }
 }
