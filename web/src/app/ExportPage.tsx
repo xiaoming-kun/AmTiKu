@@ -2,7 +2,7 @@
  *
  *  从 App.tsx 搬出来的（审查报告 CPLX-1：App 曾是全文件最大的组件）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
 import { SCORE, SECTION_LABEL } from '@/lib/paper'
