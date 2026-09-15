@@ -17,6 +17,20 @@
 #   ./启动.sh stop       全停
 
 cd "$(dirname "$0")" || exit 1
+
+# ── PROJECT PYTHON ────────────────────────────────────────────────
+# **项目自带的 Python。**
+#
+# 依赖（fastapi/uvicorn/pymupdf/numpy/pillow）装在项目内的 `.venv/`，
+# 不用系统或用户级的 site-packages —— 换台机器、或者系统 Python 升级了，
+# 这个项目照样能跑。`.venv` 不在就退回 `python3`（老行为），
+# 只是会依赖外面装了什么。
+if [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  PY="python3"
+fi
+
 PORT=8899
 export PATH="$HOME/.lmstudio/bin:$PATH"
 
@@ -55,7 +69,7 @@ start_web() {
   fi
   # 端口可能被上一个还没退干净的进程占着，等一等
   for _ in $(seq 1 20); do
-    python3 - <<'PY' 2>/dev/null && break
+    "$PY" - <<'PY' 2>/dev/null && break
 import socket, sys
 s = socket.socket()
 try:
@@ -67,12 +81,12 @@ PY
   done
   : > /tmp/amti_web.log          # 清空日志：新旧混在一起会看花眼
   if [ -n "$AMTI_HEADLESS" ]; then
-    nohup python3 -u -m amti.web.server --port $PORT >> /tmp/amti_web.log 2>&1 &
+    nohup "$PY" -u -m amti.web.server --port $PORT >> /tmp/amti_web.log 2>&1 &
     c_info "无头模式（不会自动开浏览器，也不会随页面退出）"
   else
     # `-u` 必须加：输出重定向到文件时 Python 会缓冲，
     # 不加的话日志要等进程结束才出现，等于实时看不了。
-    nohup python3 -u -m amti.web.server --port $PORT --open --exit-with-browser \
+    nohup "$PY" -u -m amti.web.server --port $PORT --open --exit-with-browser \
       >> /tmp/amti_web.log 2>&1 &
   fi
   # **轮询等它起来**，不要 sleep 固定秒数就下结论——
@@ -94,7 +108,7 @@ PY
 start_solve() {
   if solve_up; then c_ok "求解任务已在跑"; return; fi
   if ! lm_up; then c_bad "本地模型没起，先跑 ./启动.sh"; return; fi
-  nohup python3 -u -m amti.solve > /tmp/amti_solve.log 2>&1 &
+  nohup "$PY" -u -m amti.solve > /tmp/amti_solve.log 2>&1 &
   sleep 3
   if solve_up; then
     c_ok "求解任务已启动"
@@ -128,7 +142,7 @@ case "${1:-all}" in
     lm_up    && c_ok "本地模型  :1234"                 || c_bad "本地模型没跑"
     solve_up && c_ok "求解任务  在跑"                   || c_bad "求解任务没跑"
     echo
-    python3 - <<'PY' 2>/dev/null
+    "$PY" - <<'PY' 2>/dev/null
 import sys; sys.path.insert(0, '.')
 from amti import store
 qs = store.load_all()

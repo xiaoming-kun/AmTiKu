@@ -1,0 +1,13 @@
+# AmTiKu 的 Python 依赖。
+#
+# 装在项目内的 `.venv/`（**不是用户级 site-packages**），
+# 这样换台机器、或者系统 Python 升级了，项目都还能跑。
+#
+# 装： .venv/bin/python -m pip install --no-user -r requirements.txt
+# 版本是**照当前能跑的这份钉死的**——升版本前先跑 `python3 amti.py accept` 验一遍。
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+pillow==12.2.0
+numpy==2.4.6
+PyMuPDF==1.27.2.3
