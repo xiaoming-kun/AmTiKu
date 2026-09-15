@@ -165,6 +165,7 @@ AmTiKu/                     项目根
 
 ```bash
 python3 amti.py accept                       # 一条命令跑完四层验收（推荐）
+                                             #   ↑ 层③ 需要服务，它会自己按需起一个临时服务
 python3 测试/接口测试.py                      # 接口边界（14 条，不用起服务）
 python3 测试/讲义测试.py                      # 讲义转换/出处标签/选项图（10 条）
 python3 amti.py status / diff / verify       # 现状 / 存量改动 / 全库校验

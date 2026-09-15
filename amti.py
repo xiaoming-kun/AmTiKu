@@ -349,6 +349,48 @@ def cmd_audit(a) -> int:
     return 1 if keys else 0
 
 
+def _ensure_server(root: Path):
+    r"""层③ 要连服务（`web/check.mjs` 走 HTTP 取全库）。
+
+    ⚠️ 原来的坑：验收**不会自己起服务**，没起就必失败，
+    报的还是「✗ 未通过：端到端渲染」这种看不出原因的提示。
+    服务本身又会在页面关掉 25 秒后自动退出 —— 所以"别的都绿、就差层③"
+    是很容易踩到的。
+
+    现在：先探一下；没跑就**自己起一个**（跑完关掉），已经跑着就直接用。
+    """
+    import subprocess
+    import sys
+    import time
+    import urllib.request
+
+    url = "http://127.0.0.1:8899/api/facets"
+
+    def up() -> bool:
+        try:
+            with urllib.request.urlopen(url, timeout=3):
+                return True
+        except Exception:
+            return False
+
+    if up():
+        return None                          # 已经跑着，不动它
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "amti.web.server:app",
+         "--host", "127.0.0.1", "--port", "8899"],
+        cwd=str(root), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(40):                      # 最多等 20 秒（要读全库）
+        if up():
+            print("  （验收自己起了一个临时服务，跑完会关掉）")
+            return proc
+        if proc.poll() is not None:
+            print("  ⚠️ 临时服务没起来，层③ 会失败")
+            return None
+        time.sleep(0.5)
+    print("  ⚠️ 临时服务 20 秒没就绪")
+    return proc
+
+
 def cmd_accept(_a) -> int:
     r"""**一条命令跑完全部验收。**「过了」= 这个命令退出码 0。
 
@@ -367,6 +409,8 @@ def cmd_accept(_a) -> int:
     import sys as _s
     root = Path(__file__).resolve().parent
     fails: list[str] = []
+
+    temp_server = None
 
     def run(title: str, argv: list[str], grep: str | None = None) -> None:
         print("\n【%s】" % title)
@@ -400,7 +444,17 @@ def cmd_accept(_a) -> int:
         r"安全测试|✗")
     run("检查器自证", [_s.executable, "-m", "amti.conform", "--selftest"], r"通过|失败")
     run("规范审查", [_s.executable, "amti.py", "conform"], r"^共|全部规范")
-    run("端到端渲染", ["node", "web/check.mjs"], r"题目 |✓|✗|全部通过|未通过")
+    temp_server = _ensure_server(root)
+    try:
+        run("端到端渲染", ["node", "web/check.mjs"],
+            r"题目 |✓|✗|全部通过|未通过")
+    finally:
+        if temp_server is not None:
+            temp_server.terminate()
+            try:
+                temp_server.wait(timeout=10)
+            except Exception:
+                temp_server.kill()
     run("快照", [_s.executable, "amti.py", "diff"], r"内容变化|新增|删除|存量")
 
     print("\n" + "═" * 56)

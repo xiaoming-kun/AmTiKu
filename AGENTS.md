@@ -40,7 +40,7 @@ AmTiKu 验收      # 跑四层验收
 ### ⭐ 改完代码或数据**必须**验收
 
 ```bash
-python3 amti.py accept          # 四层全绿才算过（权威门槛）
+python3 amti.py accept          # 四层全绿才算过（权威门槛；层③ 要服务，它会自己起）
 python3 测试/接口测试.py         # 接口回归 14 项（不起服务）
 python3 测试/讲义测试.py         # 讲义/出处标签 6 项 + 前后端一致性
 ```
