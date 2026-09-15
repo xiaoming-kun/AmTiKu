@@ -40,7 +40,9 @@ AmTiKu 验收      # 跑四层验收
 ### ⭐ 改完代码或数据**必须**验收
 
 ```bash
-python3 amti.py accept
+python3 amti.py accept          # 四层全绿才算过（权威门槛）
+python3 测试/接口测试.py         # 接口回归 14 项（不起服务）
+python3 测试/讲义测试.py         # 讲义/出处标签 6 项 + 前后端一致性
 ```
 
 四层全绿才算过：
@@ -172,3 +174,51 @@ git log --oneline                            # 看历史
 
 > 数据文件的版本管理仍由项目自有机制负责（`amti.py snapshot` + `归档快照.json`），
 > git 主要管理**代码、配置和文档**。
+
+## 九、⭐ 代码审查约定（用户长期要求）
+
+> 用户的原话：**「后续的代码你做好审查」**。
+> 不是一次性任务，而是**每次改代码都要走的流程**。
+
+### 改动的固定流程
+
+```bash
+# 1. 改之前：说明方案（复杂改动先出计划），不要闷头写
+# 2. 改的过程中：一步一提交，别攒一大批
+git add -A && git commit -m "说明改了什么"
+
+# 3. 改完必须全绿（缺一不可）
+python3 amti.py accept                 # 项目自己的四层验收（权威门槛）
+python3 测试/接口测试.py                # 接口回归 14 项
+python3 测试/讲义测试.py                # 讲义/出处标签 6 项
+cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters   # 0 问题
+cd web && npm run build                # 构建通过
+# 4. 动了界面/导出 → 还要在浏览器里真跑一遍（改题库 → 加讲义 → 导出 PDF）
+```
+
+### 审查清单（两份报告就是清单本体）
+
+- 前端：`MiniMaxH3/_集成/前端代码审查报告.md`（依据 [front-review skill](https://github.com/Effeilo/claude-code-frontend-skills)）
+- 后端：`MiniMaxH3/_集成/后端代码审查报告.md`（依据 [fastapi-best-practices 18k★](https://github.com/zhanymkanov/fastapi-best-practices) + [wshobson/agents 39.7k★](https://github.com/wshobson/agents)）
+
+改完代码后**对着这两份清单自查**：新代码有没有踩同类问题
+（未使用的导入/声明、无 timeout 的子进程、无上界的 limit、静默吞异常、
+硬编码的魔法数字、巨型函数、`any`）。
+
+### 本项目的「反复踩过的坑」（新代码优先防这些）
+
+| 坑 | 表现 | 防法 |
+|---|---|---|
+| **预览与导出不一致** | 编辑器看着对，PDF 不一样 | 前后端成对的转换函数**必须同步改**（`web/src/lib/qlatex.ts` ↔ `amti/slidev_handout.py`），并有测试逐题比对 |
+| **HTML/markdown 的换行** | 公式不渲染、解答题挤成一段 | `<div>` 与内容之间**必须空行**；单换行要转硬换行 |
+| **构建成功 ≠ 渲染正确** | Slidev 静默失败，出空 PDF / 源码泄漏 | 必须看 PDF 文本层（`amti.py accept` 层③ 就是干这个的） |
+| **改完没重新构建前端** | 界面还是旧行为 | 改 `web/src` 后必须 `npm run build` 并重启服务 |
+| **一处漏 catch 就静默失败** | 界面表现成"没数据" | 统一走 `lib/api.ts` 的 `request()`；错误有全局提示条 |
+| **脚本/客户端的隐含前提** | 改了后端限制，把验收脚本打挂 | 改接口约束时**全仓搜调用点**（`grep -rn "limit="`） |
+
+### 提交信息要求
+
+- 说清**改了什么、为什么**，并在涉及功能时写明**验证方式**
+- 修 bug 时把**根因**写进去（例：「原来 Promise.all 3491 个 fetch 打满线程池」）
+- 一次提交一件事，便于 `git checkout` 回滚
+
