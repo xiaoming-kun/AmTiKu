@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Q, Facets, Base } from '@/lib/types'
+import type { Q, Base } from '@/lib/types'
 import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
 import { SCORE, SECTION_LABEL } from '@/lib/paper'
 import { DIFF_STARS } from '@/lib/display'
+import { useQuestionList } from '@/lib/useQuestionList'
 import { Flags, FLAG_KEYS, Chip, FacetMenu, Grip, useWidth, BaseRow } from '@/app/ui'
 import QuestionCard from '@/app/QuestionCard'
 import { Trash, DeleteModal } from '@/app/Trash'
@@ -82,12 +83,23 @@ const SORT_LABEL: Record<string, string> = {
 
 
 export default function App() {
-  const [facets, setFacets] = useState<Facets | null>(null)
+  // 列表数据与筛选 → useQuestionList
+  const {
+    facets, items, setItems, total, sel, setSel, loading, reload, setReload,
+    page, setPage, pageSize, setPageSize, pageInput, setPageInput, jumpPage, listRef,
+    q, setQ, type, setType, kind, setKind,
+    has, setHas, missing, setMissing, points, setPoints, diffs, setDiffs,
+    years, setYears, sort, setSort, openTopics, setOpenTopics,
+    selectMode, setSelectMode, checked, setChecked,
+    toggleYear, toggleHas, toggleMissing, togglePoint, toggleDiff,
+    togglePoints, toggleTopic, toggleCheck, exitSelect,
+    activeFilters, scopeName,
+  } = useQuestionList()
   const [base, setBase] = useState<Base | null>(null)
-  const [items, setItems] = useState<Q[]>([])
-  const [total, setTotal] = useState(0)
-  const [sel, setSel] = useState<Q | null>(null)
-  const [loading, setLoading] = useState(false)
+  // 顶栏的「存量未改动」状态（与 facets 一起随 reload 刷新）
+  useEffect(() => {
+    api.baseline().then(setBase).catch(reportErr)
+  }, [reload])
   const [tab, setTab] = useState<'detail' | 'tex' | 'paper' | 'handout' | 'stats' | 'changes' | 'trash'>('detail')
   const [handoutN, setHandoutN] = useState(0)
   // 侧边栏显示「已有 N 份讲义」
@@ -95,43 +107,7 @@ export default function App() {
     .catch(() => {}) }, [tab])
   const [showExport, setShowExport] = useState(false)
   const [showIngest, setShowIngest] = useState(false)
-  const [reload, setReload] = useState(0)
-  // 分页。题多了以后一屏铺 200 条没法看，按页翻才找得到东西。
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
-  const [pageInput, setPageInput] = useState('1')
-  const listRef = useRef<HTMLDivElement | null>(null)
-  const jumpPage = () => {
-    const max = Math.max(1, Math.ceil(total / pageSize))
-    const n = Math.min(max, Math.max(1, parseInt(pageInput, 10) || 1))
-    setPage(n); setPageInput(String(n))
-    listRef.current?.scrollTo(0, 0)
-  }
 
-  const [q, setQ] = useState('')
-  const [type, setType] = useState('')
-  const [kind, setKind] = useState('')
-  const [has, setHas] = useState<string[]>([])
-  // **缺什么**。后端 `missing` 是"全都缺"的语义，所以
-  // `missing=答案,解析` 正好是「没解析也没答案」——最常用的一个视角：
-  // 这些就是还没做的题。
-  const [missing, setMissing] = useState<string[]>([])
-  const [points, setPoints] = useState<string[]>([])
-  const [diffs, setDiffs] = useState<string[]>([])
-  const [openTopics, setOpenTopics] = useState<Set<string>>(new Set())
-  // 排序：按**录入时间**。库里没有入库时间戳，但 `append` 只追加，
-  // 所以文件里的先后顺序就是录入先后——后端给每题算了 `seq`。
-  // 难度序：**「这个考点从简单到难排一遍」**是最常用的复习用法，
-  // 所以单列两个方向（`diff` 易→难、`diff2` 难→易）。
-  const [sort, setSort] = useState<'used' | 'new' | 'old' | 'solved' | 'diff' | 'diff2' | ''>('used')
-  const [years, setYears] = useState<string[]>([])
-  const toggleYear = (v: string) =>
-    setYears((xs) => (xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]))
-
-  // 选定模式**默认开启**——绝大多数操作都是「挑几道题加进卷子」，
-  // 默认开着省一次点击。但不预先勾选任何题：**选什么由你决定**。
-  const [selectMode, setSelectMode] = useState(true)
-  const [checked, setChecked] = useState<Set<string>>(new Set())
   // 三栏宽度可拖。默认收窄了列表栏——原来 336px 挤掉了主区（详情/预览）。
   // 左栏是**考点树**——名字看不全就没法用（「一、集合与逻辑」被截成
   // 「一、集…」过）。所以默认给到 236，而不是原来的 186。
@@ -142,27 +118,6 @@ export default function App() {
 
   // 从详情点了考点跳过来时，在列表头上说明一句「现在在看什么」
   const [findNote, setFindNote] = useState('')
-  /** 当前选中的这批考点，是不是**正好等于**某一章／某一节？
-   *
-   *  是的话表头就报那一章的名字（「章 · 四、导数」），而不是干巴巴的
-   *  「考点 · 19 个」——用户点的是章节，就该看到章节名。 */
-  const scopeName = useMemo(() => {
-    if (!points.length || !facets?.points) return ''
-    const cur = new Set(points)
-    const groups = groupTree(facets.points || [])
-    for (const g of groups) {
-      const ids = g.sections.flatMap((x) => x.points.map((p: any) => p.value))
-      if (ids.length === cur.size && ids.every((i) => cur.has(i))) return `章 · ${g.topic}`
-    }
-    for (const g of groups) {
-      for (const sec of g.sections) {
-        const ids = sec.points.map((p: any) => p.value)
-        if (ids.length === cur.size && ids.every((i) => cur.has(i)))
-          return `节 · ${sec.section}`
-      }
-    }
-    return ''
-  }, [points, facets])
   const [paperMap, setPaperMap] = useState<Map<string, Q>>(new Map())
   /** 讲义选取的题（与卷子分开收集）。
    *
@@ -235,31 +190,6 @@ export default function App() {
   const removeFromPaper = (k: string) =>
     setPaperMap((m) => { const n = new Map(m); n.delete(k); return n })
 
-  useEffect(() => {
-    setLoading(true)
-    api.list({
-      q, type, kind, has: has.join(','), missing: missing.join(','),
-      point: points.join(','), difficulty: diffs.join(','),
-      year: years.join(','), sort,
-      limit: String(pageSize), offset: String((page - 1) * pageSize),
-    })
-      .then((d) => {
-        setItems(d.items); setTotal(d.total)
-        // 删题/改筛选后当前页可能超界，拉回来
-        const maxPage = Math.max(1, Math.ceil(d.total / pageSize))
-        if (page > maxPage) setPage(maxPage)
-        setSel((cur: Q | null) =>
-          cur && d.items.some((x: Q) => x.key === cur.key) ? cur : (d.items[0] ?? null))
-      })
-      .catch(reportErr)
-      .finally(() => setLoading(false))
-  }, [q, type, kind, has, missing, points, diffs, years, sort, page, pageSize, reload])
-
-  useEffect(() => { setPageInput(String(page)) }, [page])
-
-  // 改了筛选条件就**回到第一页**——不然会停在一个空页上
-  useEffect(() => { setPage(1) },
-    [q, type, kind, has, missing, points, diffs, years, sort, pageSize])
 
   // 手动改筛选（不是从详情点考点跳过来）就把那句说明收掉
   useEffect(() => { setFindNote('') }, [q, type, kind, has, missing, diffs, years])
@@ -286,10 +216,6 @@ export default function App() {
     }
   }, [])
 
-  useEffect(() => {
-    api.facets().then(setFacets).catch(reportErr)
-    api.baseline().then(setBase).catch(reportErr)
-  }, [reload])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -304,17 +230,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const toggleMissing = (k: string) =>
-    setMissing((xs) => (xs.includes(k) ? xs.filter((x) => x !== k) : [...xs, k]))
-  const toggleHas = (k: string) =>
-    setHas((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]))
-  const toggle = (set: (f: (s: string[]) => string[]) => void) => (k: string) =>
-    set((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]))
-  const togglePoint = toggle(setPoints)
-  const toggleCheck = (k: string) => setChecked((s) => {
-    const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n
-  })
-  const exitSelect = () => { setSelectMode(false); setChecked(new Set()) }
   /** 把选中的题一次性加进卷子 */
   const addChecked = () => {
     setPaperMap((m) => {
@@ -348,25 +263,6 @@ export default function App() {
    *  为什么要这个：复习是**按章**走的——「导数这一章给我拉出来」。
    *  只有单个考点可点的话，一章十几个考点得点十几下。
    *  再点一次＝取消这一章（只取消本章的，不动别的章已选的）。 */
-  const togglePoints = (ids: string[]) => setPoints((cur) => {
-    const allOn = ids.every((i) => cur.includes(i))
-    const rest = cur.filter((i) => !ids.includes(i))
-    return allOn ? rest : [...rest, ...ids.filter((i) => !cur.includes(i))]
-  })
-
-  const toggleTopic = (t: string) => setOpenTopics((s) => {
-    const n = new Set(s); n.has(t) ? n.delete(t) : n.add(t); return n
-  })
-  const toggleDiff = toggle(setDiffs)
-  // 选中的考点所在大类自动展开，否则选完就看不见自己选了什么
-  useEffect(() => {
-    if (!points.length || !facets) return
-    const hit = new Set(facets.points.filter((p) => points.includes(p.value)).map((p) => p.topic))
-    if (!hit.size) return
-    setOpenTopics((s) => new Set([...s, ...hit]))
-  }, [points, facets])
-
-  const activeFilters = has.length + points.length + diffs.length + years.length + (type ? 1 : 0) + (kind ? 1 : 0)
 
   return (
     <div className="flex h-full flex-col">
