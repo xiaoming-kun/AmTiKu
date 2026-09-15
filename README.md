@@ -410,6 +410,45 @@ AmTiKu 启动
 
 ---
 
+## 八、版本管理（git）
+
+仓库是**纯本地**的（没有远端），代码 + 题库 + 配图都在里面。
+
+```bash
+git log --oneline                 # 做过什么（当前 18 个提交）
+git show v1.1 --stat              # 某个版本改了哪些文件
+git tag -n1                       # 稳定点标签
+git status                        # 当前有没有没提交的改动
+git checkout -- web/src/App.tsx   # 改坏了，回滚**单个文件**
+git checkout v1.0 -- web/src      # 回滚整个目录到 v1.0 的样子
+```
+
+| 标签 | 含义 |
+|---|---|
+| `v1.0` | 画布讲义系统上线 + 前后端结构重构完成 + 引入 git |
+| `v1.1` | 讲义完善（进度动画 / 高考题出处 / 选项图 / 稳定性 / 测试 / 清理） |
+
+**改了东西就提交**，别攒着：
+
+```bash
+git add -A && git commit -m "说明改了什么"
+```
+
+### 想要异地备份（推荐偶尔做一次）
+
+git 历史可以打包成**一个文件**，拷到网盘/移动硬盘即可：
+
+```bash
+git bundle create ~/Desktop/AmTiKu-v1.1.bundle --all     # 约 190MB，含全部历史
+# 恢复：git clone ~/Desktop/AmTiKu-v1.1.bundle AmTiKu
+```
+
+> 注意分工：**git 管"代码和文件能不能回滚"**；
+> 题库内容的正式基线仍走 `python3 amti.py snapshot` + `归档快照.json`
+> （`amti.py diff` 靠它判断"存量有没有被改动"）。
+
+---
+
 ## 八、几条硬规矩（改代码前先读）
 
 1. **题目有问题就改题目，不要改程序。** 数据的事在数据上解决。
