@@ -3,7 +3,9 @@ import { renderBlocks } from '@/lib/render'
 import type { Q, Facets, Base } from '@/lib/types'
 import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
 import { SCORE, SECTION_LABEL } from '@/lib/paper'
-import { Flags, Panel, FLAG_KEYS } from '@/app/ui'
+import { Flags, Panel, FLAG_KEYS, Chip, FacetMenu, Grip, useWidth } from '@/app/ui'
+import QuestionCard from '@/app/QuestionCard'
+import { Trash, DeleteModal } from '@/app/Trash'
 import CanvasEditor from '@/editor/CanvasEditor'
 import ExportPage from '@/app/ExportPage'
 import IngestDrawer from '@/app/IngestDrawer'
@@ -29,68 +31,9 @@ function BaseRow({ label, n, hint, tone }: {
   )
 }
 
-function Chip({ on, onClick, children, n }: any) {
-  return (
-    <button onClick={onClick}
-      className={`rounded-lg border px-2 py-1 text-[12px] transition-colors ${
-        on ? 'border-brand/30 bg-brand-soft font-medium text-brand-ink'
-           : 'border-border bg-surface text-ink-soft hover:bg-muted'}`}>
-      {children}
-      {n != null && <span className={`ml-1 text-[10px] ${on ? 'text-brand-ink/70' : 'text-ink-faint'}`}>{n}</span>}
-    </button>
-  )
-}
 
 /* ══ 筛选条上的一格 ════════════════════════════════ */
 
-/** 一个筛选维度：平时是按钮，点开是面板。
- *
- *  为什么不做成常驻列表：维度有五个（类别/年份/题型/难度/只看有），
- *  每个都铺开会把左边塞满，考点树就没地方了——而**考点才是总纲**。
- *  收成一格一格，谁选中了谁亮起来，一眼看得出当前筛了什么。 */
-function FacetMenu({ label, summary, active, onClear, children, wide }: {
-  label: string; summary?: React.ReactNode; active?: boolean
-  onClear?: () => void; children: React.ReactNode; wide?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const box = useRef<HTMLDivElement>(null)
-  // 点外面收起。不做成模态——筛选时经常要一边点一边看列表
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [open])
-  return (
-    <div ref={box} className="relative">
-      <button onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-1 rounded-lg border px-2 py-[3px] text-[11.5px]
-                    transition-colors ${active
-                      ? 'border-brand/40 bg-brand-soft font-medium text-brand-ink'
-                      : 'border-border bg-surface text-ink-soft hover:bg-muted'}`}>
-        <span className="text-ink-faint">{label}</span>
-        {summary}
-        <span className="text-[9px] text-ink-faint">{open ? '▴' : '▾'}</span>
-      </button>
-      {open && (
-        <div className={`pop absolute left-0 top-[calc(100%+4px)] z-40 max-h-[380px] overflow-y-auto
-                         rounded-xl border border-border bg-surface p-2.5 shadow-lg
-                         ${wide ? 'w-[420px]' : 'w-[248px]'}`}>
-          {children}
-          {active && onClear && (
-            <button onClick={() => { onClear(); setOpen(false) }}
-              className="mt-2 w-full rounded-md border border-border bg-bg py-1 text-[11px]
-                         text-ink-faint hover:border-warn/40 hover:text-warn">
-              清除这一项
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 /* ══ 补解析 ════════════════════════════════════════ */
 
@@ -210,352 +153,14 @@ function SolutionEditor({ q, onSaved, onCancel }: {
 
 /* ══ 删除弹窗 ══════════════════════════════════════ */
 
-/** 删题的**弹窗**。
- *
- *  用户的要求：「删除操作做成弹窗，这样可操作性比较强」，
- *  并且**原因做成选项**——删题是常态（高考不考的题要清掉），
- *  每条都该有原因；自由文本会写成五花八门，事后统计不出来。
- *
- *  弹窗里一次看全四件事：删的是哪道题、为什么删、口令、删完去哪。
- *  原先挤在详情页底部那一条里，字小、容易被忽略。 */
-function DeleteModal({ qs, keys, onCancel, onConfirm }: {
-  qs: Q[]
-  keys?: string[]              // 批量删时给题号（列表里可能没有完整对象）
-  onCancel: () => void
-  onConfirm: (reason: string, note: string, password: string) => Promise<void>
-}) {
-  const [reasons, setReasons] = useState<string[]>([])
-  const [reason, setReason] = useState('')
-  const [note] = useState('')
-  const [pw, setPw] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const n = keys?.length || qs.length
-
-  useEffect(() => {
-    // 默认选中第一条「现在的高考不考了」——绝大多数删除都是这个原因
-    api.trashReasons().then((d) => {
-      const xs = d.items || []
-      setReasons(xs)
-      setReason((cur) => cur || xs[0] || '')
-    }).catch(() => {})
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [])
-
-  const ok = () => {
-    if (!reason) { setErr('先选一个删除原因'); return }
-    if (!pw.trim()) { setErr('要填口令'); return }
-    setBusy(true); setErr('')
-    onConfirm(reason + (note.trim() ? '：' + note.trim() : ''), '', pw)
-      .catch((e: any) => setErr(String(e.message || e)))
-      .finally(() => setBusy(false))
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/35 p-4 anim-fade-in"
-      onClick={onCancel}>
-      <div className="w-[540px] max-w-full overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl anim-pop"
-        onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <span className="text-[14px] font-semibold text-warn">
-            {n > 1 ? `删除这 ${n} 道题` : '删除这道题'}
-          </span>
-          <span className="text-[11.5px] text-ink-faint">删掉的题会移进回收站，可以恢复</span>
-          <button onClick={onCancel}
-            className="ml-auto text-[18px] leading-none text-ink-faint hover:text-ink">×</button>
-        </div>
-
-        <div className="px-4 py-3">
-          {/* 删的是哪些题——必须让人看清楚，别删错 */}
-          {n === 1 && qs[0] ? (
-            <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2">
-              <div className="line-clamp-3 text-[12.5px] text-ink">{qs[0].stem}</div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10.5px] text-ink-faint">
-                <span className="font-mono">{qs[0].key}</span>
-                <span>{qs[0].type_label}</span>
-                {qs[0].point_titles?.[0] && <span>{qs[0].point_titles[0]}</span>}
-              </div>
-            </div>
-          ) : (
-            <div className="mb-3 rounded-lg border border-warn/35 bg-warn-soft/40 px-3 py-2">
-              <div className="text-[13px] font-medium text-warn">
-                要删 {n} 道题
-              </div>
-              <div className="mt-1 max-h-[132px] space-y-0.5 overflow-y-auto">
-                {(keys || []).slice(0, 40).map((k) => (
-                  <div key={k} className="truncate font-mono text-[10.5px] text-ink-soft">{k}</div>
-                ))}
-                {n > 40 && <div className="text-[10.5px] text-ink-faint">… 其余 {n - 40} 道</div>}
-              </div>
-            </div>
-          )}
-
-          <div className="mb-1.5 text-[11.5px] font-semibold text-ink-faint">
-            删除原因 <span className="font-normal">（必选）</span>
-          </div>
-          <div className="mb-3 space-y-1">
-            {reasons.map((r) => (
-              <label key={r}
-                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5
-                            text-[12.5px] transition-colors ${
-                  reason === r ? 'border-warn/45 bg-warn-soft font-medium text-warn'
-                               : 'border-border bg-bg text-ink-soft hover:bg-muted'}`}>
-                <input type="radio" name="del-reason" checked={reason === r}
-                  onChange={() => { setReason(r); setErr('') }}
-                  className="accent-[var(--color-warn)]" />
-                {r}
-              </label>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[11.5px] text-ink-faint">口令</span>
-            <input type="password" value={pw} autoFocus
-              onChange={(e) => { setPw(e.target.value); setErr('') }}
-              onKeyDown={(e) => { if (e.key === 'Enter') ok() }}
-              placeholder="删除口令"
-              className="w-[120px] rounded-lg border border-border bg-bg px-2.5 py-1.5
-                         text-[12.5px] outline-none focus:border-warn/50" />
-            <span className="text-[10.5px] text-ink-faint">防误点，不是防人</span>
-          </div>
-
-          {err && <div className="mt-2 text-[11.5px] text-warn">✗ {err}</div>}
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-border bg-muted/40 px-4 py-3">
-          <button onClick={onCancel}
-            className="press rounded-lg border border-border bg-surface px-3 py-1.5
-                       text-[12.5px] text-ink-soft hover:bg-muted">取消</button>
-          <button onClick={ok} disabled={busy || !reason || !pw.trim()}
-            className="press rounded-lg bg-warn px-3.5 py-1.5 text-[12.5px] font-medium
-                       text-white disabled:opacity-40">
-            {busy ? '删除中…' : n > 1 ? `确认删除 ${n} 道` : '确认删除'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 
 /* ══ 回收站 ════════════════════════════════════════ */
 
-/** 回收站。**删除的题放这儿，随时能放回去。**
- *
- *  为什么单独一个地方：用户要求"删掉的题放在另外的位置，万一误删可以恢复"。
- *  所以删除动作要**看得见去处**——删完能立刻在这儿找到，而不是凭空消失。
- *  真正的「清空」是唯一不可逆的操作，必须二次确认。 */
-function Trash({ onChanged }: { onChanged: () => void }) {
-  const [items, setItems] = useState<any[]>([])
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [err, setErr] = useState('')
-  const [surePurge, setSurePurge] = useState(false)
-  const [pw, setPw] = useState('')          // 清空回收站的口令（不可逆）
-
-  const load = () => api.trashList().then((d) => setItems(d.items || [])).catch(() => {})
-  useEffect(() => { load() }, [])
-
-  const restore = (keys: string[]) => {
-    setBusy(true); setErr(''); setMsg('')
-    api.trashRestore(keys)
-      .then((d) => { setMsg(`已恢复 ${d.restored.length} 道`); load(); onChanged() })
-      .catch((e) => setErr(String(e.message || e))).finally(() => setBusy(false))
-  }
-  const purge = (keys: string[]) => {
-    setBusy(true); setErr(''); setMsg('')
-    api.trashPurge(keys, pw)
-      .then((d) => { setMsg(`已永久删除 ${d.purged} 道（不可恢复）`)
-                     setSurePurge(false); setPw(''); load() })
-      .catch((e) => setErr(String(e.message || e))).finally(() => setBusy(false))
-  }
-
-  return (
-    <div className="h-full overflow-y-auto px-4 py-3">
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-[11.5px]">
-        <span className="font-medium text-ink">{items.length} 道</span>
-        <span className="text-ink-faint">删除的题留在这里，随时能放回去</span>
-        {msg && <span className="text-has">{msg}</span>}
-        {err && <span className="text-warn">✗ {err}</span>}
-        {items.length > 0 && (
-          <span className="ml-auto inline-flex gap-1">
-            <button disabled={busy} onClick={() => restore(items.map((x) => x.key))}
-              className="press rounded-md border border-brand/40 bg-brand-soft px-2 py-[3px]
-                         font-medium text-brand-ink hover:bg-brand-soft/70 disabled:opacity-40">
-              全部恢复
-            </button>
-            {surePurge ? (
-              <span className="inline-flex items-center gap-1">
-                <input type="password" value={pw} autoFocus
-                  onChange={(e) => setPw(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') purge([]) }}
-                  placeholder="口令"
-                  className="w-[76px] rounded-md border border-warn/40 bg-bg px-1.5 py-[2px]
-                             text-[11px] outline-none" />
-                <button disabled={busy} onClick={() => purge([])}
-                  className="press rounded-md border border-warn/50 bg-warn-soft px-2 py-[3px]
-                             font-medium text-warn disabled:opacity-40">
-                  确认永久删除 {items.length} 道
-                </button>
-              </span>
-            ) : (
-              <button onClick={() => setSurePurge(true)} onMouseLeave={() => setSurePurge(false)}
-                className="press rounded-md border border-border px-2 py-[3px] text-ink-faint
-                           hover:border-warn/40 hover:text-warn">
-                清空回收站
-              </button>
-            )}
-          </span>
-        )}
-      </div>
-
-      {items.length === 0 ? (
-        <div className="flex h-[60%] flex-col items-center justify-center gap-2 text-[12.5px] text-ink-faint">
-          <span>回收站是空的</span>
-          <span className="text-[11.5px]">在题目详情里点「删除」，题目会移到这里</span>
-        </div>
-      ) : (
-        <ul className="anim-stagger space-y-1.5">
-          {items.map((x) => (
-            <li key={x.key}
-              className="flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] text-ink">
-                  {x.stem || x.key}
-                </span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10.5px] text-ink-faint">
-                  <span className="font-mono">{x.key}</span>
-                  <span>删于 {x.deleted_at}</span>
-                  {x.reason && <span className="text-warn">原因：{x.reason}</span>}
-                  <span className={x.has_solution ? 'text-has' : ''}>
-                    {x.has_solution ? '✓解析' : '✗解析'}
-                  </span>
-                </span>
-              </span>
-              <span className="flex shrink-0 gap-1">
-                <button disabled={busy} onClick={() => restore([x.key])}
-                  className="press rounded-md border border-brand/40 bg-brand-soft px-2 py-[3px]
-                             text-[11px] font-medium text-brand-ink hover:bg-brand-soft/70
-                             disabled:opacity-40">
-                  恢复
-                </button>
-                <button disabled={busy} onClick={() => { setSurePurge(true); setPw('') }}
-                  title="永久删除需要口令；先在上面输入口令再点"
-                  className="press rounded-md border border-border px-2 py-[3px] text-[11px]
-                             text-ink-faint hover:border-warn/40 hover:text-warn disabled:opacity-40">
-                  ✕
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
 
 
 /* ══ 编译遮罩 ══════════════════════════════════════ */
 
-/** 编译期间盖在预览区上的**进度遮罩**。
- *
- *  为什么值得单独做：一次导出要跑两遍 `xelatex`，几十秒很正常。
- *  原先只有按钮上四个字「编译中…」，人会以为卡死了，反复点。
- *
- *  三条设计取舍：
- *  ① **不假装知道百分比**。xelatex 的耗时取决于题量、图、宏包，
- *     估不准。所以走不定长进度条 + 秒表，如实说"还在动、动了多久"。
- *  ② **分阶段报**。按经验把等待切成几段报出来（排版 → 第 1 遍 → 第 2 遍），
- *     让人知道"现在到哪一步了"，而不是一个黑盒。
- *  ③ **秒表要动**。数字每 100ms 跳一次，这是"进程还活着"最直接的证据。 */
-function Card({ q, active, inPaper, inHandout, selectMode, checked,
-                onOpen, onAdd, onAddHandout, onToggle }: {
-  q: Q; active: boolean; inPaper: boolean; inHandout: boolean
-  selectMode: boolean; checked: boolean
-  onOpen: () => void; onAdd: () => void; onAddHandout: () => void; onToggle: () => void
-}) {
-  /**
-   * 点卡片：**详情永远跟着走**，选定模式下再顺带勾选。
-   *
-   * 早先是 `selectMode ? onToggle : onOpen` —— 选定模式一开（现在是默认），
-   * 点卡片就只切勾选、右侧详情纹丝不动，看起来像"点了没反应"。
-   * 勾选和看题是两件事，不该互斥。
-   */
-  const click = () => {
-    onOpen()
-    if (selectMode) onToggle()
-  }
-  return (
-    <div onClick={click}
-      className={`group flex cursor-pointer gap-2.5 rounded-[var(--radius-card)] border px-3 py-2
-                  transition-all ${
-        selectMode && checked ? 'border-brand bg-brand-soft/50 ring-1 ring-brand/30'
-        : active ? 'border-brand/40 bg-brand-soft/40'
-                 : 'border-border bg-surface hover:border-brand/25 hover:bg-muted/50'}`}>
-      {selectMode && (
-        <span className={`mt-[3px] flex h-[15px] w-[15px] shrink-0 items-center justify-center
-                          rounded border text-[10px] leading-none transition-colors ${
-          checked ? 'border-brand bg-brand text-white' : 'border-border bg-surface text-transparent'}`}>
-          ✓
-        </span>
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-center gap-1.5">
-          <span className="rounded bg-muted px-1.5 py-[1px] text-[10.5px] text-ink-soft">{q.type_label}</span>
-          <span className={`rounded px-1.5 py-[1px] text-[10.5px] ${
-            q.kind === '高考' ? 'bg-brand text-white' : 'bg-muted text-ink-soft'}`}>{q.kind}</span>
-          <Flags flags={q.flags} />
-          {/* 使用频次：导出过（试卷/讲义）就标出来 —— 高频题=经典题 */}
-          {!!q.used && (
-            <span title={`已被导出 ${q.used} 次`}
-              className="rounded bg-muted px-1.5 py-[1px] text-[10.5px] tabular-nums text-ink-soft">
-              🔥{q.used}
-            </span>
-          )}
-          {/* 单题按钮：**选定模式下也显示** ——
-              选定模式是默认开启的，如果只在非选定模式显示，老师
-              根本看不到这两个按钮（实测发现）。 */}
-          {(
-            <span className="ml-auto flex items-center gap-1">
-              {/* 加入卷子 */}
-              <button onClick={(e) => { e.stopPropagation(); onAdd() }}
-                title={inPaper ? '已在卷子里' : '加入卷子'}
-                className={`flex h-5 items-center justify-center rounded-md border px-1.5 text-[11px]
-                            leading-none transition-colors ${
-                  inPaper ? 'border-has/40 bg-has-soft text-has'
-                          : 'border-border text-ink-faint opacity-0 group-hover:opacity-100 hover:border-brand/40 hover:text-brand-ink'}`}>
-                {inPaper ? '✓卷' : '+卷'}
-              </button>
-              {/* 加入讲义 */}
-              <button onClick={(e) => { e.stopPropagation(); onAddHandout() }}
-                title={inHandout ? '已在讲义里' : '加入讲义'}
-                className={`flex h-5 items-center justify-center rounded-md border px-1.5 text-[11px]
-                            leading-none transition-colors ${
-                  inHandout ? 'border-brand/40 bg-brand-soft text-brand-ink'
-                            : 'border-border text-ink-faint opacity-0 group-hover:opacity-100 hover:border-brand/40 hover:text-brand-ink'}`}>
-                {inHandout ? '✓讲' : '+讲'}
-              </button>
-            </span>
-          )}
-          {selectMode && inPaper && (
-            <span className="ml-auto shrink-0 text-[10px] text-has">已在卷子</span>
-          )}
-        </div>
-        {/* **两行**而不是三行。列表是用来"扫"的，扫的是题干开头和考点；
-            想看全就点进去。三行一屏只放得下四五道，翻页太勤。 */}
-        <div className="q-stem line-clamp-2 text-ink">{renderBlocks(q.blocks?.stem)}</div>
-        <div className="mt-1 truncate text-[11px] text-ink-faint">
-          {q.meta.source_label || q.meta.book}
-          {q.point_titles.length > 0 && (
-            <span className="ml-2 font-semibold text-ink-soft">· {q.point_titles[0]}{q.point_titles.length > 1 ? ` 等 ${q.point_titles.length} 个考点` : ''}</span>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 /* ══ 详情 ══════════════════════════════════════════ */
 
@@ -1020,50 +625,7 @@ function groupTree<T extends { topic: string; section: string }>(pts: T[]) {
 /* ══ 录入抽屉 ══════════════════════════════════════ */
 
 
-/** 拖动分栏边界。宽度存 localStorage，下次打开还是你调好的比例。 */
-function Grip({ width, setWidth, min, max }: {
-  width: number; setWidth: (w: number) => void; min: number; max: number
-}) {
-  const start = useRef({ x: 0, w: 0 })
-  return (
-    <div
-      onPointerDown={(e) => {
-        e.preventDefault()
-        start.current = { x: e.clientX, w: width }
-        const move = (ev: PointerEvent) => {
-          const w = start.current.w + (ev.clientX - start.current.x)
-          setWidth(Math.max(min, Math.min(max, w)))
-        }
-        const up = () => {
-          window.removeEventListener('pointermove', move)
-          window.removeEventListener('pointerup', up)
-          document.body.style.cursor = ''
-          document.body.style.userSelect = ''
-        }
-        window.addEventListener('pointermove', move)
-        window.addEventListener('pointerup', up)
-        document.body.style.cursor = 'col-resize'
-        document.body.style.userSelect = 'none'
-      }}
-      title="拖动调整栏宽"
-      className="group relative w-[5px] shrink-0 cursor-col-resize bg-border/50 transition-colors
-                 hover:bg-brand/50 active:bg-brand"
-    >
-      <span className="absolute left-1/2 top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2
-                       rounded-full bg-ink-faint/30 group-hover:bg-white/70" />
-    </div>
-  )
-}
 
-/** 栏宽：带 localStorage 记忆 */
-function useWidth(key: string, init: number, min: number, max: number) {
-  const [w, setW] = useState(() => {
-    const v = Number(localStorage.getItem(key))
-    return v >= min && v <= max ? v : init
-  })
-  useEffect(() => { localStorage.setItem(key, String(w)) }, [key, w])
-  return [w, setW] as const
-}
 
 /* ══ 统计 ══════════════════════════════════════════ */
 
@@ -2024,7 +1586,7 @@ export default function App() {
             className="anim-stagger min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5"
             ref={(el) => { listRef.current = el }}>
             {items.map((it) => (
-              <Card key={it.key} q={it} active={sel?.key === it.key}
+              <QuestionCard key={it.key} q={it} active={sel?.key === it.key}
                 inPaper={paperMap.has(it.key)}
                 inHandout={handoutMap.has(it.key)}
                 selectMode={selectMode} checked={checked.has(it.key)}
