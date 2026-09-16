@@ -821,6 +821,13 @@ def parse_answer_table(text: str) -> dict[str, str]:
         nums = re.findall(r"\d{1,2}", line)
         if len(nums) < 2:
             continue
+        # **题号必须互不相同、而且在合理范围内。**
+        # 不加这条，选项行会被当成答案表——实测深圳中学的解析里
+        # `A。1-i  B。1+i  C。2i  D。2-2i` 被读出 ['1','1','2','2','2']，
+        # 于是第 1 题的答案被贴成了 D（正确答案是 A）。
+        # 错答案比没答案危害大得多，所以这里宁可漏认。
+        if len(set(nums)) != len(nums) or max(int(x) for x in nums) > 30:
+            continue
         # 答案行可能隔着一两行（实测中间夹着 `--- | --- |` 分隔行），
         # 所以往下找三行，跳过纯分隔行再比个数。
         for j in range(i + 1, min(i + 4, len(lines))):
@@ -1157,6 +1164,17 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
         if unbalanced(sol):
             sol = ""
         if qtype in ("single_choice", "multi_choice"):
+            # **卷面解析里写了「故选 X」就以它为准。**
+            # 速查表是 OCR 出来的、会认错行（实测深圳中学第 1 题的答案被贴成 D，
+            # 而卷面解析白纸黑字写着选 A）；卷面自己的话最权威。
+            # 只在"形状对得上"时覆盖：单选认 1 个字母，多选认 ≥2 个——
+            # 多选题解析里冒出来的单个字母多半是别处的，不敢用。
+            m = re.search(r"(?:故选|答案为|答案是)\s*\$?\s*([A-D]{1,4})", sol)
+            if m:
+                good = (qtype == "multi_choice" and len(m.group(1)) >= 2) or \
+                       (qtype == "single_choice" and len(m.group(1)) == 1)
+                if good:
+                    ans = m.group(1)
             stem = re.sub(r"\\paren\s*\[[^\]]*\]\s*$", "", stem).rstrip()
             stem += "\\paren[%s]" % ans
         elif qtype == "fill_in_blank":
