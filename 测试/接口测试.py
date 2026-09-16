@@ -34,10 +34,16 @@ client = TestClient(app)
 # ── 列表与分页边界 ────────────────────────────────────────────
 
 def test_list_ok():
+    """⚠️ 这里断言的是**下界**，不是等于 17249。
+
+    库是会长的——录一份卷子就多十几道（`amti.record` 一次入库 18 道）。
+    写死数字的话，**每录一次题这个测试就红一次**，而红的原因不是接口坏了。
+    真正该盯的是「存量有没有被改」，那是 `test_stats_and_baseline` 的活。
+    """
     r = client.get("/api/questions?limit=5")
     assert r.status_code == 200
     d = r.json()
-    assert d["total"] == 17249, d["total"]
+    assert d["total"] >= 17249, d["total"]
     assert len(d["items"]) == 5
 
 
@@ -99,9 +105,17 @@ def test_facets_shape():
 
 
 def test_stats_and_baseline():
+    """基线要与现状一致，且**存量内容一个都不能变**。
+
+    原先是 `b["当前"] == 17249`（写死的数字）——录题之后必然红。
+    改成盯真正的不变量：库只增不减（删题走回收站、可恢复），
+    且「内容变化」必须是 0。
+    """
     assert client.get("/api/stats").status_code == 200
     b = client.get("/api/baseline").json()
-    assert b["当前"] == 17249, b
+    assert b["当前"] >= 17249, b
+    assert b["内容变化"] == 0, b
+    assert b["删除"] == 0, b
 
 
 def test_usage_sorted_list():

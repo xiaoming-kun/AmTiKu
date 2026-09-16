@@ -11,3 +11,6 @@ pydantic==2.13.5
 pillow==12.2.0
 numpy==2.4.6
 PyMuPDF==1.27.2.3
+
+# 测试用：fastapi.testclient 需要它（测试/接口测试.py 起不来就是这个缺的）
+httpx==0.28.1
