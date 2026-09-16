@@ -436,6 +436,7 @@ def cmd_accept(_a) -> int:
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
     run("题目解析回归", [_s.executable, "-m", "amti.latex_ir", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")
+    run("录题自检", [_s.executable, "-m", "amti.record", "--selftest"], r"通过|失败")
     run("逐题订正自检", [_s.executable, "-m", "amti.fixups", "--selftest"], r"通过|失败")
     run("回收站自检", [_s.executable, "-m", "amti.trash"], r"通过|失败")
     # **删题是危险操作**，单独一层：证明"只动该动的那一道、其余一个字节不变、

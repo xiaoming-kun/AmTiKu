@@ -96,7 +96,9 @@ AmTiKu/
 │   ├── compilecheck.py  全库编译体检
 │   ├── sample.py        抽取测试集（100 道）
 │   ├── migrate.py       旧题库迁移（一次性工具，**已废弃**）
+│   ├── record.py        ⭐ 试卷录题：PDF→页图→本地大模型识别→exam-zh LaTeX
 │   └── web/server.py    Web 服务（自研 HTTP server，1681 行）
+│       web/record_server.py  ⭐ 录题台（独立端口 8901，拖 PDF 即录）
 ├── web/                 前端（React + Vite + Tailwind）
 │   └── src/             **重构中，见下节**
 ├── 题目/                **题库主文件** 001.tex … 004.tex（超大，最大 12M）

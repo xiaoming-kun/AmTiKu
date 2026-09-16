@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AmTiKu · 录题台</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --ink:#e6e8ee; --soft:#98a0b3; --dim:#6b7488;
+    --brand:#6ea8fe; --ok:#4ec9a0; --warn:#e0b341; --bad:#e06c75;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  a{color:var(--brand)}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;
+         border-bottom:1px solid var(--line);background:var(--panel);
+         position:sticky;top:0;z-index:5}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .tag{font-size:12px;color:var(--dim)}
+  main{display:grid;grid-template-columns:380px 1fr;gap:0;height:calc(100vh - 53px)}
+  .col{overflow:auto;padding:16px}
+  .col.left{border-right:1px solid var(--line)}
+  h2{font-size:13px;color:var(--soft);text-transform:none;margin:18px 0 8px;
+     font-weight:600;letter-spacing:.02em}
+  h2:first-child{margin-top:0}
+  .drop{border:1.5px dashed var(--line);border-radius:10px;padding:22px 14px;
+        text-align:center;color:var(--soft);background:var(--panel);cursor:pointer}
+  .drop.hot{border-color:var(--brand);color:var(--brand);background:#6ea8fe12}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+        border-radius:7px;padding:6px 9px;font-size:13px;font-family:inherit;min-width:0}
+  input:focus,select:focus{outline:1px solid var(--brand);border-color:var(--brand)}
+  button{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+        border-radius:7px;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit}
+  button:hover{border-color:var(--brand);color:var(--brand)}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#0b0d11;font-weight:600}
+  button.primary:hover{filter:brightness(1.1);color:#0b0d11}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:12px;margin-bottom:10px}
+  .card.sel{border-color:var(--brand)}
+  .card h3{margin:0 0 6px;font-size:14px;font-weight:600;
+           display:flex;gap:8px;align-items:center}
+  .pill{font-size:11px;padding:1px 7px;border-radius:99px;border:1px solid var(--line);
+        color:var(--soft);white-space:nowrap}
+  .pill.queued{color:var(--dim)}
+  .pill.running{color:var(--brand);border-color:var(--brand)}
+  .pill.ready{color:var(--ok);border-color:var(--ok)}
+  .pill.ingested{color:var(--ok);border-color:var(--ok);background:#4ec9a018}
+  .pill.error{color:var(--bad);border-color:var(--bad)}
+  .bar{height:4px;background:var(--panel2);border-radius:3px;overflow:hidden;margin:8px 0 4px}
+  .bar i{display:block;height:100%;background:var(--brand);transition:width .4s}
+  .meta{font-size:12px;color:var(--dim);word-break:break-all}
+  .q{border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px;
+     background:var(--panel)}
+  .q .stem{white-space:pre-wrap;word-break:break-word}
+  .q pre{margin:6px 0 0;white-space:pre-wrap;word-break:break-word;
+         font:12px/1.55 ui-monospace,Menlo,monospace;color:var(--soft)}
+  .q .lbl{font-size:11px;color:var(--dim);margin-top:8px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left;
+        vertical-align:top}
+  th{color:var(--dim);font-weight:600}
+  .empty{color:var(--dim);text-align:center;padding:34px 0}
+  .err{color:var(--bad);font-size:12px;white-space:pre-wrap}
+  .flash{position:fixed;right:18px;bottom:18px;background:var(--panel2);
+         border:1px solid var(--line);border-left:3px solid var(--brand);
+         padding:10px 14px;border-radius:8px;max-width:420px;font-size:13px;z-index:9}
+  .flash.bad{border-left-color:var(--bad)}
+  details summary{cursor:pointer;color:var(--soft);font-size:12px}
+  .files{max-height:230px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .files div{display:flex;gap:8px;align-items:center;padding:6px 8px;
+             border-bottom:1px solid var(--line);font-size:12.5px}
+  .files div:last-child{border-bottom:0}
+  .files .nm{flex:1;word-break:break-all}
+</style>
+</head>
+<body>
+<header>
+  <h1>AmTiKu · 录题台</h1>
+  <span class="tag">投喂试卷 PDF → 本地大模型逐页识别 → 检查 → 一键入库</span>
+  <span style="flex:1"></span>
+  <span class="tag" id="model">本地模型</span>
+</header>
+
+<main>
+  <section class="col left">
+    <h2>投喂</h2>
+    <div class="drop" id="drop">
+      把试卷 PDF 拖到这里<br><span style="font-size:12px">（答案卷会自动配对，可在任务里改）</span>
+    </div>
+
+    <h2>从目录挑</h2>
+    <div class="row">
+      <input id="dir" style="flex:1" placeholder="留空 = 桌面的 27年试卷/试卷">
+      <button id="scan">列出</button>
+    </div>
+    <div class="files" id="files" style="margin-top:8px"></div>
+
+    <h2>当前设置</h2>
+    <div class="row">
+      <label class="meta">来源</label><input id="book" value="模拟题" style="width:90px">
+      <label class="meta">地区</label><input id="region" placeholder="可留空" style="width:100px">
+      <label class="meta">并发</label><input id="workers" type="number" value="1" min="1" max="8" style="width:60px" title="默认 1（串行）。LM Studio 的 8192 上下文被 4 个槽平分，并发会直接把请求打挂">
+    </div>
+  </section>
+
+  <section class="col right" id="right"></section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let JOBS = [], SEL = null;
+
+async function api(path, opt) {
+  const r = await fetch(path, opt);
+  if (!r.ok) throw new Error((await r.text()).slice(0, 400));
+  return r.json();
+}
+function flash(msg, bad) {
+  const d = document.createElement('div');
+  d.className = 'flash' + (bad ? ' bad' : '');
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 6000);
+}
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+// ── 加任务 ────────────────────────────────────────────────
+async function addPaths(paths) {
+  for (const p of paths) {
+    try {
+      const j = await api('/api/jobs', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pdf: p, book: $('#book').value,
+                              region: $('#region').value,
+                              workers: +$('#workers').value})});
+      flash('已排队：' + j.label);
+    } catch (e) { flash('加不进去：' + e.message, true); }
+  }
+  refresh();
+}
+async function addFiles(files) {
+  for (const f of files) {
+    if (!/\.pdf$/i.test(f.name)) continue;
+    try {
+      const j = await api('/api/upload?name=' + encodeURIComponent(f.name)
+        + '&book=' + encodeURIComponent($('#book').value)
+        + '&region=' + encodeURIComponent($('#region').value), {method: 'POST', body: f});
+      flash('已排队：' + j.label);
+    } catch (e) { flash('上传失败：' + e.message, true); }
+  }
+  refresh();
+}
+
+// ── 渲染 ──────────────────────────────────────────────────
+function jobCard(j) {
+  const sel = SEL === j.id ? ' sel' : '';
+  const total = j.total || 0, done = j.done || 0;
+  const pct = total ? Math.round(done * 100 / total) : (j.status === 'ready' || j.status === 'ingested' ? 100 : 0);
+  return `<div class="card${sel}" onclick="pick('${j.id}')">
+    <h3><span class="pill ${j.status}">${({queued:'排队',running:'识别中',ready:'待入库',ingested:'已入库',error:'出错'})[j.status] || j.status}</span>
+        ${esc(j.label)}</h3>
+    <div class="meta">${esc(j.stage || '')}${total ? ` · ${done}/${total} 页` : ''}${j.answers ? ' · 答案卷：' + esc(j.answers.split('/').pop()) + (j.answers_auto ? '（自动配对）' : '') : ' · 答案卷：无'}</div>
+    ${j.status === 'running' || j.status === 'queued' ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}
+    ${j.stats ? `<div class="meta">录入 ${j.stats['录入']} 题 · 带图丢弃 ${j.stats['带图丢弃']} · 登记位置 ${j.stats['带图登记位置']} · 无解析 ${j.stats['无解析']}</div>` : ''}
+    ${j.error ? `<div class="err">${esc(j.error)}</div>` : ''}
+  </div>`;
+}
+
+function qCard(q) {
+  const opts = (q.options || []).map(o => `${o[0]}. ${esc(o[1])}`).join('\n');
+  return `<div class="q">
+    <div class="row"><span class="pill">第 ${esc(q.n)} 题</span>
+      <span class="pill">${esc(q.type || '?')}</span>
+      ${q.figure ? '<span class="pill" style="color:var(--warn);border-color:var(--warn)">带图</span>' : ''}</div>
+    <div class="stem">${esc(q.stem)}</div>
+    ${opts ? `<pre>${opts}</pre>` : ''}
+    <div class="lbl">答案</div><pre>${esc(q.ans || '（空）')}</pre>
+    <div class="lbl">解析</div><pre>${esc(q.sol || '（空）')}</pre>
+  </div>`;
+}
+
+function renderDetail(j) {
+  const s = j.stats || {};
+  let html = `<h2>${esc(j.label)}${j.year ? ' · ' + j.year : ''}</h2>
+    <div class="card">
+      <div class="row">
+        <label class="meta">出处</label><input id="f_label" value="${esc(j.label)}" style="flex:1">
+        <label class="meta">年份</label><input id="f_year" type="number" value="${j.year || ''}" style="width:80px">
+        <label class="meta">地区</label><input id="f_region" value="${esc(j.region || '')}" style="width:110px">
+        <label class="meta">来源</label><input id="f_book" value="${esc(j.book)}" style="width:90px">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label class="meta">答案卷</label><input id="f_ans" value="${esc(j.answers || '')}" style="flex:1" placeholder="留空 = 没有单独答案卷">
+        <button onclick="saveMeta('${j.id}')">保存</button>
+      </div>
+      <div class="meta" style="margin-top:6px">${j.pdf}</div>
+    </div>`;
+
+  if (s['录入'] !== undefined) {
+    html += `<div class="card"><div class="row">
+      <span class="pill">识别到 ${s['识别到']} 题</span>
+      <span class="pill ready">录入 ${s['录入']}</span>
+      <span class="pill">带图丢弃 ${s['带图丢弃']}</span>
+      <span class="pill">登记位置 ${s['带图登记位置']}</span>
+      <span class="pill">无解析 ${s['无解析']}</span>
+      <span class="pill">页数 ${s['页数']}</span>
+      ${(s['失败页'] || []).length ? `<span class="pill error">失败页 ${s['失败页'].join(',')}</span>` : ''}
+    </div>
+    <div class="meta" style="margin-top:6px">题型：${Object.entries(s['题型'] || {}).map(([k, v]) => k + ' ' + v).join(' · ')}</div>
+    <div class="meta">卷面标题：${esc(s['标题'] || '（没读到）')}</div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="doIngest('${j.id}', false)">干跑看看</button>
+      <button class="primary" onclick="doIngest('${j.id}', true)">确认入库</button>
+      <button onclick="retry('${j.id}')">重跑失败页</button>
+    </div>
+    <div id="ingest_out"></div></div>`;
+  }
+
+  if ((j.register || []).length) {
+    html += `<h2>带图题 · 位置登记（只有 8/11/14/18/19 题，正文不录）</h2>
+      <div class="card"><table><tr><th>题号</th><th>页码</th><th>图上位置</th><th>图</th><th>题干开头</th></tr>
+      ${j.register.map(r => `<tr><td>${r['题号']}</td><td>${(r['页码']||[]).join(',')}</td>
+        <td>${esc(r['位置'])}</td><td>${esc(r['图'])}</td><td>${esc(r['题干开头'])}</td></tr>`).join('')}
+      </table><div class="meta" style="margin-top:6px">页码对应 <code>/api/jobs/${j.id}/page/N</code> 的页图，照这个位置去原卷补图。</div></div>`;
+  }
+
+  html += `<h2>识别到的题目（${(j.kept || []).length}）</h2>`;
+  html += (j.kept || []).length
+    ? (j.kept || []).map(qCard).join('')
+    : '<div class="empty">还没有结果</div>';
+
+  if ((j.dropped || []).length) {
+    html += `<details><summary>带图被丢弃的题（${j.dropped.length}）</summary><div class="card">
+      ${j.dropped.map(d => `<div class="meta">第 ${d.n} 题 · 第 ${(d.pages||[]).join(',')} 页 · ${esc(d.fig)}</div>`).join('')}
+    </div></details>`;
+  }
+  if ((j.log || []).length) {
+    html += `<details><summary>日志（${j.log.length}）</summary><div class="card">
+      ${j.log.map(l => `<div class="err">${esc(l)}</div>`).join('')}</div></details>`;
+  }
+  if (j.report) {
+    html += `<h2>入库报告</h2><div class="card"><pre style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify({
+      added: j.report.added, added_count: j.report.added_count,
+      skipped: j.report.skipped, spec_ok: j.report.spec && j.report.spec.ok}, null, 1))}</pre></div>`;
+  }
+  return html;
+}
+
+// 轮询：**只在真有变化时重画**。每 2.5 秒无条件替换右栏 innerHTML 的话，
+// 用户正在「出处」输入框里打字会被当场抹掉，滚动位置也会跳回顶部。
+let LAST_KEY = '';
+async function refresh() {
+  try {
+    JOBS = (await api('/api/jobs')).jobs;
+  } catch (e) { return; }
+  if (!SEL && JOBS.length) SEL = JOBS[0].id;
+  const key = SEL + '|' + JSON.stringify(JOBS.map(j =>
+    [j.id, j.status, j.done, j.total, j.stage, j.updated]));
+  if (key === LAST_KEY) return;
+  const ae = document.activeElement;
+  if (ae && ae.tagName === 'INPUT' && $('#right').contains(ae)) return;
+  LAST_KEY = key;
+
+  const cards = JOBS.length ? JOBS.map(jobCard).join('')
+    : '<div class="empty">还没有任务，左边投喂一份试卷</div>';
+  let html = `<h2>任务（${JOBS.length}）</h2>` + cards;
+  if (SEL && JOBS.some(j => j.id === SEL)) {
+    try { html += renderDetail(await api('/api/jobs/' + SEL)); }
+    catch (e) { html += `<div class="err">${esc(e.message)}</div>`; }
+  }
+  $('#right').innerHTML = html;
+}
+
+window.pick = id => { SEL = id; refresh(); };
+window.retry = async id => {
+  try { await api(`/api/jobs/${id}/retry`, {method: 'POST'}); flash('已重新排队'); refresh(); }
+  catch (e) { flash(e.message, true); }
+};
+window.saveMeta = async id => {
+  try {
+    await api('/api/jobs/' + id, {method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({label: $('#f_label').value, year: +$('#f_year').value || null,
+        region: $('#f_region').value, book: $('#f_book').value, answers: $('#f_ans').value})});
+    flash('已保存'); refresh();
+  } catch (e) { flash(e.message, true); }
+};
+window.doIngest = async (id, yes) => {
+  const out = $('#ingest_out');
+  out.innerHTML = '<div class="meta">跑着呢…</div>';
+  try {
+    const r = await api(`/api/jobs/${id}/ingest`, {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({yes})});
+    out.innerHTML = '<pre style="font-size:12px;white-space:pre-wrap;color:var(--soft)">'
+      + esc(JSON.stringify(yes ? {新增: r.added_count, 跳过: r.skipped, 规范: r.spec && r.spec.ok}
+                              : {能解析: r.count, 规范: r.spec && r.spec.ok,
+                                 问题: r.problems, 重复: r.dup, 图片: r.images}, null, 1)) + '</pre>';
+    if (yes) { flash('入库完成，新增 ' + r.added_count + ' 题'); }
+    refresh();
+  } catch (e) { out.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+};
+
+// ── 拖拽 / 目录 ───────────────────────────────────────────
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.classList.remove('hot'); }));
+drop.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+drop.addEventListener('click', () => {
+  const i = document.createElement('input');
+  i.type = 'file'; i.multiple = true; i.accept = '.pdf';
+  i.onchange = () => addFiles([...i.files]); i.click();
+});
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
+
+$('#scan').onclick = async () => {
+  const d = await api('/api/pdfs?dir=' + encodeURIComponent($('#dir').value));
+  $('#files').innerHTML = d.files.length
+    ? d.files.map(f => `<div><span class="nm">${esc(f.name)}<br>
+        <span class="meta">出处：${esc(f.label)}${f.answer ? ' · 答案卷：' + esc(f.answer) : ''}</span></span>
+        <button onclick="addPaths([${JSON.stringify(f.path)}])">加入</button></div>`).join('')
+    : `<div class="meta" style="padding:8px">${esc(d.error || '这个目录没有 PDF')}</div>`;
+  flash('列出了 ' + d.files.length + ' 份');
+};
+window.addPaths = addPaths;
+
+refresh();
+setInterval(refresh, 2500);
+</script>
+</body>
+</html>
