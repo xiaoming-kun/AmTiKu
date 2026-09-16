@@ -157,7 +157,17 @@ export function TagsEditor({ q, onSaved, facets }: {
     }
   }
 
-  const allPoints: { value: string; title: string }[] = facets?.points || []
+  const allPoints: { value: string; title: string; topic?: string }[] =
+    facets?.points || []
+  const info = (id: string) => allPoints.find((p) => p.value === id)
+  /** 与**主考点**不同章 → 很可能是标错了，在界面上标出来让老师一眼看到。 */
+  const offChapter = (id: string, i: number) => {
+    if (i === 0) return ''
+    const mine = info(id)?.topic || ''
+    const main = info(q.points[0])?.topic || ''
+    return mine && main && mine !== main
+      ? mine.replace(/^[一二三四五六七八九十]+、/, '') : ''
+  }
   const picked = new Set(q.points)
   const hits = kw.trim()
     ? allPoints.filter((p) => !picked.has(p.value) &&
@@ -217,20 +227,43 @@ export function TagsEditor({ q, onSaved, facets }: {
                   </span>
                 ))}
           </span>}>
+        <div className="mb-1.5 text-[10.5px] text-ink-faint">
+          × 删掉这条 · 下面搜名字加一条 · 与主考点**不同章**的会标出章名
+        </div>
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          {q.point_titles.map((t, i) => (
-            <span key={i} title={q.points[i] || ''}
-              className={`group inline-flex items-center gap-1 rounded px-2 py-[2px]
-                          text-[11px] font-semibold ${
-                i === 0 ? 'bg-brand-soft text-brand-ink' : 'bg-muted text-ink-soft'}`}>
-              {i === 0 && <span className="text-[9.5px] font-normal opacity-70">主</span>}
-              {t}
-              <button disabled={busy}
-                onClick={() => save({ points: q.points.filter((_, j) => j !== i) })}
-                title="删掉这条考点"
-                className="opacity-40 transition-opacity hover:text-warn group-hover:opacity-100">×</button>
-            </span>
-          ))}
+          {q.point_titles.map((t, i) => {
+            const off = offChapter(q.points[i], i)
+            return (
+              <span key={i} title={`${info(q.points[i])?.topic || ''} · ${q.points[i]}`}
+                className={`inline-flex items-center gap-1 rounded px-2 py-[2px]
+                            text-[11px] font-semibold ${
+                  i === 0 ? 'bg-brand-soft text-brand-ink' : 'bg-muted text-ink-soft'}`}>
+                {i === 0 && <span className="text-[9.5px] font-normal opacity-70">主</span>}
+                {t}
+                {off && (
+                  <span className="rounded bg-warn/15 px-1 text-[9.5px] font-normal text-warn"
+                    title="与主考点不在同一章，留神是不是标错了">
+                    {off}
+                  </span>
+                )}
+                {i > 0 && (
+                  <button disabled={busy}
+                    onClick={() => save({
+                      points: [q.points[i], ...q.points.filter((_, j) => j !== i)] })}
+                    title="设为主考点（难度按主考点派生）"
+                    className="text-[9.5px] font-normal text-ink-faint hover:text-brand-ink">
+                    设为主
+                  </button>
+                )}
+                <button disabled={busy}
+                  onClick={() => save({ points: q.points.filter((_, j) => j !== i) })}
+                  title="从这道题上删掉这个考点"
+                  className="grid h-4 w-4 place-items-center rounded text-[12px] leading-none
+                             text-ink-faint transition-colors hover:bg-warn/15 hover:text-warn">
+                  ×</button>
+              </span>
+            )
+          })}
         </div>
         <input value={kw} onChange={(e) => setKw(e.target.value)}
           placeholder="搜考点名或编号，如「椭圆」或 5.2.1"
