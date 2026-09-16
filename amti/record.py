@@ -680,10 +680,42 @@ def batch(folder: Path, *, out_dir: Path | None = None, **kw) -> list[dict]:
             out_dir.mkdir(parents=True, exist_ok=True)
             (out_dir / (r["label"] + ".tex")).write_text(r["tex"], encoding="utf-8")
             (out_dir / (r["label"] + ".json")).write_text(
-                json.dumps({"stats": r["stats"], "register": r["register"],
+                json.dumps({"book": kw.get("book", "模拟题"),
+                            "label": r["label"], "year": r["year"],
+                            "region": kw.get("region", ""),
+                            "stats": r["stats"], "register": r["register"],
                             "dropped": [{"n": q["n"], "pages": q["pages"]}
                                         for q in r["dropped"]]},
                            ensure_ascii=False, indent=1), encoding="utf-8")
+    return rows
+
+
+def ingest_dir(out_dir: Path, *, yes: bool = False) -> list[dict]:
+    r"""把 `batch()` 产出的 .tex 逐份入库。
+
+    出处/年份从同名 .json 里读（那是 `batch` 自己写的），**不重新猜文件名**——
+    再猜一遍就会出现「识别时叫一个名字、入库时叫另一个名字」。
+
+    `yes=False` 只干跑，逐份报「能解析几题 / 规范过没过 / 存量动不动」。
+    """
+    from . import ingest as ig                       # 延迟导入，别拖慢模块加载
+
+    rows = []
+    for tex in sorted(out_dir.glob("*.tex")):
+        side = tex.with_suffix(".json")
+        info = (json.loads(side.read_text(encoding="utf-8"))
+                if side.exists() else {})
+        kw = {"book": info.get("book", "模拟题"),
+              "label": info.get("label", tex.stem),
+              "region": info.get("region", ""), "year": info.get("year")}
+        src = tex.read_text(encoding="utf-8")
+        rep = ig.commit(src, **kw) if yes else ig.preview(src, **kw)
+        rows.append({"卷": kw["label"], "年份": kw["year"],
+                     "题数": rep.get("count") or rep.get("added_count"),
+                     "新增": rep.get("added_count"),
+                     "跳过": len(rep.get("skipped") or []),
+                     "规范": (rep.get("spec") or {}).get("ok"),
+                     "存量影响": (rep.get("impact") or {}).get("existing_questions")})
     return rows
 
 
@@ -701,9 +733,17 @@ def _main(argv: list[str] | None = None) -> int:
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--out", default="")
     ap.add_argument("--outdir", default="")
+    ap.add_argument("--ingest-dir", default="",
+                    help="把已经跑出来的 --outdir 里的 .tex 逐份入库")
+    ap.add_argument("--yes", action="store_true", help="配合 --ingest-dir：真写库")
     a = ap.parse_args(argv)
+    if a.ingest_dir:
+        rows = ingest_dir(Path(a.ingest_dir), yes=a.yes)
+        print(json.dumps(rows, ensure_ascii=False, indent=1))
+        print("[干跑] 什么都没写。确认后加 --yes" if not a.yes else "已入库")
+        return 0
     if not a.pdf and not a.dir:
-        ap.error("要么 --pdf，要么 --dir")
+        ap.error("要么 --pdf，要么 --dir，要么 --ingest-dir")
 
     def ev(e):
         if e["type"] == "page":
