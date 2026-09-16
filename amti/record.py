@@ -334,8 +334,15 @@ def scan_page(img: Path, cache: Path, no: int, *, force: bool = False) -> dict:
             "title": _first_line(parts[0][1]) if parts else ""}
     _atomic(cache / f"p{no:03d}.head.json", page)
 
+    blocks = split_by_number(parts)
+    if not blocks and text.strip():
+        # **切不出题号的页不能整页丢掉。** 答案页的解析是跨页连续散文，
+        # 段落开头常常没有题号（实测华师联盟的解析页整页无题号，
+        # 于是它 16 道题里 10 道没解析）。先把整页当一块收着，
+        # 由 `classify_pages` 接到上一题上。
+        blocks = [("", text, 1, len(parts), "")]
     qs = []
-    for n, block, b0, b1, sec in split_by_number(parts):
+    for n, block, b0, b1, sec in blocks:
         q = parse_block(n, block, sec)
         if q is None:
             continue
@@ -346,7 +353,8 @@ def scan_page(img: Path, cache: Path, no: int, *, force: bool = False) -> dict:
         q["figure"] = bool(check_figure(c0, q["stem"]) or
                            check_figure(c1, " ".join(o[1] for o in q["options"])))
         qs.append(q)
-    return {"page": page, "key": {}, "figpos": {}, "questions": qs}
+    return {"page": page, "key": {}, "figpos": {}, "questions": qs,
+            "text": text}
 
 
 def _first_line(s: str) -> str:
@@ -563,6 +571,25 @@ def split_by_number(parts: list[tuple[int, str]]) -> list[tuple[str, str, int, i
         if last is None or v in (last + 1, last) or v == 1:
             starts.append((pos, bi, n))
             last = v
+    # **从「题号 1」重新起头，而且取最长的那条递增链。**
+    # 卷首的「考试说明」也带 1、2、3 编号，实测华师联盟第 1 页切出来是
+    # `1,2,3,1,2,3,…`（前三个是说明、后面才是真题）。只取"第一个 1"会
+    # 取到说明上，题号整体错位、答案全对不上；比较每条从 1 起的链谁长，
+    # 长的那条才是真题。
+    best, best_len = 0, -1
+    for k, (_p, _b, n) in enumerate(starts):
+        if n != "1":
+            continue
+        ln, prev = 1, 1
+        for _q, _r, m in starts[k + 1:]:
+            if int(m) != prev + 1:
+                break            # **必须连续**：不 break 的话，断点后面
+                # 接上的 4,5,6,7 会被算进同一条链，说明文字的链也报长度 7，
+                # 于是永远挑中说明那条（实测踩过）
+            ln, prev = ln + 1, int(m)
+        if ln > best_len:
+            best, best_len = k, ln
+    starts = starts[best:]
     if not starts:
         return []
     full = "\n".join(t for _b, t in parts)
@@ -790,13 +817,26 @@ def parse_answer_table(text: str) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     lines = text.splitlines()
-    for i in range(len(lines) - 1):
-        nums = re.findall(r"\d{1,2}", lines[i])
-        lets = re.findall(r"[A-D]{1,4}", lines[i + 1])
-        if len(nums) >= 2 and len(nums) == len(lets):
-            for n, l in zip(nums, lets):
-                out.setdefault(n, l)
+    for i, line in enumerate(lines):
+        nums = re.findall(r"\d{1,2}", line)
+        if len(nums) < 2:
+            continue
+        # 答案行可能隔着一两行（实测中间夹着 `--- | --- |` 分隔行），
+        # 所以往下找三行，跳过纯分隔行再比个数。
+        for j in range(i + 1, min(i + 4, len(lines))):
+            nxt = lines[j].strip()
+            if nxt and set(nxt) <= set("-|— "):
+                continue
+            lets = re.findall(r"[A-D]{1,4}", nxt)
+            if len(lets) == len(nums):
+                for n, l in zip(nums, lets):
+                    out.setdefault(n, l)
+                break
     return out
+
+
+# 速查表/小节标题这种块不能拿来当解析——它们是排版，不是解答内容。
+_TABLE_ROW = re.compile(r"题号\s*[|｜]|答案\s*[|｜]|^\s*[|｜]|[-—]{3,}\s*[|｜]")
 
 
 def classify_pages(scans: list[dict]) -> None:
@@ -809,7 +849,16 @@ def classify_pages(scans: list[dict]) -> None:
     真正的结构规律是：**试卷页的题号一路往上走，答案页会从头再来一遍**。
     所以顺序扫页，头一页的题号 ≤ 已见过的最大题号时，从这里起全是答案页。
     """
+    # **先把全卷的答案速查表收齐，再往题上贴。**
+    # 表在答案页上，题在试卷页上——只在"本页的题"里找表，选择题永远拿不到答案
+    # （实测华师联盟 1~10 题全是空的，而表就在第 5 页）。
+    table: dict[str, str] = {}
+    for sc in scans:
+        table.update(parse_answer_table(
+            sc.get("text") or "\n".join(q.get("raw", "") for q in sc["questions"])))
+
     maxno, seen = 0, False
+    last = ""                                  # **跨页保持**：解析常从上一页续下来
     for sc in scans:
         nums = [int(q["n"]) for q in sc["questions"] if str(q["n"]).isdigit()]
         first = nums[0] if nums else None
@@ -821,17 +870,32 @@ def classify_pages(scans: list[dict]) -> None:
         sc["page"] = {**(sc.get("page") or {}), "kind": kind}
         if nums:
             maxno = max(maxno, max(nums))
+        # 查表补答案：**试卷页上的选择题也要补**，表本来就在别的页上
+        for q in sc["questions"]:
+            if not q.get("ans") and q["n"] in table:
+                q["ans"] = table[q["n"]]
         if kind != "答案":
+            if nums:
+                last = str(nums[-1])
             continue
         # 答案页回填：**没有【答案】标记的卷子，整块文本就是解析**。
         # 实测一大半卷子不用标记——Z20 用表格，青岛/武汉直接写解析段落，
         # 不回填的话它们全部会被判「无解析」。
-        table = parse_answer_table("\n".join(q.get("raw", "") for q in sc["questions"]))
+        # **没有题号的段落接上一题**：解析常常跨页、而且新段落不重复题号。
+        # 不接的话这些内容整块丢掉（`merge` 只认数字题号）。
+        # `last` 必须在**页之间**保持——续写的段落往往整页都没有题号，
+        # 只在页内的循环里记，第一段就找不到归属。
+        for q in sc["questions"]:
+            if str(q["n"]).isdigit():
+                last = q["n"]
+            elif last:
+                q["n"] = last
         for q in sc["questions"]:
             q["stem"] = ""                      # 答案页上的题干是重述，不要
             q["options"] = []
-            if not q["sol"]:
-                q["sol"] = q.get("raw", "").strip()
+            raw = (q.get("raw") or "").strip()
+            if not q["sol"] and raw and not _TABLE_ROW.search(raw):
+                q["sol"] = raw
             if not q["ans"] and q["n"] in table:
                 q["ans"] = table[q["n"]]
 
@@ -956,7 +1020,11 @@ def fixup(tex: str) -> str:
     裸 `i`（该写 `\mathrm{i}`）**不碰**——它可能是虚数单位，也可能是求和
     下标、普通字母，改了就是引入错误。宁可留着给人看。
     """
-    return _TEXT_MATH.sub(r"\\mathrm{\1}", _BB.sub(r"\\mathbb{\1}", tex))
+    tex = _TEXT_MATH.sub(r"\\mathrm{\1}", _BB.sub(r"\\mathbb{\1}", tex))
+    # `$$…$$` → `$…$`：规范里行间公式是 `\[…\]`，`$$` 块解析器不认
+    # （实测华师联盟第 19 题的解析里混了 `$$`，KaTeX 渲染直接失败、四层验收挂掉）。
+    # 直接换成单 `$` 最稳：定界符个数不变，永远配平。
+    return tex.replace("$$", "$")
 
 
 def strip_marker(sol: str) -> str:
@@ -1018,6 +1086,28 @@ def fill_blanks(stem: str, ans: str) -> str | None:
 _NONE_WORDS = ("->", "-", "—", "－", "无", "/")
 
 
+def unbalanced(tex: str) -> bool:
+    r"""花括号/数学模式定界符配不配平。
+
+    **OCR 会把公式截断**（实测华师联盟第 19 题的解析里 `\sqrt{\left(…`
+    写了一半就断了），花括号不闭合的 LaTeX 喂给 KaTeX 直接渲染失败
+    ——`conform` 的「定界符配对」只查 `$`，查不出 `{}`，所以要在这一层拦。
+    """
+    if tex.count("$") % 2:
+        return True
+    depth = 0
+    for i, ch in enumerate(tex):
+        if ch == "\\":
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth < 0:
+                return True
+    return depth != 0
+
+
 def unrenderable(q: dict) -> str:
     r"""这道题能不能成形。能就返回 `""`，不能就返回原因。
 
@@ -1058,6 +1148,14 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
         qtype = TYPE_MAP.get(q["type"], "")
         ans, sol = fixup(q["ans"].strip()), strip_marker(fixup(q["sol"].strip()))
         stem = fixup(q["stem"].strip())
+        if unbalanced(stem):
+            # 题干坏了就整道丢掉；解析坏了只丢解析（题干好的还能用）
+            if skipped is not None:
+                skipped.append({"n": n, "why": "题干公式不配平（OCR 截断）",
+                                "stem": stem[:60], "ans": ans[:40]})
+            continue
+        if unbalanced(sol):
+            sol = ""
         if qtype in ("single_choice", "multi_choice"):
             stem = re.sub(r"\\paren\s*\[[^\]]*\]\s*$", "", stem).rstrip()
             stem += "\\paren[%s]" % ans
