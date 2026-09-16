@@ -719,6 +719,59 @@ def ingest_dir(out_dir: Path, *, yes: bool = False) -> list[dict]:
     return rows
 
 
+def report(out_dir: Path) -> str:
+    r"""把 `batch()` 的产出汇成一份 markdown 录入报告。
+
+    交代四件事：**每份卷子录了多少 / 带图题丢在哪、8·11·14·18·19 的在哪 /
+    哪几页识别失败 / 哪些题没有解析**。后两条是留给人工补的活。
+    """
+    rows, regs, fails = [], [], []
+    for side in sorted(out_dir.glob("*.json")):
+        info = json.loads(side.read_text(encoding="utf-8"))
+        s = info.get("stats", {})
+        rows.append((info.get("year"), info.get("label", side.stem), s))
+        regs += [(info.get("label", ""), r) for r in info.get("register", [])]
+        fails += ["%s 第 %s 页" % (info.get("label", ""), p)
+                  for p in s.get("失败页", [])]
+    out = ["# 录题报告", "",
+           "> 由 `python3 -m amti.record --report 数据/录题/输出` 生成。",
+           "> 规矩：**带图题一律不录**；第 8/11/14/18/19 题的带图题只登记位置；",
+           "> 没有解析的写「解析无」。", "", "## 一、每份卷子", "",
+           "| 年份 | 卷 | 页数 | 识别 | 录入 | 带图丢弃 | 登记位置 | 无解析 | 失败页 |",
+           "|---|---|---|---|---|---|---|---|---|"]
+    tot = {"识别到": 0, "录入": 0, "带图丢弃": 0, "带图登记位置": 0, "无解析": 0}
+    for year, label, s in rows:
+        for k in tot:
+            tot[k] += s.get(k, 0)
+        out.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
+            year or "", label, s.get("页数", 0), s.get("识别到", 0),
+            s.get("录入", 0), s.get("带图丢弃", 0), s.get("带图登记位置", 0),
+            s.get("无解析", 0),
+            "、".join(str(x) for x in s.get("失败页", [])) or "—"))
+    out.append("| | **合计** | | %d | %d | %d | %d | %d | |" % (
+        tot["识别到"], tot["录入"], tot["带图丢弃"], tot["带图登记位置"],
+        tot["无解析"]))
+
+    out += ["", "## 二、带图题位置登记（只有第 8/11/14/18/19 题）", "",
+            "**这些题的正文没有入库**，下面是它们在原卷上的位置，照这个去补图。", ""]
+    if regs:
+        out += ["| 卷 | 题号 | 页码 | 图上位置 | 图长什么样 |", "|---|---|---|---|---|"]
+        out += ["| %s | %s | %s | %s | %s |" % (
+            label, r["题号"], "、".join(str(x) for x in r["页码"]),
+            r["位置"], r["图"]) for label, r in regs]
+    else:
+        out.append("（这一批没有需要登记的带图题）")
+
+    out += ["", "## 三、识别失败的页", ""]
+    out += ["- " + f for f in fails] if fails else ["（无）"]
+    out += ["", "## 四、这些题没有解析", "",
+            "库里按规矩写的是「解析无」，需要人工补。", ""]
+    miss = [(label, s.get("无解析", 0)) for _y, label, s in rows
+            if s.get("无解析")]
+    out += ["- %s：%d 道" % (l, n) for l, n in miss] if miss else ["（没有，全部带解析）"]
+    return "\n".join(out) + "\n"
+
+
 def _main(argv: list[str] | None = None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description="试卷录题（本地大模型）")
@@ -736,7 +789,12 @@ def _main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ingest-dir", default="",
                     help="把已经跑出来的 --outdir 里的 .tex 逐份入库")
     ap.add_argument("--yes", action="store_true", help="配合 --ingest-dir：真写库")
+    ap.add_argument("--report", default="",
+                    help="把 --outdir 的产出汇成 markdown 录入报告")
     a = ap.parse_args(argv)
+    if a.report:
+        print(report(Path(a.report)))
+        return 0
     if a.ingest_dir:
         rows = ingest_dir(Path(a.ingest_dir), yes=a.yes)
         print(json.dumps(rows, ensure_ascii=False, indent=1))
