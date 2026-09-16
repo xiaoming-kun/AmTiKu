@@ -379,10 +379,16 @@ def merge(scans: list[dict]) -> list[dict]:
                 t = by[n] = {"n": n, "type": "", "figure": False,
                              "stem": "", "options": [], "fig": "",
                              "ans": "", "sol": "", "pages": [],
+                             "exam_pages": [],
                              "key_ans": sc["key"].get(n, ""),
                              "figpos": sc["figpos"].get(n) or {}}
                 order.append(n)
             t["pages"].append(sc["no"])
+            # **试卷页**单独记一份。答案页也会出现同一个题号（答案卷常把题干
+            # 重述一遍），混在一起的话补图的人会照着答案页的页码去找原图，
+            # 找不着。登记位置要的是「这道题在试卷的第几页」。
+            if not is_ans_page:
+                t["exam_pages"].append(sc["no"])
             if not t["key_ans"]:
                 t["key_ans"] = sc["key"].get(n, "")
             if sc["figpos"].get(n) and not t["figpos"]:
@@ -435,7 +441,8 @@ def split_figures(qs: list[dict], *, src: str = "") -> tuple[list, list, list]:
         drop.append(q)
         if q["n"] in FIG_KEEP:
             reg.append({
-                "题号": int(q["n"]), "来源文件": src, "页码": [p for p in q["pages"]],
+                "题号": int(q["n"]), "来源文件": src,
+                "页码": q["exam_pages"] or q["pages"],
                 "图": q["fig"] or "（模型没描述）",
                 "位置": " ".join(x for x in (q["figpos"].get("y", ""),
                                             q["figpos"].get("x", "")) if x) or "（未标注）",
@@ -684,7 +691,9 @@ def batch(folder: Path, *, out_dir: Path | None = None, **kw) -> list[dict]:
                             "label": r["label"], "year": r["year"],
                             "region": kw.get("region", ""),
                             "stats": r["stats"], "register": r["register"],
-                            "dropped": [{"n": q["n"], "pages": q["pages"]}
+                            "dropped": [{"n": q["n"],
+                                         "pages": q["exam_pages"] or q["pages"],
+                                         "fig": q["fig"]}
                                         for q in r["dropped"]]},
                            ensure_ascii=False, indent=1), encoding="utf-8")
     return rows
@@ -968,6 +977,9 @@ $a=1$
     check("带图题不进录入", [q["n"] for q in keep] == ["1", "7"],
           str([q["n"] for q in keep]))
     check("带图题被丢掉", [q["n"] for q in drop] == ["8"])
+    check("登记的是**试卷页**，不是答案页",
+          split_figures([dict(qs[[q["n"] for q in qs].index("8")],
+                              exam_pages=[2])], src="x.pdf")[2][0]["页码"] == [2])
     check("第 8 题的带图题登记了位置",
           len(reg) == 1 and reg[0]["题号"] == 8 and reg[0]["位置"] == "中 右",
           str(reg))
