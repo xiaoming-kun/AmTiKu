@@ -70,6 +70,8 @@ PROMPT = r"""你是高中数学题库录入员。下面是一份高三数学试�
 @@ANS
 <这道题的**答案**：选择题只写字母（如 A，多选如 ABD）；填空题只写结果；
  解答题写最终结论。没有写 ->
+ ⚠️ 填空题有**多个空**时，用中文分号「；」把各空答案按顺序隔开（如 5；7），
+    不要用逗号——逗号是答案内容的一部分（坐标 (1,2) 里就有逗号）。
 @@SOL
 <这道题的**解析/解答过程**原文（逐字转录，含推理步骤）。没有写 ->
 @@ENDQ
@@ -487,40 +489,61 @@ def strip_marker(sol: str) -> str:
 
 
 def _split_answers(ans: str, holes: int) -> list[str]:
-    """一个答案串按空位个数切开。单空直接给整串。"""
+    r"""一个答案串按空位个数切开。单空直接给整串。
+
+    分隔符按「先规范、后退让」试：规范要求多空用 `；`，但模型实际会写
+    半角 `;`、中文逗号 `，`、半角 `,`（实测 `5, 7` 就是这么来的）。
+    **只认能正好切成 N 份的那个分隔符**——切成别的份数说明这不是多空答案，
+    而是答案里本来就有逗号（比如坐标 `(1, 2)`），不能瞎切。
+    """
     if holes <= 1:
         return [ans]
-    parts = [p.strip() for p in re.split(r"[；;]", ans) if p.strip()]
-    return parts if len(parts) == holes else [ans] + [""] * (holes - 1)
+    for sep in ("；", ";", "，", ","):
+        parts = [p.strip() for p in ans.split(sep) if p.strip()]
+        if len(parts) == holes:
+            return parts
+    return []
 
 
-def fill_blanks(stem: str, ans: str) -> str:
-    r"""把答案塞进题干里的空位。
+def fill_blanks(stem: str, ans: str) -> str | None:
+    r"""把答案塞进题干里的空位。**对不上就返回 `None`**，表示这道题别录。
 
-    模型被要求把空位写成 `\fillin[]`，但实测它有时照抄卷面的下划线。
-    两条路都兜住；**一个空位都没找到就把答案接在末尾**——宁可排版难看，
-    也比答案整条丢掉强（丢了就是一道没答案的填空题）。
+    模型被要求把空位写成 `\fillin[]`，但实测它有时照抄卷面的下划线，
+    两条路都兜住；一个空位都没找到就把答案接在末尾（排版难看，
+    好过答案整条丢掉）。
+
+    ⚠️ **空位数与答案段数对不上时必须拒收**，不能硬塞。`conform` 的
+    「填空位数」会拦下这种题，而 `ingest.commit` 的复核**一发现违规就
+    整份卷子都不录**——实测河南青桐鸣那道 14 题（两个空、答案 `5, 7`
+    切不开）把另外 15 道好题一起拖下水。现在的做法是只丢这一道，
+    题号写进报告让人补。
     """
+    holes = len(_FILLIN.findall(stem))
+    if not holes:
+        m = _UNDERLINE.search(stem)
+        if not m:
+            return stem.rstrip() + ("\\fillin[%s]" % ans if ans else "")
+        return stem[:m.start()] + ("\\fillin[%s]" % ans if ans else "") + stem[m.end():]
     if not ans:
-        return stem
-    holes = _FILLIN.findall(stem)
-    if holes:
-        parts = _split_answers(ans, len(holes))
-        it = iter(parts)
-        return _FILLIN.sub(lambda _m: "\\fillin[%s]" % next(it, ""), stem)
-    m = _UNDERLINE.search(stem)
-    if m:
-        return stem[:m.start()] + "\\fillin[%s]" % ans + stem[m.end():]
-    return stem.rstrip() + "\\fillin[%s]" % ans
+        return stem                       # 空位留着，答案等人工补
+    parts = _split_answers(ans, holes)
+    if len(parts) != holes:
+        return None
+    it = iter(parts)
+    return _FILLIN.sub(lambda _m: "\\fillin[%s]" % next(it), stem)
 
 
 def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
-           year: int | None = None, title: str = "") -> str:
+           year: int | None = None, title: str = "",
+           skipped: list | None = None) -> str:
     r"""结构化题目 → exam-zh LaTeX 源（`ingest` 认得的那种）。
 
     **只写 `key` / `type` / `meta` 三样**，其余字段由 `ingest` 补。
     题干里的答案按规范 §2.2 就地写进 `\paren[…]` / `\fillin[…]`；
     解答题的答案与解析都进 `solution`。
+
+    `skipped` 传一个 list 进来，录不进去的题（空位数与答案段数对不上）
+    会以 `{"n", "why"}` 追加进去——**丢掉哪道题必须留痕**，不能默默少一道。
     """
     out: list[str] = []
     for i, q in enumerate(qs, 1):
@@ -533,6 +556,11 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
             stem += "\\paren[%s]" % ans
         elif qtype == "fill_in_blank":
             stem = fill_blanks(stem, ans)
+            if stem is None:
+                if skipped is not None:
+                    skipped.append({"n": n, "why": "空位数与答案段数对不上",
+                                    "stem": q["stem"][:60], "ans": q["ans"][:40]})
+                continue
         if qtype == "detailed_answer" and ans and ans not in sol:
             sol = "\\textbf{答案：}%s\n%s" % (ans, sol)
         if not sol:
@@ -650,21 +678,23 @@ def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
                   if s["page"].get("title") not in ("", "-")), "")
     qs = merge(scans)
     keep, drop, reg = split_figures(qs, src=pdf.name)
+    lose: list[dict] = []                    # 录不进去的题（空位对不上答案）
     tex = to_tex(keep, book=book, label=label, region=region, year=year,
-                 title=title)
+                 title=title, skipped=lose)
     bad = [s["no"] for s in scans if s.get("error")]
     stats = {
         "卷": label, "出处": "%s%s" % (year or "", label), "标题": title,
         "页数": len(scans), "识别到": len(qs),
-        "录入": len(keep), "带图丢弃": len(drop), "带图登记位置": len(reg),
+        "录入": len(keep) - len(lose), "带图丢弃": len(drop),
+        "带图登记位置": len(reg), "空位对不上": len(lose),
         "无解析": sum(1 for q in keep if not q["sol"].strip()),
         "失败页": bad,
         "题型": {t: sum(1 for q in keep if q["type"] == t)
                  for t in ("单选", "多选", "填空", "解答")},
     }
     return {"tex": tex, "kept": keep, "dropped": drop, "register": reg,
-            "stats": stats, "scans": scans, "label": label, "year": year,
-            "title": title}
+            "lost": lose, "stats": stats, "scans": scans, "label": label,
+            "year": year, "title": title}
 
 
 def batch(folder: Path, *, out_dir: Path | None = None, **kw) -> list[dict]:
@@ -694,7 +724,8 @@ def batch(folder: Path, *, out_dir: Path | None = None, **kw) -> list[dict]:
                             "dropped": [{"n": q["n"],
                                          "pages": q["exam_pages"] or q["pages"],
                                          "fig": q["fig"]}
-                                        for q in r["dropped"]]},
+                                        for q in r["dropped"]],
+                            "lost": r["lost"]},
                            ensure_ascii=False, indent=1), encoding="utf-8")
     return rows
 
@@ -734,7 +765,7 @@ def report(out_dir: Path) -> str:
     交代四件事：**每份卷子录了多少 / 带图题丢在哪、8·11·14·18·19 的在哪 /
     哪几页识别失败 / 哪些题没有解析**。后两条是留给人工补的活。
     """
-    rows, regs, fails, dropped = [], [], [], []
+    rows, regs, fails, dropped, lost = [], [], [], [], []
     for side in sorted(out_dir.glob("*.json")):
         info = json.loads(side.read_text(encoding="utf-8"))
         s = info.get("stats", {})
@@ -742,25 +773,27 @@ def report(out_dir: Path) -> str:
         rows.append((info.get("year"), label, s))
         regs += [(label, r) for r in info.get("register", [])]
         dropped += [(label, d) for d in info.get("dropped", [])]
+        lost += [(label, x) for x in info.get("lost", [])]
         fails += ["%s 第 %s 页" % (label, p) for p in s.get("失败页", [])]
     out = ["# 录题报告", "",
            "> 由 `python3 -m amti.record --report 数据/录题/输出` 生成。",
            "> 规矩：**带图题一律不录**；第 8/11/14/18/19 题的带图题只登记位置；",
            "> 没有解析的写「解析无」。", "", "## 一、每份卷子", "",
-           "| 年份 | 卷 | 页数 | 识别 | 录入 | 带图丢弃 | 登记位置 | 无解析 | 失败页 |",
-           "|---|---|---|---|---|---|---|---|---|"]
-    tot = {"识别到": 0, "录入": 0, "带图丢弃": 0, "带图登记位置": 0, "无解析": 0}
+           "| 年份 | 卷 | 页数 | 识别 | 录入 | 带图丢弃 | 登记位置 | 空位对不上 | 无解析 | 失败页 |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
+    tot = {"识别到": 0, "录入": 0, "带图丢弃": 0, "带图登记位置": 0,
+           "空位对不上": 0, "无解析": 0}
     for year, label, s in rows:
         for k in tot:
             tot[k] += s.get(k, 0)
-        out.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
+        out.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
             year or "", label, s.get("页数", 0), s.get("识别到", 0),
             s.get("录入", 0), s.get("带图丢弃", 0), s.get("带图登记位置", 0),
-            s.get("无解析", 0),
+            s.get("空位对不上", 0), s.get("无解析", 0),
             "、".join(str(x) for x in s.get("失败页", [])) or "—"))
-    out.append("| | **合计** | | %d | %d | %d | %d | %d | |" % (
+    out.append("| | **合计** | | %d | %d | %d | %d | %d | %d | |" % (
         tot["识别到"], tot["录入"], tot["带图丢弃"], tot["带图登记位置"],
-        tot["无解析"]))
+        tot["空位对不上"], tot["无解析"]))
 
     out += ["", "## 二、带图题位置登记（只有第 8/11/14/18/19 题）", "",
             "**这些题的正文没有入库**，下面是它们在原卷上的位置，照这个去补图。", ""]
@@ -783,9 +816,21 @@ def report(out_dir: Path) -> str:
     else:
         out.append("（没有带图题）")
 
-    out += ["", "## 四、识别失败的页", ""]
+    out += ["", "## 四、空位数与答案对不上、没有录入的题", "",
+            "填空位个数和答案段数对不上时**宁可少录一道**，也不录一道答案错位的题"
+            "（`conform` 的「填空位数」会拦下这种题，而 `ingest` 一发现违规"
+            "是整份卷子都不录）。这几道要人工看一眼。", ""]
+    if lost:
+        out += ["| 卷 | 题号 | 题干开头 | 抽到的答案 |", "|---|---|---|---|"]
+        out += ["| %s | %s | %s | %s |" % (
+            label, x["n"], x.get("stem", "").replace("\n", " "),
+            x.get("ans", "")) for label, x in lost]
+    else:
+        out.append("（无）")
+
+    out += ["", "## 五、识别失败的页", ""]
     out += ["- " + f for f in fails] if fails else ["（无）"]
-    out += ["", "## 五、这些题没有解析", "",
+    out += ["", "## 六、这些题没有解析", "",
             "库里按规矩写的是「解析无」，需要人工补。", ""]
     miss = [(label, s.get("无解析", 0)) for _y, label, s in rows
             if s.get("无解析")]
@@ -1007,6 +1052,12 @@ $a=1$
     check("下划线空位也能兜住",
           r"\fillin[$3$]" in fill_blanks("最小值是 ______。", "$3$"),
           fill_blanks("最小值是 ______。", "$3$"))
+    check("两个空、答案用逗号也能切开",
+          fill_blanks("个数为 \\fillin[]，最少为 \\fillin[]。", "5, 7")
+          == "个数为 \\fillin[5]，最少为 \\fillin[7]。",
+          repr(fill_blanks("个数为 \\fillin[]，最少为 \\fillin[]。", "5, 7")))
+    check("切不开就拒收这道题（不能让整份卷子录不进去）",
+          fill_blanks("\\fillin[] 与 \\fillin[]", "5, 7, 9") is None)
     check("卷名清洗", _clean_stem("数学_河南2026-2027年高二上学期开学学情自测卷_试卷+答案")
           == "河南2026-2027年高二上学期开学学情自测卷",
           _clean_stem("数学_河南2026-2027年高二上学期开学学情自测卷_试卷+答案"))
