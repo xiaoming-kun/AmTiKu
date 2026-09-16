@@ -91,6 +91,35 @@ def test_canvas_markdown_contains_label():
     assert sh.source_label(q) in md
 
 
+# ── 画布比例（iPad）──────────────────────────────────────────
+#
+# 用户反馈：16:9 的讲义导进 iPad「不伦不类」（上下留黑边）。
+# 真机比例：iPad 12.9″/13″/10.2″ = 4:3；iPad 11″/10.9″/Air ≈ 1.439。
+# 两边都必须有这个键：前端下拉（RATIO_BOX，算画布宽高）与后端（Slidev 的
+# aspectRatio）——少一边就会出现"选得出来但导出报未知比例"。
+
+def test_ipad_ratio_known_to_backend():
+    assert "ipad11" in sh.RATIOS, "后端 RATIOS 少了 ipad11"
+    assert sh.RATIOS["ipad11"] == "2360/1640"
+    assert sh.RATIOS["4:3"] == "4/3"          # 12.9″ 那批 iPad 走这个
+    assert "16:9" in sh.RATIOS                # 老比例必须保留（用户要求）
+
+
+def test_unknown_ratio_rejected():
+    r = sh.export_canvas([{"blocks": []}], title="x", out="x",
+                         ratio="21:9", do_compile=False)
+    assert not r["ok"] and "未知比例" in r["error"], r
+
+
+def test_ipad_ratio_in_markdown():
+    """导出的 markdown 里 aspectRatio 要真的是 iPad 的比。"""
+    q = next(q for q in store.load_cached() if q.kind == "高考")
+    md = sh.build_canvas_pages(
+        [{"blocks": [{"type": "question", "key": q.key, "x": 4, "y": 4, "w": 92}]}],
+        title="iPad 比例", ratio=sh.RATIOS["ipad11"])
+    assert "aspectRatio: 2360/1640" in md, md[:200]
+
+
 # ── 选项里的图片（用户报过的 bug）────────────────────────────
 #
 # 现象：卷面上选项显示成 `(A)\includegraphics[width=0.15\paperwidth]{x.png}` 源码。

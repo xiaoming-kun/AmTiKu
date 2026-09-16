@@ -33,11 +33,15 @@ export default function Inspector({ selBlock, patch, remove, bringToFront,
             <div>
               <div className="mb-1 text-[10.5px] font-semibold text-ink-faint">页面比例</div>
               <div className="flex gap-1">
-                {(['16:9', 'a4', '4:3'] as const).map((v) => (
+                {([['16:9', '16:9'], ['a4', 'A4'],
+                   ['4:3', '4:3·iPad'], ['ipad11', 'iPad 11″']] as const).map(([v, label]) => (
                   <button key={v} onClick={() => setRatio(v)}
+                    title={v === 'ipad11' ? 'iPad 11″/10.9″/Air（2360×1640，≈1.439）'
+                      : v === '4:3' ? 'iPad 12.9″/13″/10.2″ 等（4:3）'
+                        : v === 'a4' ? 'A4 竖版（打印用）' : '16:9（讲课、录屏）'}
                     className={`flex-1 rounded border px-1.5 py-1 text-[11px] ${
                       ratio === v ? 'border-brand/40 bg-brand-soft text-brand-ink'
-                                  : 'border-border bg-bg text-ink-soft'}`}>{v}</button>
+                                  : 'border-border bg-bg text-ink-soft'}`}>{label}</button>
                 ))}
               </div>
             </div>
