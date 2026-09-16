@@ -163,7 +163,15 @@ def test_patch_difficulty_roundtrip():
     """
     key = client.get("/api/questions?limit=1").json()["items"][0]["key"]
     enc = _enc(key)
-    orig = client.get(f"/api/questions/{enc}").json().get("meta", {}).get("difficulty", "")
+    cur = client.get(f"/api/questions/{enc}").json()
+    orig = cur.get("meta", {}).get("difficulty", "")
+    if orig:
+        # 上一轮被强杀（Ctrl-C / kill）时 `finally` 的还原跑不到，会在这道题上
+        # 留下一条**手动难度**。不报出来的话它会被当成正常数据留很久
+        # （实测踩过：集合基础题被留成「难题」，还被 snapshot 进了基线）。
+        print(f"    ⚠️ {key} 上有上轮残留的手动难度「{orig}」，本次跑完会还原成它")
+        if orig == "难题":
+            print("       （多半是残留，不是有意的）")
     # 这个接口会写一份「变更记档」，测试跑完要把**自己产生的**记档删掉，
     # 否则每跑一次测试就往仓库里丢两个文件。
     audit_dir = ROOT / "变更记录"
