@@ -838,7 +838,7 @@ def merge(scans: list[dict]) -> list[dict]:
             # **试卷页**单独记一份。答案页也会出现同一个题号（答案卷常把题干
             # 重述一遍），混在一起的话补图的人会照着答案页的页码去找原图，
             # 找不着。登记位置要的是「这道题在试卷的第几页」。
-            if not is_ans_page:
+            if not is_ans_page and sc["no"] not in t["exam_pages"]:
                 t["exam_pages"].append(sc["no"])
             if not t["key_ans"]:
                 t["key_ans"] = sc["key"].get(n, "")
@@ -894,9 +894,12 @@ def split_figures(qs: list[dict], *, src: str = "") -> tuple[list, list, list]:
             reg.append({
                 "题号": int(q["n"]), "来源文件": src,
                 "页码": q["exam_pages"] or q["pages"],
-                "图": q["fig"] or "（模型没描述）",
+                "图": q["fig"] or "（OCR 不描述图，打开页图看）",
                 "位置": " ".join(x for x in (q["figpos"].get("y", ""),
-                                            q["figpos"].get("x", "")) if x) or "（未标注）",
+                                            q["figpos"].get("x", "")) if x) or "（见页图）",
+                "页图": "%s/%s/pages/p%03d.*" % (
+                    WORK.name, src.replace(".pdf", ""),
+                    (q["exam_pages"] or q["pages"] or [0])[0]),
                 "题干开头": (q["stem"].splitlines() or [""])[0][:60],
             })
     reg.sort(key=lambda r: (r["来源文件"], r["题号"]))
@@ -1275,10 +1278,11 @@ def report(out_dir: Path) -> str:
     out += ["", "## 二、带图题位置登记（只有第 8/11/14/18/19 题）", "",
             "**这些题的正文没有入库**，下面是它们在原卷上的位置，照这个去补图。", ""]
     if regs:
-        out += ["| 卷 | 题号 | 页码 | 图上位置 | 图长什么样 |", "|---|---|---|---|---|"]
-        out += ["| %s | %s | %s | %s | %s |" % (
+        out += ["| 卷 | 题号 | 页码 | 位置 | 页图（照这个去补图） | 图的说明 |",
+                "|---|---|---|---|---|---|"]
+        out += ["| %s | %s | %s | %s | `%s` | %s |" % (
             label, r["题号"], "、".join(str(x) for x in r["页码"]),
-            r["位置"], r["图"]) for label, r in regs]
+            r["位置"], r.get("页图", ""), r["图"]) for label, r in regs]
     else:
         out.append("（这一批没有落在 8/11/14/18/19 上的带图题）")
 

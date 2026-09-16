@@ -33,11 +33,43 @@
 | 批量跑到第 2 页 `AttributeError: 'int' object has no attribute 'get'` | 用页码覆盖了页信息字典。拆成 `no`（页码）/ `page`（kind + title）两个字段 |
 | 并发时每页耗时张冠李戴 | 4 个线程共用一个 `LAST` dict，改成 `threading.local()` |
 
+**转录引擎：27B 通用模型 → PaddleOCR-VL 0.9B（快约 30 倍）**
+
+整批 149 页用 27B 要 3 小时；实测定量对拍后换引擎：
+
+| | PaddleOCR-VL 0.9B | Qwen 27B |
+|---|---|---|
+| 一条题裁剪 | **0.2～2.3 秒** | 14～78 秒 |
+| 一页 10 条 | **8.9 秒** | 60～300 秒 |
+| 数学 LaTeX | 对 | 对 |
+| 执行指令 | **完全无视**（纯 OCR 模型） | 会听话 |
+
+它不听指令，所以三件事另想办法：**页类型**按「题号有没有回头」判
+（一大半卷子不用【答案】标记：Z20 用表格、青岛/武汉直接写解析段落）；
+**切题**仍是几何切，但 OCR 后拼回整页再按题号切；**判图**用
+「正则粗筛 + 27B 复核」（纯文字判有 5 处误报，全靠 27B 判又一页好几分钟）。
+
+装法：LM Studio 0.4.21 挂不上这个模型的视觉投影器（运行时 `libmtmd` 里
+有 `clip_graph_paddleocr`，是 LM Studio 索引的问题），所以绕过它，用
+llama.cpp 原生 `llama-server --mmproj` 起在 **1235 端口**，与现有环境隔离：
+
+```bash
+B=~/.lmstudio/extensions/backends/llama.cpp-mac-arm64-apple-metal-advsimd-2.38.0
+D=~/.lmstudio/models/PaddlePaddle/PaddleOCR-VL-1.6-GGUF
+DYLD_LIBRARY_PATH="$B" "$B/llama-server" -m "$D/PaddleOCR-VL-1.6-GGUF.gguf" \
+  --mmproj "$D/PaddleOCR-VL-1.6-GGUF-mmproj.gguf" --port 1235 -c 32768 -np 8 -ngl 99
+```
+
+**这批卷子的实际结果（149 页 / 13 份）**
+
+识别 239 题 → 录入 **181 题**；带图丢弃 47 题（其中 20 题落在
+8/11/14/18/19，已在报告里登记页码和页图路径）；42 题无解析（写「解析无」）。
+`amti.py diff`：**内容变化 0**。
+
 **验证**
 
-- `python3 -m amti.record --selftest` 23 项用例（已挂进 `amti.py accept` 第①层）
-- 提速：把模型按 `lms load --context-length 32768 --parallel 4` 重新加载后，
-  4 路并发的 token 吞吐 ~21.6 t/s（串行 11.8 t/s），约 1.8 倍。
+- `python3 -m amti.record --selftest` 30 项用例（已挂进 `amti.py accept` 第①层）
+- `python3 amti.py accept` **四层全绿**
 
 ---
 
