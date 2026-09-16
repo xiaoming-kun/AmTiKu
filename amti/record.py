@@ -413,6 +413,25 @@ def guess_type(section: str, stem: str, opts: list) -> str:
     return "解答"
 
 
+# 卷首的「考试说明」——**它们也带 1. 2. 3. 的编号**，会被当成题目切进来，
+# 而且占掉 1~4 的题号，把真题挤掉（真题编号不递增就被序列过滤器丢了，
+# 正文并进说明块）。实测 13 份卷子里 10 份中招，24 道假题入库。
+# 判据三条一起用：命中这些词 + 没有选项 + 没有任何数学记号。
+# ⚠️ 名字别叫 `_NOISE` —— 下面卷名清洗那儿**已经有一个 `_NOISE`** 了，
+# 同名会被后定义的覆盖掉，`is_noise` 就永远不生效（这个坑真踩过：
+# 过滤加了、测试没加，跑完一遍才发现说明文字还在库里）。
+_INSTRUCTION = re.compile(
+    r"答题卡|准考证|考生|2B\s*铅笔|考试时间|答卷前|涂黑|条形码|考试结束"
+    r"|本试卷共|满分\s*\d+|本题共\s*\d+\s*小?题|只有一项是符合题目要求")
+
+
+def is_noise(block: str, opts: list) -> bool:
+    """这段是不是「考试说明 / 小节标题」而不是一道题。"""
+    if opts or "$" in block or "\\(" in block:
+        return False
+    return bool(_INSTRUCTION.search(block))
+
+
 def parse_block(n: str, block: str, section: str = "") -> dict | None:
     r"""一道题的 OCR 文本 → 结构化字段。
 
@@ -435,6 +454,8 @@ def parse_block(n: str, block: str, section: str = "") -> dict | None:
                 sol = (sol + "\n" + seg).strip()
     stem, opts = split_options(stem)
     if not stem and not ans and not sol:
+        return None
+    if is_noise(block, opts):
         return None
     return {"n": n, "type": guess_type(section, stem, opts),
             "figure": None, "continued": False, "raw": block,
@@ -528,11 +549,18 @@ def split_by_number(parts: list[tuple[int, str]]) -> list[tuple[str, str, int, i
     # **只保留题号递增的那一串。** 放宽题号匹配后一定会误命中正文里的数字
     # （「见 3. 的结论」之类），而卷面题号必然是 9,10,11,12… 递增的——
     # 用这条硬约束筛，比调正则稳得多。
+    # 接受三种情况：
+    #   last+1  —— 正常往下走
+    #   last    —— 同一题号又出现（答案页常见）
+    #   1       —— **题号回到 1 就是新的一组**。卷首「考试说明」也带 1. 2. 3.
+    #              编号，不放行的话真题 1、2、3 会被判"不递增"丢掉，
+    #              正文并进说明块（实测 13 份里 10 份中招）。
+    # 跳号（v > last+1）不接受：那多半是正文里的数字，不是题号。
     starts: list[tuple[int, int, str]] = []
     last = None
     for pos, bi, n in cands:
         v = int(n)
-        if last is None or v in (last + 1, last):
+        if last is None or v in (last + 1, last) or v == 1:
             starts.append((pos, bi, n))
             last = v
     if not starts:
@@ -1503,6 +1531,15 @@ $a=1$
     check("带图题不进录入", [q["n"] for q in keep] == ["1", "7"],
           str([q["n"] for q in keep]))
     check("带图题被丢掉", [q["n"] for q in drop] == ["8"])
+    # 卷首「考试说明」也带 1. 2. 3. 编号，会被当成题、还会挤掉真题号。
+    # 这两个用例是补的——过滤写对了但名字撞车，跑完一整轮才发现没生效。
+    check("考试说明被识别成噪声",
+          is_noise("答题前，请将自己的学校、姓名等填写在答题卡上。", []))
+    check("小节标题被识别成噪声",
+          is_noise("一、选择题：本题共8小题，每小题5分，共40分。", []))
+    check("真题不会被误判成噪声",
+          not is_noise("已知函数 $f(x)=x^3+\\ln x$，则曲线 $y=f(x)$ 在点 $(1,1)$ 处的切线方程为",
+                       [("A", "$y=4x-3$")]))
     check("登记的是**试卷页**，不是答案页",
           split_figures([dict(qs[[q["n"] for q in qs].index("8")],
                               exam_pages=[2])], src="x.pdf")[2][0]["页码"] == [2])
