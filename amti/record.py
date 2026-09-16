@@ -725,14 +725,15 @@ def report(out_dir: Path) -> str:
     交代四件事：**每份卷子录了多少 / 带图题丢在哪、8·11·14·18·19 的在哪 /
     哪几页识别失败 / 哪些题没有解析**。后两条是留给人工补的活。
     """
-    rows, regs, fails = [], [], []
+    rows, regs, fails, dropped = [], [], [], []
     for side in sorted(out_dir.glob("*.json")):
         info = json.loads(side.read_text(encoding="utf-8"))
         s = info.get("stats", {})
-        rows.append((info.get("year"), info.get("label", side.stem), s))
-        regs += [(info.get("label", ""), r) for r in info.get("register", [])]
-        fails += ["%s 第 %s 页" % (info.get("label", ""), p)
-                  for p in s.get("失败页", [])]
+        label = info.get("label", side.stem)
+        rows.append((info.get("year"), label, s))
+        regs += [(label, r) for r in info.get("register", [])]
+        dropped += [(label, d) for d in info.get("dropped", [])]
+        fails += ["%s 第 %s 页" % (label, p) for p in s.get("失败页", [])]
     out = ["# 录题报告", "",
            "> 由 `python3 -m amti.record --report 数据/录题/输出` 生成。",
            "> 规矩：**带图题一律不录**；第 8/11/14/18/19 题的带图题只登记位置；",
@@ -760,11 +761,22 @@ def report(out_dir: Path) -> str:
             label, r["题号"], "、".join(str(x) for x in r["页码"]),
             r["位置"], r["图"]) for label, r in regs]
     else:
-        out.append("（这一批没有需要登记的带图题）")
+        out.append("（这一批没有落在 8/11/14/18/19 上的带图题）")
 
-    out += ["", "## 三、识别失败的页", ""]
+    out += ["", "## 三、全部被丢弃的带图题", "",
+            "带图题一律不录。下面**把丢掉的都列出来**——规则只要求登记 8/11/14/18/19 "
+            "的位置，但丢掉的是哪些题得能查得到，不然「丢了多少」没人说得清。", ""]
+    if dropped:
+        out += ["| 卷 | 题号 | 页码 | 图 |", "|---|---|---|---|"]
+        out += ["| %s | %s | %s | %s |" % (
+            label, d.get("n"), "、".join(str(x) for x in d.get("pages", [])),
+            (d.get("fig") or "").replace("\n", " ")[:60]) for label, d in dropped]
+    else:
+        out.append("（没有带图题）")
+
+    out += ["", "## 四、识别失败的页", ""]
     out += ["- " + f for f in fails] if fails else ["（无）"]
-    out += ["", "## 四、这些题没有解析", "",
+    out += ["", "## 五、这些题没有解析", "",
             "库里按规矩写的是「解析无」，需要人工补。", ""]
     miss = [(label, s.get("无解析", 0)) for _y, label, s in rows
             if s.get("无解析")]
