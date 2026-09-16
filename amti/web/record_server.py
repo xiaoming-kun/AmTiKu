@@ -23,7 +23,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 PKG = Path(__file__).resolve().parents[2]
@@ -144,10 +144,25 @@ def _work(jid: str) -> None:
 
 
 def _worker() -> None:
+    r"""排队消费。
+
+    **`_work` 抛异常不能把 worker 打死。** 打死之后进程还在、接口还能响应，
+    但队列再也没人消费——界面上所有任务永远停在"排队中"，
+    这是最难查的一类故障（服务"活着"却什么也不干）。
+    """
     while True:
         jid = _q.get()
         try:
             _work(jid)
+        except Exception as e:                                 # noqa: BLE001
+            try:
+                j = load(jid)
+                j.update(status="error", stage="出错",
+                         error="%s: %s" % (type(e).__name__, e),
+                         trace=traceback.format_exc()[-2000:])
+                save(j)
+            except Exception:                                  # noqa: BLE001
+                pass                    # 连兜底都写不进去，只能让日志说话
         finally:
             _q.task_done()
 
@@ -183,7 +198,8 @@ def _mk(pdf: Path, answers: Path | None, **kw) -> dict:
          "label": kw.get("label") or rec.guess_label(pdf),
          "year": kw.get("year") or rec.guess_year(pdf),
          "region": kw.get("region", ""), "book": kw.get("book", "模拟题"),
-         "workers": kw.get("workers", 1), "force": kw.get("force", False)}
+         "workers": max(1, min(8, int(kw.get("workers", 1)))),
+         "force": kw.get("force", False)}
     auto = None if answers else rec.pair_answer(pdf)
     j["answers"] = str(answers or auto) if (answers or auto) else ""
     j["answers_auto"] = bool(auto and not answers)
