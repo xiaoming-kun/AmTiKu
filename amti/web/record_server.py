@@ -13,6 +13,7 @@ r"""AmTiKu · 录题台（独立界面）
 from __future__ import annotations
 
 import json
+import os
 import queue
 import sys
 import threading
@@ -55,10 +56,23 @@ def load(jid: str) -> dict:
 
 
 def save(j: dict) -> None:
+    r"""任务写盘。**必须先写临时文件再 `os.replace`。**
+
+    直接 `write_text` 不是原子的：worker 线程正在写、请求线程同时在读，
+    读到的就是**半截 JSON**——实测报 `JSONDecodeError: Expecting value:
+    line 1 column 1`，界面上表现为"任务莫名其妙出错了"。
+    `os.replace` 在同一文件系统内是原子的，读到的要么是旧的全份、要么是新的全份。
+
+    临时文件名**带线程号**：同一个任务会被 worker 线程和请求线程同时写，
+    共用一个 `.tmp` 名字的话，先写完的那个 `os.replace` 已经把它搬走了，
+    后一个就撞上 `FileNotFoundError`。
+    """
     JOBS.mkdir(parents=True, exist_ok=True)
     j["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    _path(j["id"]).write_text(json.dumps(j, ensure_ascii=False, indent=1),
-                              encoding="utf-8")
+    p = _path(j["id"])
+    tmp = p.with_name("%s.%d.tmp" % (p.name, threading.get_ident()))
+    tmp.write_text(json.dumps(j, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
 
 
 def brief(j: dict) -> dict:

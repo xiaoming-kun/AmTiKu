@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import threading
 import time
@@ -297,8 +298,11 @@ def scan_pdf(pdf: Path, *, work: Path | None = None, workers: int = 1,
             try:
                 d = parse_marked(ask(img))
                 d.update(secs=last().get("secs"), finish=last().get("finish"))
-                dst.write_text(json.dumps(d, ensure_ascii=False, indent=1),
+                # 原子写：批量与界面可能同时读同一份缓存，半截 JSON 会让对方直接崩
+                tmp = dst.with_name(dst.name + ".tmp")
+                tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1),
                                encoding="utf-8")
+                os.replace(tmp, dst)
             except Exception as e:                 # noqa: BLE001
                 # **一页失败不能拖垮整份卷子。** 失败的页不写缓存，
                 # 所以「重跑同一份」天然只重试这几页——其余页命中缓存。
@@ -327,6 +331,30 @@ def scan_pdf(pdf: Path, *, work: Path | None = None, workers: int = 1,
 
 
 # ── 合并 + 答案配对 ───────────────────────────────────────────────
+
+
+def same_question(a: str, b: str) -> bool:
+    r"""两段文字是**同一道题的两次转写**，还是**一道题跨页的两半**？
+
+    两者必须分开处理：前者要**取更完整的一份**，后者要**拼起来**。
+    分错了的后果实测过——把同一道题接两遍，题干在库里重复出现：
+
+        在 160 和 -5 之间插入 4 个数，……则公比 $q$ 的值为
+        在 160 和 $-5$ 之间插入 4 个数，……则公比 $q$ 的值为\paren[A]
+
+    阈值 0.85 是量出来的，两边差得很开：
+
+        「同一题重述」  0.978   （试卷页 vs 答案页，只差两个 `$`）
+        「跨页续写」    0.700 / 0.655 / 0.427   （(1)(2) 两小问）
+
+    包含关系直接判同一题，不受阈值影响。
+    """
+    if not a or not b:
+        return False
+    if a in b or b in a:
+        return True
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, a, b).ratio() >= 0.85
 
 
 def merge(scans: list[dict]) -> list[dict]:
@@ -370,8 +398,16 @@ def merge(scans: list[dict]) -> list[dict]:
                 if q["sol"] and q["sol"] != "->":
                     t["sol"] = (t["sol"] + "\n" + q["sol"]).strip()
                 continue
-            if q["stem"] and q["stem"] != "->" and q["stem"] not in t["stem"]:
-                t["stem"] = (t["stem"] + "\n" + q["stem"]).strip()
+            if q["stem"] and q["stem"] != "->":
+                if not t["stem"]:
+                    t["stem"] = q["stem"]
+                elif same_question(t["stem"], q["stem"]):
+                    # 同一题的另一次转写（答案页常把题目重述一遍）：
+                    # **取更完整的那份，不拼**——拼了就是题干重复两遍。
+                    if len(q["stem"]) > len(t["stem"]):
+                        t["stem"] = q["stem"]
+                else:
+                    t["stem"] = (t["stem"] + "\n" + q["stem"]).strip()
             have = {l for l, _ in t["options"]}
             t["options"] += [o for o in q["options"] if o[0] not in have]
             if q["ans"] and q["ans"] != "->":
@@ -414,18 +450,33 @@ def split_figures(qs: list[dict], *, src: str = "") -> tuple[list, list, list]:
 _FILLIN = re.compile(r"\\fillin\s*\[[^\]]*\]")
 _UNDERLINE = re.compile(r"_{3,}|\\underline\{\\hspace\{[^}]*\}\}|（\s*）")
 _BB = re.compile(r"\\mathbf\{([RNZQC])\}")
+_TEXT_MATH = re.compile(r"\\text\{([ei])\}")
+# 卷面上的小节标记（「【解析】」「【答案】」），不是内容。库里 0 处，等于噪声。
+_LEAD_MARK = re.compile(r"^\s*【(?:解析|答案|详解|分析|解|点评)】\s*")
 
 
 def fixup(tex: str) -> str:
     r"""把视觉模型惯用的记号拉回库里的写法。
 
-    **只做没有歧义的。** `\mathbf{R}` → `\mathbb{R}`：库里 4056 处
-    `\mathbb{R}`、0 处 `\mathbf{R}`，而模型十有八九写成 `\mathbf`。
+    **只做没有歧义的**（括号里是库内的实际计数，2026-09-16 量的）：
 
-    裸 `i`（规范要 `\mathrm{i}`）**不碰**——它可能是虚数单位，也可能是求和
+    * `\mathbf{R}` → `\mathbb{R}`：`\mathbb{R}` 4056 处、`\mathbf{R}` 0 处
+    * `\text{e}` → `\mathrm{e}`：`\mathrm{e}` 6266 处、`\text{e}` 42 处
+      （规范 §2.6 明写「虚数单位写 `\mathrm{i}`，自然底数 `\mathrm{e}`」）
+
+    裸 `i`（该写 `\mathrm{i}`）**不碰**——它可能是虚数单位，也可能是求和
     下标、普通字母，改了就是引入错误。宁可留着给人看。
     """
-    return _BB.sub(r"\\mathbb{\1}", tex)
+    return _TEXT_MATH.sub(r"\\mathrm{\1}", _BB.sub(r"\\mathbb{\1}", tex))
+
+
+def strip_marker(sol: str) -> str:
+    r"""去掉解析开头的「【解析】」这类**卷面小节标记**。
+
+    它是排版用的标题，不是解答内容；库里 0 处这样的标记。
+    只削开头一个，正文里出现的不管。
+    """
+    return _LEAD_MARK.sub("", sol)
 
 
 def _split_answers(ans: str, holes: int) -> list[str]:
@@ -468,7 +519,7 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
     for i, q in enumerate(qs, 1):
         n = int(q["n"])
         qtype = TYPE_MAP.get(q["type"], "")
-        ans, sol = fixup(q["ans"].strip()), fixup(q["sol"].strip())
+        ans, sol = fixup(q["ans"].strip()), strip_marker(fixup(q["sol"].strip()))
         stem = fixup(q["stem"].strip())
         if qtype in ("single_choice", "multi_choice"):
             stem = re.sub(r"\\paren\s*\[[^\]]*\]\s*$", "", stem).rstrip()
@@ -849,6 +900,24 @@ $a=1$
     check(r"\mathbf{R} 拉回 \mathbb{R}",
           fixup(r"$x\in\mathbf{R}$") == r"$x\in\mathbb{R}$", fixup(r"$x\in\mathbf{R}$"))
     check("裸 i 不碰（可能是下标，改了就是错）", fixup("$z=i$") == "$z=i$")
+    check(r"\text{e} 拉回 \mathrm{e}", fixup(r"$y=\text{e}^x$") == r"$y=\mathrm{e}^x$",
+          fixup(r"$y=\text{e}^x$"))
+    check("去掉卷面的【解析】标记",
+          strip_marker("【解析】因为所以。") == "因为所以。"
+          and strip_marker("因为所以【解析】。") == "因为所以【解析】。")
+
+    # 同一题被转写两次要取更完整的，跨页的两半要拼起来——分错就是题干重复。
+    _a = "在 160 和 -5 之间插入 4 个数，使这 6 个数成等比数列，则公比 $q$ 的值为"
+    _b = "在 160 和 $-5$ 之间插入 4 个数，使这 6 个数成等比数列，则公比 $q$ 的值为"
+    check("同一题的两次转写认得出来", same_question(_a, _b))
+    check("跨页的两半不当成同一题",
+          not same_question("(1) 求 $a$；", "(2) 求 $b$。")
+          and not same_question("如图，在四棱锥 $P-ABCD$ 中，底面 $ABCD$ 是正方形，",
+                                "侧面 $PAD$ 是正三角形，且平面 $PAD \\perp$ 平面 $ABCD$。"))
+    _dup = merge([scan(RAW, 1), scan(RAW.replace("已知 $z$ 是复数，", "已知 $z$ 是复数"),
+                                     5)])
+    check("题干不会被接两遍",
+          _dup[0]["stem"].count("已知 $z$ 是复数") == 1, repr(_dup[0]["stem"]))
 
     # `scan_pdf` 的返回契约：页码在 `no`，页信息在 `page`。
     # 一开始把页码写进了 `page`，批量跑到第二页就 AttributeError。
