@@ -124,7 +124,8 @@ def shrink(img: Path, *, max_px: int = MAX_PIXELS) -> Path:
         return out
 
 
-def ask(img: Path, *, timeout: int = 2400, prompt: str = PROMPT) -> str:
+def ask(img: Path, *, timeout: int = 2400, prompt: str = PROMPT,
+        max_tokens: int = MAX_TOKENS, note: str = "转录这一页。") -> str:
     r"""把一页图丢给本地 VLM，返回标记文本。
 
     ⚠️ **必须用 `reasoning_effort="none"` 关思考。**
@@ -148,13 +149,13 @@ def ask(img: Path, *, timeout: int = 2400, prompt: str = PROMPT) -> str:
         "messages": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": [
-                {"type": "text", "text": "转录这一页。"},
+                {"type": "text", "text": note},
                 {"type": "image_url",
                  "image_url": {"url": f"data:{mime};base64,{b64}"}},
             ]},
         ],
         "temperature": 0.1,
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": max_tokens,
         "reasoning_effort": "none",
     }).encode()
     req = urllib.request.Request(API, data=body,
@@ -169,15 +170,402 @@ def ask(img: Path, *, timeout: int = 2400, prompt: str = PROMPT) -> str:
     return ch["message"]["content"] or ""
 
 
+# ── 按题裁剪 ──────────────────────────────────────────────────────
+#
+# 为什么不一页一喂（用户 2026-09-16 定的方向，实测站得住）：
+#   ① 整页图 ~2100 图像 token，把 8192 的上下文吃掉四分之一，正文被挤掉；
+#      一道题裁出来只有 ~300 token，同样的槽能塞下多得多的请求。
+#   ② 一页一输出，长页会截断（`finish_reason=length`），截断就是静默丢题。
+#   ③ 页内的题互相独立，**可以真并发**——这才吃得满 LM Studio 的多个槽。
+#   ④ 跨页拼接、答案页重述题干、幽灵题这些坑，本来都出在「一页一坨」上。
+#
+# 切法**不用模型**，用版式：这 15 份卷子的题干（以及答案页的每条解析）
+# 都从卷面**最左的文字列**开始，选项行和小题行是缩进的。逐行求左边界，
+# 跟全页最小左边界齐平的行就是题目起点。
+
+HEAD_PROMPT = r"""这是一份高中数学试卷的其中一页扫描图。**只回答两件事，不要转录题目**：
+
+@@PAGE kind=<试题|答案|封面|目录|空白> title=<首页写卷面标题，其余页写 ->
+"""
+
+
+def bands_of(img: Path, *, tol: int | None = None,
+             gap: int = 16) -> list[tuple[int, int]]:
+    r"""把一页按纵向切成「疑似一道题」的条带，返回 `[(y0, y1), …]`。
+
+    小节标题（「二、选择题：本题共…」）跟题干一样齐左边界，会多切出一块——
+    那块交给模型自己说「@@NONE」丢掉，比在几何上区分它们可靠得多。
+    页眉页脚一般居中，不齐左边界，天然切不进来。
+
+    ⚠️ **容差要按页宽算，不能给死数。** 同一列的字（题号 `12.`）左边界
+    实测散布在 120~136 px（扫描歪一点就差十几像素），而缩进的选项行在
+    193 px 起——都是 2400 px 宽的页。给死 `tol=10` 会把一半题干行漏掉，
+    于是题被拦腰切成两段。按页宽 1.5%（约 36 px）刚好把两簇分开。
+    """
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(img) as im:
+        a = np.asarray(im.convert("L"))
+    dark = a < 160
+    h, w = dark.shape
+    tol = max(12, int(w * 0.015)) if tol is None else tol
+    ink = dark.sum(axis=1)
+
+    lines: list[tuple[int, int]] = []
+    s = None
+    for y, v in enumerate(ink > 2):
+        if v and s is None:
+            s = y
+        elif not v and s is not None:
+            if y - s >= 8:                       # 太矮的当噪点
+                lines.append((s, y))
+            s = None
+    if s is not None:
+        lines.append((s, h))
+    if not lines:
+        return []
+
+    lefts = []
+    for y0, y1 in lines:
+        cols = np.where(dark[y0:y1].any(axis=0))[0]
+        lefts.append(int(cols[0]) if len(cols) else 10 ** 6)
+    base = min(lefts)
+    starts = [k for k, L in enumerate(lefts) if L <= base + tol]
+
+    out = []
+    for j, k in enumerate(starts):
+        y0 = max(0, lines[k][0] - gap)
+        y1 = (lines[starts[j + 1]][0] - gap) if j + 1 < len(starts) else h
+        if y1 - y0 >= 24:
+            out.append((y0, min(y1, h)))
+    return out
+
+
+def crop_band(img: Path, band: tuple[int, int], dst: Path) -> Path:
+    """裁出条带存成 jpg（比 png 小得多，base64 发出去也快）。"""
+    from PIL import Image
+
+    with Image.open(img) as im:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        im.crop((0, band[0], im.width, band[1])).convert("RGB").save(
+            dst, quality=92)
+    return dst
+
+
+QPROMPT = r"""这是同一份高中数学试卷上**一道题**的裁剪图（上下可能带一点邻题的边角）。
+
+只转录图里这一道题。**如果这张图里根本没有题目**——比如只是
+「二、选择题：本题共 3 小题…」这种小节标题，或者页眉页脚——就只输出一行：
+
+@@NONE
+
+否则严格按下面的标记输出，除标记外不要有别的内容：
+
+@@Q n=<卷面题号，纯数字> type=<单选|多选|填空|解答> figure=<有|无>
+@@STEM
+<题干原文。行内公式用 $…$；数学里的中文用 \text{}；选择题的作答空位写 \paren[]，
+ 填空题的空位写 \fillin[]；小题 (1)(2) 直接写在文字里。>
+@@OPT
+<只有选择题写，每行一个：A. 内容 ；不是选择题写 ->
+@@FIG
+<figure=有时用一句话描述图长什么样；否则写 ->
+@@ANS
+<答案：选择题只写字母（多选如 ABD）；填空题只写结果；解答题写最终结论。图上没有写 ->
+@@SOL
+<解析/解答过程原文。图上没有写 ->
+@@ENDQ
+
+铁律：
+1. 只转录图上看得见的，不要凭记忆或上下文补全。
+2. 看不清的字写 \text{【?】}，**不要猜**。
+3. 数字、符号、上下标、单位一个字都不能改。
+4. 图里若带着上一题的尾巴（半道题、孤立的选项行），**不要输出它**。
+5. 填空有多个空时，答案用中文分号「；」按顺序隔开（如 5；7），不要用逗号。
+"""
+
+
+def _atomic(dst: Path, obj) -> None:
+    """原子写 json：批量与界面可能同时读同一份缓存，半截文件会让对方直接崩。"""
+    tmp = dst.with_name("%s.%d.tmp" % (dst.name, threading.get_ident()))
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1),
+                   encoding="utf-8")
+    os.replace(tmp, dst)
+
+
+def scan_page(img: Path, cache: Path, no: int, *, force: bool = False) -> dict:
+    r"""一页 → 该页的题目。
+
+    **转录引擎换了（2026-09-16 实测对拍）**：交给 PaddleOCR-VL（0.9B，跑在
+    独立的 llama.cpp 服务上），不再用 27B 转录。
+
+    | | PaddleOCR-VL 0.9B | Qwen 27B |
+    |---|---|---|
+    | 一条题裁剪 | **0.2～2.3 秒** | 14～78 秒 |
+    | 一页 10 条 | **8.9 秒** | 60～300 秒 |
+    | 数学 LaTeX | 对 | 对 |
+    | 执行指令 | **完全无视** | 会听话 |
+
+    它是**纯 OCR 模型**——给什么指令都只照抄图里的字。所以三件事要另想办法：
+
+    1. **页类型**不问模型，直接看文本里有没有「【答案】/【解析】」。
+    2. **切题**仍用几何（`bands_of`），但 OCR 完要**拼回整页再按题号切**：
+       答案页的解析段落也齐左边界，几何上会被切碎。
+    3. **判有没有图**用「正则粗筛 + 27B 复核」（见 `check_figure`）。
+    """
+    parts: list[tuple[int, str]] = []            # (条带序号, 文本)
+    for bi, band in enumerate(bands_of(img), 1):
+        crop = cache.parent / "crops" / f"p{no:03d}_{bi:02d}.jpg"
+        if not crop.exists():
+            crop_band(img, band, crop)
+        res = cache / f"p{no:03d}_{bi:02d}.txt"
+        if res.exists() and not force:
+            txt = res.read_text(encoding="utf-8")
+        else:
+            txt = ask_ocr(crop)
+            tmp = res.with_name("%s.%d.tmp" % (res.name, threading.get_ident()))
+            tmp.write_text(txt, encoding="utf-8")
+            os.replace(tmp, res)
+        parts.append((bi, txt))
+
+    text = "\n".join(t for _b, t in parts)
+    is_ans = len(re.findall(r"【(?:答案|解析|详解)】", text)) >= 2
+    page = {"kind": "答案" if is_ans else "试题",
+            "title": _first_line(parts[0][1]) if parts else ""}
+    _atomic(cache / f"p{no:03d}.head.json", page)
+
+    qs = []
+    for n, block, b0, b1, sec in split_by_number(parts):
+        q = parse_block(n, block, sec)
+        if q is None:
+            continue
+        q["pages_bands"] = [b0, b1]
+        # 判图只对**题干里提到图**的题问 27B：一页也就一两道，全问太慢。
+        c0 = cache.parent / "crops" / f"p{no:03d}_{b0:02d}.jpg"
+        c1 = cache.parent / "crops" / f"p{no:03d}_{b1:02d}.jpg"
+        q["figure"] = bool(check_figure(c0, q["stem"]) or
+                           check_figure(c1, " ".join(o[1] for o in q["options"])))
+        qs.append(q)
+    return {"page": page, "key": {}, "figpos": {}, "questions": qs}
+
+
+def _first_line(s: str) -> str:
+    return (s.strip().splitlines() or [""])[0][:80]
+
+
+# ── OCR 文本 → 结构 ───────────────────────────────────────────────
+
+OCR_API = "http://127.0.0.1:1235/v1/chat/completions"
+OCR_MODEL = "paddleocr"
+OCR_SYS = ("你是数学题库录入员。忠实转录图中全部数学内容，行内公式用 $…$ 表示，"
+           r"看不清的字写 \text{【?】}，不要解答、不要改写、不要补充。")
+# 题干里提到这些词才值得去问 27B「有没有图」。**是粗筛不是判据**——
+# 实测「为了得到 y=cos2x 的图象」这种纯代数题也会命中，所以必须复核。
+_FIG_WORD = re.compile(
+    r"如图|图中|图象|图像|图形|图所示|如下图|右图|左图|统计图|直方图|茎叶图"
+    r"|程序框图|直观图|三视图|散点图|条形图|扇形图|折线图|频率分布|坐标系")
+# 题号。**不能只认行首**：答案页常把几个小题的答案挤在一行
+# （实测 `12. $\sqrt{6}$  13. $\frac{\pi}{2}$  14. 24`），只认行首会漏掉一半答案。
+# 放宽到「行首或空白之后」，再由 `split_by_number` 用**题号递增**把它筛干净。
+_QNUM = re.compile(r"(?:^|[ \t])(\d{1,2})[ \t]*[.．、][ \t]*", re.M)
+_MARK = re.compile(r"【(答案|解析|详解|分析|解|点评)】")
+# 选项标号。**不能只认行首**：实测同一行的 `A. 极差是10  B. 平均数是6` 很常见。
+_LAB = re.compile(r"([A-D])[ \t]*[.．、][ \t]*")
+# 小节标题：「二、选择题：本题共3小题…」。题型判定看它，不看正文猜。
+_SECTION = re.compile(r"^[ \t]*[一二三四五六七八九十][ \t]*[、.][ \t]*(.{0,40})", re.M)
+
+
+def split_options(text: str) -> tuple[str, list[tuple[str, str]]]:
+    r"""把题干和选项拆开。选项可能一行一个，也可能挤在同一行。
+
+    只认**从 A 开始**的那一串标号，其它字母（比如解答题里的 $A$、$B$）
+    不会被误当成选项。
+    """
+    ms = list(_LAB.finditer(text))
+    ms = [m for m in ms if m.group(1) == "A"][:1] + []
+    if not ms:
+        return text.strip(), []
+    rest = text[ms[0].start():]
+    head = text[:ms[0].start()].strip()
+    marks = list(_LAB.finditer(rest))
+    out = []
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(rest)
+        out.append((m.group(1), rest[m.end():end].strip()))
+    return head, out
+
+
+def guess_type(section: str, stem: str, opts: list) -> str:
+    r"""题型：**先看小节标题**，标题没有才看结构。
+
+    看标题是规矩（`设计/识图录入提示词.md`：类型判定看分节标题，不看正文猜）
+    ——多选和单选光看正文分不出来，标题里那句「有多项符合题目要求」才是依据。
+    """
+    if "选择" in section:
+        return "多选" if "多项" in section else "单选"
+    for k, v in (("填空", "填空"), ("解答", "解答"), ("证明", "解答")):
+        if k in section:
+            return v
+    if len(opts) >= 2:
+        return "单选"
+    if re.search(r"▲|＿|_{3,}|\\underline|\\fillin|\\underline\{\\hspace", stem):
+        return "填空"
+    return "解答"
+
+
+def parse_block(n: str, block: str, section: str = "") -> dict | None:
+    r"""一道题的 OCR 文本 → 结构化字段。
+
+    两种块都吃：
+
+    * 试卷页：`12. 二项式 $(x+1)^6$ 展开式中第 4 项系数是 ▲ .（用数字作答）`
+    * 答案页：`12. 【答案】20 【解析】第 4 项对应 $k=3$，系数为 …`
+    """
+    marks = list(_MARK.finditer(block))
+    ans = sol = ""
+    stem = block
+    if marks:
+        stem = block[:marks[0].start()].strip()
+        for i, m in enumerate(marks):
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(block)
+            seg = block[m.end():end].strip()
+            if m.group(1) == "答案":
+                ans = seg
+            elif seg:
+                sol = (sol + "\n" + seg).strip()
+    stem, opts = split_options(stem)
+    if not stem and not ans and not sol:
+        return None
+    return {"n": n, "type": guess_type(section, stem, opts),
+            "figure": None, "continued": False, "raw": block,
+            "stem": stem, "options": opts, "fig": "", "ans": ans, "sol": sol}
+
+
+def ask_ocr(crop: Path, *, timeout: int = 600) -> str:
+    r"""一条题目裁剪图 → 转写文本。走独立的 PaddleOCR-VL 服务（端口 1235）。
+
+    它是纯 OCR 模型，**系统提示词基本只影响公式定界符**（给 `$…$` 它就写
+    `$…$`，不给就写 `\(…\)`），别的一概不听。所以提示词力求短——
+    写长了它反而会漏内容（实测长提示词下整条输出为空）。
+    """
+    b64 = base64.b64encode(crop.read_bytes()).decode()
+    mime = "image/png" if crop.suffix.lower() == ".png" else "image/jpeg"
+    body = json.dumps({
+        "model": OCR_MODEL,
+        "messages": [{"role": "system", "content": OCR_SYS},
+                     {"role": "user", "content": [
+                         {"type": "text", "text": "转录这一道题。"},
+                         {"type": "image_url",
+                          "image_url": {"url": f"data:{mime};base64,{b64}"}}]}],
+        "temperature": 0.0, "max_tokens": 2000,
+    }).encode()
+    req = urllib.request.Request(OCR_API, data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        d = json.loads(r.read().decode())
+    return (d["choices"][0]["message"]["content"] or "").strip()
+
+
+FIG_SYS = ("这道数学题里，除了文字还有几何图形、函数图象或统计图表吗？"
+           "只回答一个字：有 或 无。")
+
+
+def check_figure(crop: Path, text: str) -> bool:
+    r"""这道题有没有配图。
+
+    **两步走，两边的好处都要：**
+
+    * 纯靠文字判 → 实测 5 处误报（`为了得到 y=\cos 2x 的图象` 是纯代数题）
+    * 全靠 27B 判 → 准（6/6），但一道 2～27 秒，一页 19 道就是好几分钟
+
+    所以先用正则粗筛（题干提到「图」才可能带图），**只对候选**去问 27B。
+    一页也就一两道候选，代价可以忽略。
+
+    ⚠️ 宁可多问不可漏判：漏判会把带图的题**录进库**（违反「带图题一律不录」），
+    误判只是少录一道并留痕。所以粗筛要宽、问不出来时按"有图"处理。
+    """
+    if not _FIG_WORD.search(text or ""):
+        return False
+    if not crop.exists():
+        return True                     # 图没裁出来也不能当"没有"
+    b64 = base64.b64encode(crop.read_bytes()).decode()
+    mime = "image/png" if crop.suffix.lower() == ".png" else "image/jpeg"
+    body = json.dumps({
+        "model": MODEL,
+        "messages": [{"role": "system", "content": FIG_SYS},
+                     {"role": "user", "content": [
+                         {"type": "text", "text": "看图回答。"},
+                         {"type": "image_url",
+                          "image_url": {"url": f"data:{mime};base64,{b64}"}}]}],
+        "temperature": 0.0, "max_tokens": 10,
+        "reasoning_effort": "none",     # 不关思考，10 个 token 全烧在推理上
+    }).encode()
+    req = urllib.request.Request(API, data=body,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            d = json.loads(r.read().decode())
+    except Exception:                                      # noqa: BLE001
+        return True                     # 问不出来就按"有图"处理，宁可少录
+    return "有" in (d["choices"][0]["message"]["content"] or "")
+
+
+def split_by_number(parts: list[tuple[int, str]]) -> list[tuple[str, str, int, int, str]]:
+    r"""整页文本按**题号**切块，返回 `[(题号, 文本, 起条带, 止条带), …]`。
+
+    为什么"拼回整页再切"而不是"一条带当一道题"：**答案页的解析段落也齐
+    左边界**，几何上会被切碎（实测一页解析被切成 7 段，每段都不是完整解析）。
+    拼回整页后按行首 `12.` 这种题号切，才是真的按题分块。
+
+    条带范围要留着——判图得回到图上问，文本里看不出有没有图。
+    """
+    cands: list[tuple[int, int, str]] = []           # (字符偏移, 条带号, 题号)
+    off = 0
+    for bi, t in parts:
+        for m in _QNUM.finditer(t):
+            cands.append((off + m.start(1), bi, m.group(1)))
+        off += len(t) + 1
+    # **只保留题号递增的那一串。** 放宽题号匹配后一定会误命中正文里的数字
+    # （「见 3. 的结论」之类），而卷面题号必然是 9,10,11,12… 递增的——
+    # 用这条硬约束筛，比调正则稳得多。
+    starts: list[tuple[int, int, str]] = []
+    last = None
+    for pos, bi, n in cands:
+        v = int(n)
+        if last is None or v in (last + 1, last):
+            starts.append((pos, bi, n))
+            last = v
+    if not starts:
+        return []
+    full = "\n".join(t for _b, t in parts)
+    secs = [(m.start(), m.group(1)) for m in _SECTION.finditer(full)]
+    out = []
+    for k, (pos, bi, n) in enumerate(starts):
+        end = starts[k + 1][0] if k + 1 < len(starts) else len(full)
+        body = _QNUM.sub("", full[pos:end], count=1)
+        b1 = starts[k + 1][1] if k + 1 < len(starts) else parts[-1][0]
+        # 最近一个**在本题之前**的小节标题，用来定题型
+        sec = next((t for p0, t in reversed(secs) if p0 < pos), "")
+        out.append((n, body.strip(), bi, b1, sec))
+    return out
+
+
 # ── 页图 ──────────────────────────────────────────────────────────
 
 
-def pages_of(pdf: Path, out: Path, *, dpi: int = 200) -> list[Path]:
-    r"""一份 PDF → 每页一张图。
+def pages_of(pdf: Path, out: Path, *, dpi: int | None = None) -> list[Path]:
+    r"""一份 PDF → 每页一张图。**已经抽过就复用**。
 
-    扫描件**直接取内嵌原图**（`extract_image`，不重编码、不掉清晰度）；
-    只有真正的矢量页才渲染。**已经抽过就复用**——重跑一份 10 页的卷子
-    不该再把 10 张图重抽一遍。
+    ⚠️ **一律渲染，不再去抽内嵌图**（原来为了"不重编码、不掉清晰度"走
+    `extract_image`，实测是错的）。这批卷子里有好几份 **PDF 的 xref 是坏的**
+    （MuPDF 一路报 `cannot find object in xref`），`get_images()` 给出的
+    xref 会解析到**别的页**上去，于是好几页抽成同一张图：
+
+        武汉9调 9 页：p001==p002、p003==p004、p005~p009 全同
+        → 一整份卷子只切出 7 道题（应该有 19 道），而且答案是错位的
+
+    渲染是按页来的，永远对。DPI 按内嵌图的实际分辨率算（`img宽 ÷ 页宽英寸`），
+    所以清晰度跟原扫描件一致，不会因为"渲染"而变糊。
     """
     import fitz                                    # 重依赖，用到才导
 
@@ -189,15 +577,15 @@ def pages_of(pdf: Path, out: Path, *, dpi: int = 200) -> list[Path]:
             if hit:
                 got.append(hit[0])
                 continue
-            imgs = page.get_images(full=True)
-            big = max(imgs, key=lambda x: x[2] * x[3], default=None)
-            if big and big[2] * big[3] > 200_000:      # 整页扫描图
-                d = doc.extract_image(big[0])
-                p = out / f"p{i:03d}.{d['ext']}"
-                p.write_bytes(d["image"])
-            else:                                       # 矢量页
-                p = out / f"p{i:03d}.png"
-                page.get_pixmap(dpi=dpi).save(p)
+            d = dpi
+            if d is None:                              # 贴着原扫描件的分辨率
+                imgs = page.get_images(full=True)
+                big = max(imgs, key=lambda x: x[2] * x[3], default=None)
+                w_in = max(page.rect.width, 1) / 72.0
+                d = int(round(big[2] / w_in)) if big and big[2] else 200
+                d = max(120, min(300, d))
+            p = out / f"p{i:03d}.png"
+            page.get_pixmap(dpi=d).save(p)
             got.append(p)
     return got
 
@@ -289,6 +677,7 @@ def scan_pdf(pdf: Path, *, work: Path | None = None, workers: int = 1,
     imgs = pages_of(pdf, work / "pages")
     cache = work / "scan"
     cache.mkdir(parents=True, exist_ok=True)
+    crops = work / "crops"
     rows: list[dict | None] = [None] * len(imgs)
 
     def one(i: int, img: Path) -> dict:
@@ -298,13 +687,12 @@ def scan_pdf(pdf: Path, *, work: Path | None = None, workers: int = 1,
             d["cached"] = True
         else:
             try:
-                d = parse_marked(ask(img))
-                d.update(secs=last().get("secs"), finish=last().get("finish"))
-                # 原子写：批量与界面可能同时读同一份缓存，半截 JSON 会让对方直接崩
-                tmp = dst.with_name(dst.name + ".tmp")
-                tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1),
-                               encoding="utf-8")
-                os.replace(tmp, dst)
+                d = scan_page(img, cache, i)
+                # 页级结果也要落盘：**每页那一堆 OCR 缓存（p002_07.txt）是原料，
+                # 这份才是成品**。少了它，重跑虽然不用重新 OCR，却要重跑一遍
+                # 题号切分和判图（判图要问 27B，一页好几秒）。
+                d.pop("cached", None)
+                _atomic(dst, d)
             except Exception as e:                 # noqa: BLE001
                 # **一页失败不能拖垮整份卷子。** 失败的页不写缓存，
                 # 所以「重跑同一份」天然只重试这几页——其余页命中缓存。
@@ -357,6 +745,67 @@ def same_question(a: str, b: str) -> bool:
         return True
     from difflib import SequenceMatcher
     return SequenceMatcher(None, a, b).ratio() >= 0.85
+
+
+def parse_answer_table(text: str) -> dict[str, str]:
+    r"""答案速查表 → `{题号: 答案}`。
+
+    实测 Z20 的答案是这么排的（PaddleOCR-VL 会带上竖线）：
+
+        | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+        | C | A | B | B | C | C | C | D
+        | 9 | 10 | 11
+        | ABD | BC | BCD
+
+    判据是「上一行全是题号、下一行全是字母、个数对得上」——
+    对不上就不认，宁可让答案缺着（缺了会在报告里列出来）。
+    """
+    out: dict[str, str] = {}
+    lines = text.splitlines()
+    for i in range(len(lines) - 1):
+        nums = re.findall(r"\d{1,2}", lines[i])
+        lets = re.findall(r"[A-D]{1,4}", lines[i + 1])
+        if len(nums) >= 2 and len(nums) == len(lets):
+            for n, l in zip(nums, lets):
+                out.setdefault(n, l)
+    return out
+
+
+def classify_pages(scans: list[dict]) -> None:
+    r"""标出哪些页是**答案页**——靠「题号有没有回头」。
+
+    原来只认「【答案】/【解析】」标记，实测**一大半卷子不用这套标记**：
+    Z20 的答案是**表格**（`| 1 | 2 | … | C | A | …`），青岛/武汉的是**纯解析
+    段落**。结果 199 道题里 148 道被判「无解析」，而答案其实就在 PDF 后几页。
+
+    真正的结构规律是：**试卷页的题号一路往上走，答案页会从头再来一遍**。
+    所以顺序扫页，头一页的题号 ≤ 已见过的最大题号时，从这里起全是答案页。
+    """
+    maxno, seen = 0, False
+    for sc in scans:
+        nums = [int(q["n"]) for q in sc["questions"] if str(q["n"]).isdigit()]
+        first = nums[0] if nums else None
+        if first is not None and first <= maxno:
+            seen = True
+        kind = "答案" if seen else (sc.get("page") or {}).get("kind", "试题")
+        if (sc.get("page") or {}).get("kind") == "答案":
+            kind = "答案"
+        sc["page"] = {**(sc.get("page") or {}), "kind": kind}
+        if nums:
+            maxno = max(maxno, max(nums))
+        if kind != "答案":
+            continue
+        # 答案页回填：**没有【答案】标记的卷子，整块文本就是解析**。
+        # 实测一大半卷子不用标记——Z20 用表格，青岛/武汉直接写解析段落，
+        # 不回填的话它们全部会被判「无解析」。
+        table = parse_answer_table("\n".join(q.get("raw", "") for q in sc["questions"]))
+        for q in sc["questions"]:
+            q["stem"] = ""                      # 答案页上的题干是重述，不要
+            q["options"] = []
+            if not q["sol"]:
+                q["sol"] = q.get("raw", "").strip()
+            if not q["ans"] and q["n"] in table:
+                q["ans"] = table[q["n"]]
 
 
 def merge(scans: list[dict]) -> list[dict]:
@@ -533,6 +982,27 @@ def fill_blanks(stem: str, ans: str) -> str | None:
     return _FILLIN.sub(lambda _m: "\\fillin[%s]" % next(it), stem)
 
 
+# 模型用来表示「这里没有」的占位符。**不能当内容**——留着它就是一道空壳题，
+# 而 ingest 的复核一发现「题干为空」是整份卷子都不录。
+_NONE_WORDS = ("->", "-", "—", "－", "无", "/")
+
+
+def unrenderable(q: dict) -> str:
+    r"""这道题能不能成形。能就返回 `""`，不能就返回原因。
+
+    **一道坏题不能让整份卷子进不去。** `ingest.commit` 的复核是一票否决的：
+    只要有一道「题干为空」，整份卷子的题全都不录——实测河南青桐鸣、
+    青岛各有一道这样的幽灵题（答案页上有 `n=20`，可试卷页的题干没转出来），
+    结果 15 道好题跟着一起进不去。所以在这一层就先剔掉，并把题号写进报告。
+    """
+    if not fixup(q["stem"].strip()) or q["stem"].strip() in _NONE_WORDS:
+        return "题干为空（多半是答案页上有题号、试卷页没转出题干）"
+    qtype = TYPE_MAP.get(q["type"], "")
+    if qtype in ("single_choice", "multi_choice") and len(q["options"]) < 2:
+        return "选择题选项不足 2 个（题干没认全）"
+    return ""
+
+
 def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
            year: int | None = None, title: str = "",
            skipped: list | None = None) -> str:
@@ -542,12 +1012,18 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
     题干里的答案按规范 §2.2 就地写进 `\paren[…]` / `\fillin[…]`；
     解答题的答案与解析都进 `solution`。
 
-    `skipped` 传一个 list 进来，录不进去的题（空位数与答案段数对不上）
-    会以 `{"n", "why"}` 追加进去——**丢掉哪道题必须留痕**，不能默默少一道。
+    `skipped` 传一个 list 进来，录不进去的题会以 `{"n", "why", ...}`
+    追加进去——**丢掉哪道题必须留痕**，不能默默少一道。
     """
     out: list[str] = []
     for i, q in enumerate(qs, 1):
         n = int(q["n"])
+        why = unrenderable(q)
+        if why:
+            if skipped is not None:
+                skipped.append({"n": n, "why": why,
+                                "stem": q["stem"][:60], "ans": q["ans"][:40]})
+            continue
         qtype = TYPE_MAP.get(q["type"], "")
         ans, sol = fixup(q["ans"].strip()), strip_marker(fixup(q["sol"].strip()))
         stem = fixup(q["stem"].strip())
@@ -676,6 +1152,7 @@ def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
         scans += scan_pdf(answers, workers=workers, force=force, on_event=on_event)
     title = next((s["page"]["title"] for s in scans
                   if s["page"].get("title") not in ("", "-")), "")
+    classify_pages(scans)                    # 先分试卷页/答案页，再合并
     qs = merge(scans)
     keep, drop, reg = split_figures(qs, src=pdf.name)
     lose: list[dict] = []                    # 录不进去的题（空位对不上答案）
@@ -686,7 +1163,7 @@ def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
         "卷": label, "出处": "%s%s" % (year or "", label), "标题": title,
         "页数": len(scans), "识别到": len(qs),
         "录入": len(keep) - len(lose), "带图丢弃": len(drop),
-        "带图登记位置": len(reg), "空位对不上": len(lose),
+        "带图登记位置": len(reg), "未录入": len(lose),
         "无解析": sum(1 for q in keep if not q["sol"].strip()),
         "失败页": bad,
         "题型": {t: sum(1 for q in keep if q["type"] == t)
@@ -779,21 +1256,21 @@ def report(out_dir: Path) -> str:
            "> 由 `python3 -m amti.record --report 数据/录题/输出` 生成。",
            "> 规矩：**带图题一律不录**；第 8/11/14/18/19 题的带图题只登记位置；",
            "> 没有解析的写「解析无」。", "", "## 一、每份卷子", "",
-           "| 年份 | 卷 | 页数 | 识别 | 录入 | 带图丢弃 | 登记位置 | 空位对不上 | 无解析 | 失败页 |",
+           "| 年份 | 卷 | 页数 | 识别 | 录入 | 带图丢弃 | 登记位置 | 未录入 | 无解析 | 失败页 |",
            "|---|---|---|---|---|---|---|---|---|---|"]
     tot = {"识别到": 0, "录入": 0, "带图丢弃": 0, "带图登记位置": 0,
-           "空位对不上": 0, "无解析": 0}
+           "未录入": 0, "无解析": 0}
     for year, label, s in rows:
         for k in tot:
             tot[k] += s.get(k, 0)
         out.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
             year or "", label, s.get("页数", 0), s.get("识别到", 0),
             s.get("录入", 0), s.get("带图丢弃", 0), s.get("带图登记位置", 0),
-            s.get("空位对不上", 0), s.get("无解析", 0),
+            s.get("未录入", 0), s.get("无解析", 0),
             "、".join(str(x) for x in s.get("失败页", [])) or "—"))
     out.append("| | **合计** | | %d | %d | %d | %d | %d | %d | |" % (
         tot["识别到"], tot["录入"], tot["带图丢弃"], tot["带图登记位置"],
-        tot["空位对不上"], tot["无解析"]))
+        tot["未录入"], tot["无解析"]))
 
     out += ["", "## 二、带图题位置登记（只有第 8/11/14/18/19 题）", "",
             "**这些题的正文没有入库**，下面是它们在原卷上的位置，照这个去补图。", ""]
@@ -816,10 +1293,10 @@ def report(out_dir: Path) -> str:
     else:
         out.append("（没有带图题）")
 
-    out += ["", "## 四、空位数与答案对不上、没有录入的题", "",
-            "填空位个数和答案段数对不上时**宁可少录一道**，也不录一道答案错位的题"
-            "（`conform` 的「填空位数」会拦下这种题，而 `ingest` 一发现违规"
-            "是整份卷子都不录）。这几道要人工看一眼。", ""]
+    out += ["", "## 四、没能录入的题", "",
+            "两种原因：**题干为空**（答案页上有题号、试卷页没转出题干），"
+            "或**填空位个数与答案段数对不上**。这两种 `ingest` 的复核都会拦下，"
+            "而且是**整份卷子都不录**，所以在这里先剔掉、留痕。这几道要人工看。", ""]
     if lost:
         out += ["| 卷 | 题号 | 题干开头 | 抽到的答案 |", "|---|---|---|---|"]
         out += ["| %s | %s | %s | %s |" % (
@@ -1058,6 +1535,16 @@ $a=1$
           repr(fill_blanks("个数为 \\fillin[]，最少为 \\fillin[]。", "5, 7")))
     check("切不开就拒收这道题（不能让整份卷子录不进去）",
           fill_blanks("\\fillin[] 与 \\fillin[]", "5, 7, 9") is None)
+
+    # 幽灵题：答案页有题号、试卷页没题干。留着它整份卷子都录不进去。
+    _ghost = {"n": "20", "type": "解答", "figure": False, "stem": "->",
+              "options": [], "fig": "", "ans": "$x^2=1$", "sol": ""}
+    _skip: list = []
+    _t = to_tex([by["1"], _ghost], book="模拟题", label="某卷", skipped=_skip)
+    check("题干为空的幽灵题被剔掉且留痕",
+          len(_skip) == 1 and _skip[0]["n"] == 20 and "题干为空" in _skip[0]["why"]
+          and "#20" not in _t, str(_skip))
+    check("剔掉幽灵题不影响同卷其他题", "#1\"" in _t, _t[:80])
     check("卷名清洗", _clean_stem("数学_河南2026-2027年高二上学期开学学情自测卷_试卷+答案")
           == "河南2026-2027年高二上学期开学学情自测卷",
           _clean_stem("数学_河南2026-2027年高二上学期开学学情自测卷_试卷+答案"))
