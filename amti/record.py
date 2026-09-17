@@ -551,7 +551,11 @@ def guess_type(section: str, stem: str, opts: list) -> str:
     看标题是规矩（`设计/识图录入提示词.md`：类型判定看分节标题，不看正文猜）
     ——多选和单选光看正文分不出来，标题里那句「有多项符合题目要求」才是依据。
     """
-    if "选择" in section:
+    # **小节标题跟结构矛盾时，以结构为准。**
+    # 整页 OCR 会漏掉小节标题（实测 A9 那份漏了「三、填空题」），
+    # 于是填空/解答题继承了上一节的「选择题」，被按"选项不足 2 个"丢掉——
+    # 一次漏标题丢了 4 道题。选项数是最硬的证据：没有两个以上选项就不是选择题。
+    if "选择" in section and len(opts) >= 2:
         return "多选" if "多项" in section else "单选"
     for k, v in (("填空", "填空"), ("解答", "解答"), ("证明", "解答")):
         if k in section:
@@ -1341,6 +1345,70 @@ def unbalanced(tex: str) -> bool:
     return depth != 0
 
 
+# 难度按**原卷题号**定，规则是用户 2026-09-17 给的：
+#   简单 = 各小节的头一两道（1,2 单选 / 9 多选 / 12 填空 / 15 解答）
+#   难题 = 各小节的压轴（8 单选 / 11 多选 / 14 填空 / 18,19 解答）
+#   其余 = 中档
+# 纯规则、不用模型——题号是卷面写死的，没什么可"认"的。
+EASY_NO = {1, 2, 9, 12, 15}
+HARD_NO = {8, 11, 14, 18, 19}
+
+
+def difficulty_by_no(n) -> str:
+    v = int(n) if str(n).isdigit() else 0
+    if v in EASY_NO:
+        return "简单题"
+    if v in HARD_NO:
+        return "难题"
+    return "中档题"
+
+
+TAG_SYS = (
+    "你是高中数学命题专家。下面给你一份考点清单和一道题，"
+    "请选出**最贴切的一个**考点。只输出考点编号（如 1.1.3），不要输出任何别的内容。"
+)
+
+
+def _point_list() -> str:
+    from . import knowledge as kb
+    return "\n".join("%s %s" % (p.get("id"), kb.title_of(p.get("id")))
+                     for p in kb.all_points() if p.get("id"))
+
+
+def tag_point(q: dict, *, timeout: int = 300) -> str:
+    r"""给一道题打一个考点编号（如 `1.1.3`）。
+
+    考点清单 153 条，**全量塞进提示词**——两段式（先选章再选点）要多一次
+    往返，而一次往返在这台机器上就是好几秒，省下来的时间不够补误差。
+    输出只有五六 token，所以慢的是 prefill，不是生成。
+
+    认不出合法编号就返回空串：**宁可不打标，也不打错标**。
+    """
+    from . import knowledge as kb
+    stem = q.get("stem", "")
+    opts = "\n".join("%s. %s" % (a, b) for a, b in q.get("options") or [])
+    body = ("考点清单：\n%s\n\n题目（题型 %s）：\n%s%s"
+            % (_point_list(), q.get("type", ""), stem, ("\n" + opts) if opts else ""))
+    payload = json.dumps({
+        "model": MODEL,
+        "messages": [{"role": "system", "content": TAG_SYS},
+                     {"role": "user", "content": body}],
+        "temperature": 0.0, "max_tokens": 16,
+        "reasoning_effort": "none",     # 不关思考，16 个 token 全烧在推理上
+    }).encode()
+    req = urllib.request.Request(API, data=payload,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            d = json.loads(r.read().decode())
+        txt = (d["choices"][0]["message"]["content"] or "").strip()
+    except Exception:                                      # noqa: BLE001
+        return ""
+    m = re.search(r"\d+(?:\.\d+){1,3}", txt)
+    pid = m.group(0) if m else ""
+    return pid if pid and kb.get(pid) else ""
+
+
 def unrenderable(q: dict) -> str:
     r"""这道题能不能成形。能就返回 `""`，不能就返回原因。
 
@@ -1420,6 +1488,8 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
         if not sol:
             sol = NO_SOLUTION
         meta = {"book": book, "source_label": label, "source_no": n}
+        meta["difficulty"] = q.get("diff") or difficulty_by_no(n)
+        meta["stars"] = {"简单题": 1, "中档题": 2, "难题": 3}[meta["difficulty"]]
         if region:
             meta["region"] = region
         if year:
@@ -1427,6 +1497,7 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
         if title:
             meta["paper_title"] = title
         head = {"key": "%s/%s#%d" % (book, label, n), "type": qtype,
+                "points": [q["point"]] if q.get("point") else [],
                 "meta": meta}
         env = "problem" if qtype == "detailed_answer" else "question"
         body = ["\\begin{%s}" % env, stem]
@@ -1514,7 +1585,8 @@ def pair_answer(pdf: Path, *, floor: float = 0.80) -> Path | None:
 
 def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
         label: str = "", region: str = "", year: int | None = None,
-        workers: int = 1, force: bool = False, on_event=None) -> dict:
+        workers: int = 1, force: bool = False, tag: bool = True,
+        on_event=None) -> dict:
     r"""一份（或两份）PDF → 可入库的 LaTeX + 一张交代清楚的账。
 
     `answers` 是**单独的答案卷**（Z20+ 那种）。它和试卷走同一条识别链路，
@@ -1533,6 +1605,13 @@ def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
     classify_pages(scans)                    # 先分试卷页/答案页，再合并
     qs = merge(scans)
     keep, drop, reg = split_figures(qs, src=pdf.name)
+    for q in keep:
+        q["diff"] = difficulty_by_no(q["n"])
+    if tag:
+        from concurrent.futures import ThreadPoolExecutor as _TP
+        with _TP(max_workers=workers) as _ex:
+            for q, pid in zip(keep, _ex.map(tag_point, keep)):
+                q["point"] = pid
     lose: list[dict] = []                    # 录不进去的题（空位对不上答案）
     tex = to_tex(keep, book=book, label=label, region=region, year=year,
                  title=title, skipped=lose)
@@ -1543,6 +1622,7 @@ def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
         "录入": len(keep) - len(lose), "带图丢弃": len(drop),
         "带图登记位置": len(reg), "未录入": len(lose),
         "无解析": sum(1 for q in keep if not q["sol"].strip()),
+        "已打考点": sum(1 for q in keep if q.get("point")),
         "失败页": bad,
         "题型": {t: sum(1 for q in keep if q["type"] == t)
                  for t in ("单选", "多选", "填空", "解答")},
@@ -1889,6 +1969,11 @@ $a=1$
     check("带图题被丢掉", [q["n"] for q in drop] == ["8"])
     # 卷首「考试说明」也带 1. 2. 3. 编号，会被当成题、还会挤掉真题号。
     # 这两个用例是补的——过滤写对了但名字撞车，跑完一整轮才发现没生效。
+    check("题号→难度（用户定的规则）",
+          [difficulty_by_no(n) for n in (1, 2, 9, 12, 15)] == ["简单题"] * 5
+          and [difficulty_by_no(n) for n in (8, 11, 14, 18, 19)] == ["难题"] * 5
+          and [difficulty_by_no(n) for n in (3, 5, 10, 13, 16, 17)] == ["中档题"] * 6,
+          str([difficulty_by_no(n) for n in range(1, 20)]))
     check("考试说明被识别成噪声",
           is_noise("答题前，请将自己的学校、姓名等填写在答题卡上。", []))
     check("小节标题被识别成噪声",
