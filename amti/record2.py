@@ -365,18 +365,34 @@ def grab_json(s: str):
     return None
 
 
-def v2_dir(pdf: Path) -> Path:
+def work_of(p) -> Path:
+    r"""路径 → 工作区目录。
+
+    ⚠️ **传进来的可能是目录，也可能是个 PDF**，两种都要认。而且
+    **目录绝不能拿 `.stem`**：`Path("…/187.湖南长郡中学…").stem` 是 `"187"`
+    （`stem` 在**第一个点**就截断了，不是只去后缀）——于是它去找
+    `数据/录题/187/pages`，那里恰好有个同名目录、却没有页图，
+    最后拿目录去 `fitz.open()`，报一句看不懂的 `FileDataError`（实测踩过）。
+    """
+    p = Path(p)
+    return p if p.is_dir() else R.WORK / p.stem
+
+
+def v2_dir(pdf) -> Path:
     """v2 的缓存目录。**跟 v1 的 `pages/`、`scan/` 分开**，免得互相踩。"""
-    return R.WORK / pdf.stem / "v2"
+    return work_of(pdf) / "v2"
 
 
 def scan_pdf(pdf: Path, *, force: bool = False) -> list[dict]:
     r"""一份 PDF → 每页文本（**按页**）。结果落在 `v2/txt/`，可续跑。"""
-    d = v2_dir(pdf)
+    w = work_of(pdf)
+    d = w / "v2"
     (d / "txt").mkdir(parents=True, exist_ok=True)
-    imgs = sorted((R.WORK / pdf.stem / "pages").glob("p???.png"))
+    imgs = sorted((w / "pages").glob("p???.png"))
     if not imgs:
-        imgs = R.pages_of(pdf, R.WORK / pdf.stem / "pages")
+        if w.is_dir():
+            raise RuntimeError("没有页图缓存、也没有 PDF 可渲染：%s" % w)
+        imgs = R.pages_of(pdf, w / "pages")
     pages: list[Path] = []
     for p in imgs:
         pages += G.split_spread(p, d / "pages")
