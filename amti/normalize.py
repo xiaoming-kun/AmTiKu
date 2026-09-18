@@ -255,9 +255,12 @@ _SCORE_HEAD = re.compile(
         [（(]\s*(?:本小题|本题)?\s*(?:满分\s*)?\d{1,3}\s*分\s*[）)]   # （本小题满分17分）/（13分）
       | (?:本小题|本题)\s*(?:满分\s*)?\d{1,3}\s*分                   # 本小题满分17分（没括号）
       | 满分\s*\d{1,3}\s*分                                          # 满分17分
-    )\s*""", re.X)
-# 页脚：`第 3 页 共 8 页` / `第4页 共4页` / `第7页共8页`（空格有无都认）
-_FOOT = re.compile(r"第\s*\d{1,3}\s*页(?:\s*共\s*\d{1,3}\s*页)?")
+    )\s*[。，、；;,.．]?\s*""", re.X)   # 结尾那个孤零零的「。」一并带走
+# 页脚：`第 3 页 共 8 页` / `第4页 共4页` / `第7页共8页`（空格有无都认）。
+# ⚠️ **「共 N 页」不是可选的**：写成可选时，正文里的「人教A版必修第一册第 92 页上
+# "探究与发现"…」会被当成页脚，整行删掉——实测把一道题截成了 9 个字。
+# 真实页脚全都带「共」（`grep '第 *[0-9]* *页 *共'` 抽过全部变体）。
+_FOOT = re.compile(r"第\s*\d{1,3}\s*页\s*共\s*\d{1,3}\s*页")
 # 卷眉关键词：页脚前面那一小段卷名（「2025年秋季学期高三年级12月质量检测数学试题」）
 _HEAD_KW = re.compile(
     r"数学|试题|试卷|答案|解析|联考|质检|检测|调研|测评|诊断|学情"
@@ -275,6 +278,9 @@ _HEAD_PIECE = re.compile(
     # 少了「级」，整条卷眉抠不干净，就只剪掉一半、留下「…高三年级」挂在正文尾巴上
     r"|年级|级|秋|春|夏|冬|返|校|考|联|盟|协|作|体")
 _TERM = re.compile(r"[。！？；!?]")
+# 正文虚词：排版行（卷眉/页脚）里不会出现这些字，正文里到处都是。
+# 拿它区分"整行是排版"和"正文与页脚挤在一行"——比维护一张卷眉关键词表可靠得多。
+_CONTENT_HINT = re.compile(r"的|是|则|求|若|设|已|知|有|为|得|故|且|或|中")
 
 
 def _is_running_head(seg: str) -> bool:
@@ -329,18 +335,20 @@ def _cut_footer_line(line: str) -> str:
     if not m:
         return line
     head = line[:m.start()]
-    # 情形 2：这一行整行都是排版（卷眉 + 页脚），前面没有正文
-    if not _TERM.search(head) and (not head.strip() or _is_running_head(head)):
+    # 情形 2：**整行都是排版**（卷眉 + 页脚）。
+    # 判据不是"关键词表命中"——那种写法遇到新卷名就漏：实测
+    # `Z20名校联盟2027届高三第一次学情诊断 数学试题卷` 里的「名/一/次」
+    # 都不在词表里，整行删不掉，最后在题干里留下一整条卷眉。
+    # 真正的区别是：**排版行里不会出现正文虚词**（的/是/则/求/若…），
+    # 也不会出现公式。所以"没有句子标点 + 没有虚词 + 没有 $"就判为排版行。
+    if not _TERM.search(head) and not _CONTENT_HINT.search(head) and "$" not in head:
         return ""
-    # 情形 3：**从"再往左一步就不像卷眉了"的那一点剪**，保住正文
-    if _is_running_head(head):
-        cut = 0
-    else:
-        cut = m.start()
-        for p in range(len(head)):
-            if _is_running_head(head[p:]):
-                cut = p
-                break
+    # 情形 3：正文和页脚挤在同一行 → 从最早的卷眉关键词处剪，保住正文
+    cut = m.start()
+    for p in range(len(head)):
+        if _is_running_head(head[p:]):
+            cut = p
+            break
     return line[:cut]
 
 
@@ -748,6 +756,86 @@ def strip_answer_list(q: Question) -> bool:
     if any("\\item" in t for t in items):
         return False
     q.answer = "；".join(items)
+    return True
+
+
+# 卷面上的"空位"有好几种写法：`_____`、`\underline{\Delta}`、`\triangle`、
+# `▲`。它们都得归成 `\fillin[]`——规范 §2.2 只认这一种。
+_BLANK_ANY = re.compile(
+    r"_{2,}|\\underline\s*\{[^{}]*\}|\\blacktriangle\s*|\\triangle\s*$")
+
+
+@rule(name="补填空位", scope=ENTRY,
+      why="规范 §2.2 填空：填空题必须有 `\\fillin` 空位。这是"
+          "「补作答题括号」（选择题那边）的对称件——"
+          "少它就会出现「填空题一个空位都没有」")
+def ensure_fillin(q: Question) -> bool:
+    r"""填空题没有空位就补一个（有答案才补，免得造出"永远填不上"的空位）。
+
+    空位补在**句末标点之前**（卷面本来就是「……为____。」这个样子），
+    没有句末标点就缀在末尾。已经归好的 `\fillin[]` 不再动。
+
+    ⚠️ **三道守卫的顺序不能乱**——乱了两次，各改坏几千道，都是真事故：
+
+    1. **题型必须先是填空题**。少了它，规则会对选择题/解答题也补空位
+       （一次改坏 7519 道）。
+    2. **自愈段**：空位已经在、但落在数学模式里 → 挪出来。这一步**不需要答案**，
+       所以必须排在"没答案就返回"之前，否则这种既有毛病永远修不掉。
+    3. **已经有 `\\fillin` 就不动**（包括**填好的** `\\fillin[$x$]`）。
+       少了它，带答案的正常填空题会被追加第二个空位（一次改坏 3957 道）。
+    """
+    # 守卫 1：不是填空题，一律不管
+    if q.type != "fill_in_blank":
+        return False
+    # 守卫 2（自愈）：空位已有但落在数学模式里（`则 $\mu =\fillin[]$。`）。
+    # 这是本规则早先的产物（替换 `\underline{\Delta}` 时没把数学模式收尾），
+    # 留着不管就会一直是嵌套 `$`。规则要能把自己改坏的地方修回来。
+    m0 = re.search(r"\\fillin\s*\[\s*\]", q.stem)
+    if m0:
+        before = q.stem[:m0.start()]
+        if before.count("$") % 2 == 1:                     # 在数学模式里 → 挪出来
+            after = q.stem[m0.end():]
+            if after.startswith("$"):
+                after = after[1:]
+            q.stem = before + "$ " + r"\fillin[]" + after
+            return True
+        return False
+    # **没答案就别补新空位**（补了也永远填不上）。注意这段必须排在
+    # 自愈段**之后**——把数学模式里的旧空位挪出来不需要答案，
+    # 排在前面会把「空位在数学模式里」这种既有毛病永远修不掉（真踩过）。
+    if not q.answer.strip():
+        return False
+    # ⚠️ **这条守卫不能少**：只要题干里已经有 `\fillin`（哪怕是**填好的**
+    # `\fillin[$x$]`），就不该再动它。
+    # 我把这行连同上一段一起替换掉过一次 —— 结果带答案的正常填空题
+    # 也被追加了一个空位，**一次改坏 3957 道**，规范审查从 2 处涨到 3972 处。
+    # 教训：「已经填好的空位」必须有一条独立用例，不能只测「空位在外面」。
+    if _FILLIN_CMD.search(q.stem):
+        return False
+    # ② 卷面上本来就有「下划线式」空位，把它换成 \fillin[]
+    m = None
+    for m in _BLANK_ANY.finditer(q.stem):
+        pass                                  # 取**最后一个**空位
+    if m:
+        before = q.stem[:m.start()]
+        after = q.stem[m.end():]
+        # ⚠️ **空位可能落在数学模式里**（`则 $\mu =\underline{\Delta}$。`）。
+        # 直接替换会得到 `则 $\mu =\fillin[]$。`——`\fillin` 在 `$…$` 里面，
+        # 渲染时是嵌套数学模式（conform 报「空位在数学模式里」）。
+        # 正确做法是**就地把数学模式收尾**：`则 $\mu =$ \fillin[]。`
+        if before.count("$") % 2 == 1:                    # 当前位置在数学模式内
+            if after.startswith("$"):
+                after = after[1:]
+            q.stem = before + "$ " + r"\fillin[]" + after
+        else:
+            q.stem = before + r"\fillin[]" + after
+        return True
+    # ② 空位被 OCR 弄丢了：补在句号之前
+    end = re.search(r"[。．.]\s*$", q.stem)
+    if end:
+        q.stem = q.stem[:end.start()].rstrip() + r" \fillin[]" + q.stem[end.start():]
+    else:
+        q.stem = q.stem.rstrip() + r" \fillin[]"
     return True
 
 
@@ -1232,6 +1320,8 @@ def _selftest() -> int:
         ("（本小题满分 17 分）\n已知函数 $f(x)=x$", "已知函数 $f(x)=x$"),
         ("(本小题满分15分)\n某大学一兴趣小组", "某大学一兴趣小组"),
         ("（13分）已知 $a,b,c$ 分别为", "已知 $a,b,c$ 分别为"),
+        # 分值后面常跟一个句号，要一并带走（不然留下个孤零零的「。」）
+        ("(本小题满分 15 分)。\n\n已知抛物线 $C$", "已知抛物线 $C$"),
         ("(15分)  已知双曲线 $C$", "已知双曲线 $C$"),
         ("本小题满分17分\n已知函数", "已知函数"),
         # **不能误伤**：题干里正常的数字+分，以及"分形"这种词
@@ -1262,10 +1352,52 @@ def _selftest() -> int:
         ("已知 $a=1$。\\n\\n第 3 页 共 8 页", "已知 $a=1$。"),
         # **不能误伤**：正文里出现「第 N 页」以外的“页”
         ("一本书共 100 页，每天读 5 页", "一本书共 100 页，每天读 5 页"),
+        # **剪剩半截卷眉**也要整行删（实测 `2027届高三8月底学情调研·数学 第3页 共4页`）
+        ("已知 $a=1$。\n2027届高三8月底学情调研·数学 第3页 共4页", "已知 $a=1$。"),
+        ("已知 $a=1$。\nZ20名校联盟2027届高三第一次学情诊断 数学试题卷 第3页 共4页",
+         "已知 $a=1$。"),
+        # **真踩过的坑**：`共 N 页` 写成可选时，这一行被当成页脚整行删掉，
+        # 一道题被截成 9 个字（千题册 053#76）。页脚必须有「共」。
+        ("人教 A 版必修第一册第 92 页上“探究与发现”的学习内容是“探究函数”",
+         "人教 A 版必修第一册第 92 页上“探究与发现”的学习内容是“探究函数”"),
     ]:
         _q = Question(key="t/foot", type="detailed_answer", stem=raw)
         strip_running_head(_q)
         check("去页脚：%r" % raw[:18], _q.stem.strip() == want, repr(_q.stem))
+
+    # 补填空位：卷面上"空位"有四种写法，都得归成 `\fillin[]`
+    for raw, tail in [
+        ("已知 $a=1$，则 $b=$ _____。", r"$b=$ \fillin[]。"),
+        # 空位原本在数学模式里 → 就地把数学收尾，空位挪到外面
+        (r"已知 $a=1$，则 $b=\underline{\Delta}$。", r"$b=$ \fillin[]。"),
+        # 空位补在**句末标点之前**（卷面就是「……的值____。」这个样子）
+        ("已知 $a=1$，求 $b$ 的值。", r"求 $b$ 的值 \fillin[]。"),
+    ]:
+        _q = Question(key="t/fill", type="fill_in_blank", stem=raw, answer="2")
+        check("补填空位：%r" % raw[:12], ensure_fillin(_q)
+              and _q.stem.endswith(tail), repr(_q.stem[-24:]))
+    _q = Question(key="t/fill2", type="fill_in_blank",
+                  stem=r"则 $b=\fillin[]$。", answer="2")
+    check("补填空位：**在数学模式里的旧空位要挪出来**", ensure_fillin(_q)
+          and _q.stem == r"则 $b=$ \fillin[]。", repr(_q.stem))
+    _q = Question(key="t/fill5", type="fill_in_blank",
+                  stem=r"则 $b=$ \fillin[]。", answer="2")
+    check("补填空位：已在外面就不动", not ensure_fillin(_q), repr(_q.stem))
+    # **填好的空位更不能动**——漏了这条守卫，一次改坏 3957 道（真踩过）
+    _q = Question(key="t/fill6", type="fill_in_blank",
+                  stem=r"则该双曲线的离心率为\fillin[$\frac{3}{2}$]。"
+                       r"\includegraphics[width=6cm]{x.png}",
+                  answer=r"$\frac{3}{2}$")
+    check("补填空位：**已填好的空位一个字都不动**", not ensure_fillin(_q),
+          repr(_q.stem))
+    _q = Question(key="t/fill4", type="fill_in_blank",
+                  stem=r"则 $\mu =\underline{\Delta}$。", answer="2")
+    ensure_fillin(_q)
+    check("补填空位：空位在数学模式里要就地收尾（不许嵌套 $）",
+          _q.stem.count("$") % 2 == 0 and r"$ \fillin[]" in _q.stem, repr(_q.stem))
+    _q = Question(key="t/fill3", type="fill_in_blank", stem="求 $b$。", answer="")
+    check("补填空位：没答案就不补（免得造出永远填不上的空位）",
+          not ensure_fillin(_q), repr(_q.stem))
 
     _q = Question(key="t/foot2", type="detailed_answer", stem="求 $x$。",
                   solution="由题意得 $x=1$。\n\n数学试题 第2页 共4页")

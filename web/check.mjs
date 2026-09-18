@@ -178,8 +178,10 @@ for (const [name, list] of report) {
   }
   bad += list.length
   console.log(`  ✗ ${name}：${list.length} 处`)
-  for (const x of list.slice(0, 8)) console.log(`      ${JSON.stringify(x).slice(0, 150)}`)
-  if (list.length > 8) console.log(`      … 其余 ${list.length - 8} 处`)
+  const DETAIL = process.env.DETAIL === '1'
+  for (const x of (DETAIL ? list : list.slice(0, 8)))
+    console.log(`      ${JSON.stringify(DETAIL ? x : JSON.stringify(x).slice(0, 150))}`)
+  if (!DETAIL && list.length > 8) console.log(`      … 其余 ${list.length - 8} 处`)
 }
 console.log(bad ? `\n未通过（${bad} 处问题）` : '\n全部通过')
 process.exit(bad ? 1 : 0)

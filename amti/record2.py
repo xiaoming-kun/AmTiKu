@@ -62,7 +62,9 @@ TABLE_WORD = re.compile(r"下表|列联表|统计表|表格|频数分布表|临�
 SCORE_HEAD = re.compile(
     r"^\s*(?:[（(]\s*(?:本小题|本题)?\s*(?:满分\s*)?\d{1,3}\s*分\s*[）)]"
     r"|(?:本小题|本题)\s*(?:满分\s*)?\d{1,3}\s*分|满分\s*\d{1,3}\s*分)\s*")
-FOOT = re.compile(r"第\s*\d{1,3}\s*页(?:\s*共\s*\d{1,3}\s*页)?")
+# 页脚**必须带「共 N 页」**——写成可选会把正文里的「第 92 页」当页脚
+# （实测把千题册一道题截成了 9 个字）。判据跟 normalize.py 保持同一套。
+FOOT = re.compile(r"第\s*\d{1,3}\s*页\s*共\s*\d{1,3}\s*页")
 # 卷面印刷坏字当题号：`f1`、`I`、`|`… **后面必须跟空格、空格后是中文或公式**，
 # 才认定是题号。要求空格是关键——`f(x)=…` 这种正常开头没有空格，不会被误剪。
 # 末了的 `(?:\s*[0-9]{1,2})?` 是为了 `f 1 已知函数` 这种——OCR 有时在
@@ -252,7 +254,7 @@ def gate(qtype: str, stem: str, opts: dict, answer: str,
             if pat.search(txt or ""):
                 why.append("%s 有%s（KaTeX 会报错）" % (tag, name))
         if (txt or "").count(r"\{") != (txt or "").count(r"\}"):
-            why.append("%s 的 `\{` 与 `\}` 不配平" % tag)
+            why.append("%s 的 `\\{` 与 `\\}` 不配平" % tag)
     return why
 
 
@@ -261,6 +263,66 @@ def covered_pages(lines: list[tuple[int, str, int]], rng) -> list[int]:
     s, e = rng
     return sorted({p for n, _t, p in lines if isinstance(s, int)
                    and isinstance(e, int) and s <= n <= e})
+
+
+def retype_by_no(qs: list, *, book: str = "模拟题") -> dict:
+    r"""按题号重判题型（规矩 R1）——**存量清洗用**。
+
+    只改 `type`，改完按新题型**补作答位**（复用 `normalize` 里的规则，
+    不在这里另写一套）。**数据不全的不改**，进 `pending` 待重扫：
+
+    * 选择题：必须 4 个选项且答案非空，否则改了就是个"没有选项的选择题"
+    * 填空题：题干里得有空位、或者有答案能填进去，否则就是个"没有空位的填空题"
+      ——实测 333 道 OCR 把空位丢了、答案也是空的，**改了反而是造破题**
+
+    返回 `{"changed": [...], "pending": [...], "pairs": {(旧,新): 数量}}`。
+    """
+    import collections
+    pairs = collections.Counter()
+    changed, pending = [], []
+    for q in qs:
+        if q.meta.get("book") != book:
+            continue
+        no = q.meta.get("source_no")
+        if not isinstance(no, int) or no not in BY_NO:
+            continue
+        want = TYPE_EN[BY_NO[no]]
+        if q.type == want:
+            continue
+        opts = len(q.options or [])
+        ans = (q.answer or "").strip()
+        why = ""
+        if want in ("single_choice", "multi_choice"):
+            if opts != 4:
+                why = "选择题但选项 %d 个" % opts
+            elif not ans:
+                why = "选择题但没答案"
+        elif want == "fill_in_blank":
+            if r"\fillin" not in q.stem and not ans:
+                why = "填空题但空位和答案都没有"
+        # **题干里粘着版面家具的，一律不重判**：实测有一道题的题干里
+        # 粘进了整块答案速查表（`2 3 4 5 6 7 8 / C B A C A B D B / 二、多选题…`），
+        # 它原本是"解答题"所以规范不查作答位；改成选择题后旧伤立刻暴露。
+        # 这种题该去重扫，不该靠改标签"修好"。
+        if not why and FURNITURE.search(q.stem or ""):
+            why = "题干里粘着版面家具（需重扫）"
+        if why:
+            pending.append({"key": q.key, "旧": q.type, "新": want, "原因": why})
+            continue
+        old = q.type
+        q.type = want
+        # 作答位交给 normalize 的规则，别在这里手写
+        for rname in ("补作答题括号", "答案进作答括号", "作答括号跟随答案",
+                      "答案进填空位", "去掉残留的空作答括号"):
+            r = N.get(rname)
+            if r:
+                try:
+                    r.fn(q)
+                except Exception:                          # noqa: BLE001
+                    pass
+        pairs[(old, want)] += 1
+        changed.append(q.key)
+    return {"changed": changed, "pending": pending, "pairs": dict(pairs)}
 
 
 # ── 带模型/文件的部分 ───────────────────────────────────────────────
