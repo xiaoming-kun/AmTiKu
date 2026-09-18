@@ -1872,7 +1872,7 @@ def guess_year(pdf: Path) -> int | None:
 _ANS_WORD = re.compile(r"答案|解析|详解|参考|DA|教师版|评分标准|学生版")
 
 
-def pick_main(pdfs: list[Path]) -> tuple[Path, list[Path]]:
+def pick_main(pdfs: list[Path]) -> tuple[Path | None, list[Path]]:
     r"""一个考试文件夹 → `(试题, [答案/解析…])`。
 
     这批卷子是**一个文件夹一场考试**，里面常放 2~3 个 PDF：
@@ -1880,14 +1880,18 @@ def pick_main(pdfs: list[Path]) -> tuple[Path, list[Path]]:
     所以不能按"一个 PDF 一场考试"跑——那样答案卷会被当成没有题干的卷子，
     白烧几个小时算力。
 
-    判据用文件名：带「答案/解析/详解/DA/教师版/评分标准」的是答案卷，
-    剩下的第一个当试题。**学生版**归答案那侧（它常和教师版配套，
-    真试题另有一份）。
+    **角色判定已交给 `pagegeom`（L0 层）**，这里是壳。跟旧实现的两点差别：
+
+    1. **答题卡不进答案侧**。旧实现只按「答案/解析…」的词表筛试题，
+       其余**一律塞进答案侧**——于是 `数学答题卡.pdf` 被当答案卷喂进管线，
+       卡上的「15.（本小题满分13分）」成了答案块（台账 D06）。
+    2. **找不到试题就返回 `None`**，不再拿第一份凑数（旧代码那句
+       `main = pdfs[0]` 正是"答案卷被当成试卷录一遍"的入口）。
     """
-    main = next((p for p in pdfs if not _ANS_WORD.search(p.stem)), None)
-    if main is None:                       # 整个文件夹都像答案卷，就取第一份
-        main = pdfs[0]
-    return main, [p for p in pdfs if p != main]
+    from . import pagegeom as _pg
+
+    paper, answers, _sheets = _pg.pick_pdfs(pdfs)
+    return paper, answers
 
 
 def label_for(pdf: Path) -> str:
@@ -2013,6 +2017,9 @@ def batch(folder: Path, *, out_dir: Path | None = None, **kw) -> list[dict]:
         if not pdfs:
             continue
         main, ans = pick_main(pdfs)
+        if main is None:                   # 这个目录里没有试卷（只有答案/答题卡）
+            print("[跳过] %s：没有找到试题 PDF" % d, flush=True)
+            continue
         kw2 = dict(kw)
         kw2["label"] = kw2.get("label") or label_for(main)
         r = run(main, answers=ans, **kw2)
@@ -2084,6 +2091,16 @@ def run_all(folder: Path, *, out_dir: Path | None = None,
         if not pdfs:
             continue
         main, ans = pick_main(pdfs)
+        if main is None:
+            # 目录里只有答案/答题卡：**不能拿它们当试卷录**，
+            # 记一笔然后跳过，免得白跑一遍还往库里灌脏题。
+            done[str(d)] = {"label": d.name, "ok": False, "新增": 0, "跳过": 0,
+                            "秒": 0, "when": time.strftime("%Y-%m-%d %H:%M"),
+                            "why": "没有试题 PDF（只有答案/答题卡）"}
+            stat["失败"] += 1
+            print("[%d/%d] %-42s 跳过：没有试题 PDF" % (i, len(todo), d.name[:42]),
+                  flush=True)
+            continue
         label = label_for(main)
         t0 = time.time()
         try:
