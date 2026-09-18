@@ -238,6 +238,135 @@ def strip_lead_junk(q: Question) -> bool:
 _LEAD_JUNK = re.compile(r"^[\s）)】\]》」』]+")
 
 
+# ── 卷面排版噪声：分值前缀 与 页眉页脚 ────────────────────────────────
+#
+# 用户 2026-09-18 报的（台账 D01 / D02）：
+#   「题目非常不规范，分值没必要录入」「最后一句话明显是有问题的」
+# 最后那句是页脚「2025年秋季学期高三年级12月质量检测数学试题 第 4 页 共 4 页」，
+# 被 OCR 整页读进来挂在了题干尾巴上。
+#
+# ⚠️ 分值前缀不只是难看——它是台账 D03（解答题答案是「AA」）的**触发器**：
+#     `16.（本小题满分15分）` 这一行会被 parse_answer_table 当成"题号行"
+#     （nums=['16','15']：题号+分值），下一行的 LaTeX 变量名 OBB_{1}O_{1} 被
+#     抠成答案字母 ['BB','AA']，于是 15→AA、16→BB。所以这条规则要**赶在**
+#     答案表解析之前生效。
+_SCORE_HEAD = re.compile(
+    r"""^\s*(?:
+        [（(]\s*(?:本小题|本题)?\s*(?:满分\s*)?\d{1,3}\s*分\s*[）)]   # （本小题满分17分）/（13分）
+      | (?:本小题|本题)\s*(?:满分\s*)?\d{1,3}\s*分                   # 本小题满分17分（没括号）
+      | 满分\s*\d{1,3}\s*分                                          # 满分17分
+    )\s*""", re.X)
+# 页脚：`第 3 页 共 8 页` / `第4页 共4页` / `第7页共8页`（空格有无都认）
+_FOOT = re.compile(r"第\s*\d{1,3}\s*页(?:\s*共\s*\d{1,3}\s*页)?")
+# 卷眉关键词：页脚前面那一小段卷名（「2025年秋季学期高三年级12月质量检测数学试题」）
+_HEAD_KW = re.compile(
+    r"数学|试题|试卷|答案|解析|联考|质检|检测|调研|测评|诊断|学情"
+    r"|年级|学期|联盟|协作体|中学|高三|高二|高一|届|第")
+# 「卷眉词汇表」：把一段话里这些词和数字/标点全抠掉，**什么都不剩**才认定它是卷眉。
+# 这是"整行删"和"从关键词处剪"的分界线：
+#   「2025年秋季学期高三年级12月质量检测数学试题」→ 抠完为空 → 整行删
+#   「所以红桃 A 的左侧没有数字牌高三数学 答案」→ 剩「所以红桃的左的侧没的数字牌」→ 只剪不删
+_HEAD_PIECE = re.compile(
+    r"[0-9０-９A-Za-z\s·、，,（）()]|年|月|季|学期|届|高三|高二|高一|中|小"
+    r"|数学|语文|英语|物理|化学|生物|政治|历史|地理|试题|试卷|答案|解析"
+    r"|参考|评分|标准|及|联考|质检|质量|检测|调研|测评|诊断|学情|联盟|协作体"
+    r"|中学|学校|市|省|区|县|第|页|共"
+    # 下面这些是照真实卷眉补的（「2025年秋季学期高三年级12月质量检测」这种）：
+    # 少了「级」，整条卷眉抠不干净，就只剪掉一半、留下「…高三年级」挂在正文尾巴上
+    r"|年级|级|秋|春|夏|冬|返|校|考|联|盟|协|作|体")
+_TERM = re.compile(r"[。！？；!?]")
+
+
+def _is_running_head(seg: str) -> bool:
+    """这一段是不是**纯粹**的卷眉（卷眉词抠完什么都不剩）。"""
+    return not _HEAD_PIECE.sub("", seg or "").strip()
+
+
+@rule(name="去题干开头的分值", scope=ENTRY,
+      why="用户 2026-09-18：分值没必要录入。而且它会诱发答案表误判"
+          "（台账 D03：`16.（本小题满分15分）` 被当成题号行）")
+def strip_score_head(q: Question) -> bool:
+    r"""去掉题干开头的「（本小题满分 N 分）」「（N 分）」。
+
+    **只动开头**：解析里夹着的「…… 4 分」是官方评分细则的步骤分，那是有信息的，
+    留着（台账 D09）。所以这里不做成片替换。
+    """
+    new = _SCORE_HEAD.sub("", q.stem or "", count=1)
+    if new == (q.stem or "") or not new.strip():
+        return False
+    q.stem = new
+    return True
+
+
+def _cut_footer(text: str) -> str:
+    r"""删掉页眉页脚。返回新文本（没变就原样返回）。
+
+    分三种情形，**都是从真实脏数据里量出来的**：
+
+    1. 整行就是页脚（`第 3 页 共 8 页`）→ 整行删。
+    2. 整行是「卷名 + 页脚」，且卷名前面没有句子 → 整行删
+       （`2025年秋季学期高三年级12月质量检测数学试题 第 4 页 共 4 页`）。
+    3. **正文和页脚挤在同一行** → 从卷眉关键词处剪，保住正文。
+       实例：「所以红桃 A 的左侧没有数字牌高三数学 答案 第1页 共10页」
+       —— 无脑删整行会把那句真题干掉，所以必须剪在「高三」处。
+
+    换行两种写法都认：真换行和字面量 `\n`（`%% @q` 元数据里是双转义的）。
+    """
+    if not text or "页" not in text:
+        return text
+    lines = re.split(r"(\n|\\n)", text or "")     # 保留分隔符，拼回去不变形
+    out: list[str] = []
+    for seg in lines:
+        if seg in ("\n", "\\n") or not seg:
+            out.append(seg)
+            continue
+        out.append(_cut_footer_line(seg))
+    return "".join(out)
+
+
+def _cut_footer_line(line: str) -> str:
+    m = _FOOT.search(line)
+    if not m:
+        return line
+    head = line[:m.start()]
+    # 情形 2：这一行整行都是排版（卷眉 + 页脚），前面没有正文
+    if not _TERM.search(head) and (not head.strip() or _is_running_head(head)):
+        return ""
+    # 情形 3：**从"再往左一步就不像卷眉了"的那一点剪**，保住正文
+    if _is_running_head(head):
+        cut = 0
+    else:
+        cut = m.start()
+        for p in range(len(head)):
+            if _is_running_head(head[p:]):
+                cut = p
+                break
+    return line[:cut]
+
+
+@rule(name="去页眉页脚", scope=ENTRY,
+      why="台账 D02：页脚「第 N 页 共 M 页」和卷眉是印刷排版，不是题目内容。"
+          "实测题干 65 道、解析 107 道带这玩意儿")
+def strip_running_head(q: Question) -> bool:
+    r"""题干和解析一起去页眉页脚。"""
+    changed = False
+    for field in ("stem", "solution"):
+        old = getattr(q, field) or ""
+        new = _trim_edges(_cut_footer(old))
+        if new != old:
+            setattr(q, field, new)
+            changed = True
+    return changed
+
+
+# 两头修剪：真空白和**字面量 `\n`**（`%% @q` 元数据里是双转义的，strip() 剪不掉）
+_EDGE = re.compile(r"^(?:(?:\\n)|\s)+|(?:(?:\\n)|\s)+$")
+
+
+def _trim_edges(s: str) -> str:
+    return _EDGE.sub("", s or "")
+
+
 @rule(name="题干写「多选」的改判多选", scope=MIGRATE,
       why="规范 §2.1：题型以题干自述为准——模拟题在题首写「（多选）」，"
           "解析器却一律当单选，结果 347 道多选题被摆在单选区、"
@@ -1095,6 +1224,54 @@ def _selftest() -> int:
     normalize(q5)
     before = q5.stem
     check("幂等：再跑一次不改", not normalize(q5) and q5.stem == before, q5.stem)
+
+    # ── 卷面排版噪声（台账 D01/D02）────────────────────────────────
+    # 用例全部取自真实脏数据，不要改成"想象出来的"形式。
+    from .schema import Option as _Opt                     # noqa: F401
+    for raw, want in [
+        ("（本小题满分 17 分）\n已知函数 $f(x)=x$", "已知函数 $f(x)=x$"),
+        ("(本小题满分15分)\n某大学一兴趣小组", "某大学一兴趣小组"),
+        ("（13分）已知 $a,b,c$ 分别为", "已知 $a,b,c$ 分别为"),
+        ("(15分)  已知双曲线 $C$", "已知双曲线 $C$"),
+        ("本小题满分17分\n已知函数", "已知函数"),
+        # **不能误伤**：题干里正常的数字+分，以及"分形"这种词
+        ("已知 $x$ 的分式方程", "已知 $x$ 的分式方程"),
+        ("3 分钟内心率", "3 分钟内心率"),
+        ("（1）求 $a$ 的值", "（1）求 $a$ 的值"),
+    ]:
+        _q = Question(key="t/score", type="detailed_answer", stem=raw)
+        strip_score_head(_q)
+        check("去分值：%r" % raw[:14], _q.stem == want, repr(_q.stem))
+    _q = Question(key="t/score2", type="detailed_answer", stem="（17分）")
+    check("去分值：整段都是分值就保留（不能清成空题）", _q.stem == "（17分）"
+          or not strip_score_head(_q), repr(_q.stem))
+
+    for raw, want in [
+        # 整行就是页脚
+        ("已知 $a=1$。\n\n第 3 页 共 8 页", "已知 $a=1$。"),
+        # 卷名 + 页脚，整行是排版
+        ("已知 $a=1$。\n\n2025年秋季学期高三年级12月质量检测数学试题 第 4 页 共 4 页",
+         "已知 $a=1$。"),
+        ("已知 $a=1$。\n第7页共8页", "已知 $a=1$。"),
+        # 正文与页脚挤在同一行 —— **不能把正文删掉**
+        ("所以红桃 A 的左侧没有数字牌高三数学 答案 第1页 共10页",
+         "所以红桃 A 的左侧没有数字牌"),
+        ("恰好被安排在 $A$ 家庭有 60 种不同安排方法。\n\n第 3 页 共 8 页",
+         "恰好被安排在 $A$ 家庭有 60 种不同安排方法。"),
+        # 字面量 \n（%% @q 元数据里是双转义的）也要认
+        ("已知 $a=1$。\\n\\n第 3 页 共 8 页", "已知 $a=1$。"),
+        # **不能误伤**：正文里出现「第 N 页」以外的“页”
+        ("一本书共 100 页，每天读 5 页", "一本书共 100 页，每天读 5 页"),
+    ]:
+        _q = Question(key="t/foot", type="detailed_answer", stem=raw)
+        strip_running_head(_q)
+        check("去页脚：%r" % raw[:18], _q.stem.strip() == want, repr(_q.stem))
+
+    _q = Question(key="t/foot2", type="detailed_answer", stem="求 $x$。",
+                  solution="由题意得 $x=1$。\n\n数学试题 第2页 共4页")
+    strip_running_head(_q)
+    check("去页脚：解析里也清", _q.solution.strip() == "由题意得 $x=1$。",
+          repr(_q.solution))
 
     print("normalize 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0
