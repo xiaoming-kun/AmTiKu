@@ -533,6 +533,23 @@ def run(src: Path, *, phase: str = "run", label: str = "") -> dict:
     return out
 
 
+def rec_to_question(rec: dict, label: str) -> Question:
+    r"""成品记录 → 入库用的 `Question`，**并走项目唯一的规范化入口**。
+
+    ⚠️ 闸门只保证"数据齐、不脏"，**不等于符合项目规范**。实测：回原卷修完
+    13 道之后 `conform` 报 35 处（句末标点 18、答案写法 14、填空位数 3），
+    全都得靠 `normalize(ENTRY)` ——少了这一步，修完的题照样不合规。
+    """
+    q = Question(
+        key="模拟题/%s#%d" % (label, rec["题号"]), type=rec["题型"],
+        stem=rec["题干"],
+        options=[Option(k, v) for k, v in sorted((rec.get("选项") or {}).items())],
+        answer=rec.get("答案") or "", solution=rec.get("解析") or "",
+        meta={"book": "模拟题", "source_label": label, "source_no": rec["题号"]})
+    N.normalize(q, N.ENTRY)
+    return q
+
+
 def write_output(res: dict, out_dir: Path) -> None:
     """成品 / 登记 / 待复核 / 报告 四份都落盘（人工只看报告）。"""
     out_dir.mkdir(parents=True, exist_ok=True)
