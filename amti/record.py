@@ -784,6 +784,12 @@ def pages_of(pdf: Path, out: Path, *, dpi: int | None = None) -> list[Path]:
     """
     import fitz                                    # 重依赖，用到才导
 
+    # 这批卷子里有好几份 xref 是坏的，MuPDF 会往 stderr 刷几百行
+    # `cannot find object in xref`，把真正的日志淹掉。渲染本身是好的，静音。
+    try:
+        fitz.TOOLS.mupdf_display_errors(False)
+    except Exception:                                      # noqa: BLE001
+        pass
     out.mkdir(parents=True, exist_ok=True)
     got: list[Path] = []
     with fitz.open(pdf) as doc:
@@ -882,6 +888,17 @@ def ocr_alive() -> bool:
     try:
         with urllib.request.urlopen(
                 OCR_API.replace("/v1/chat/completions", "/health"),
+                timeout=5) as r:
+            return r.status == 200
+    except Exception:                                      # noqa: BLE001
+        return False
+
+
+def llm_alive() -> bool:
+    """打标用的本地 27B（1234）通不通。**打标是它干的，挂了就等于全都没考点。**"""
+    try:
+        with urllib.request.urlopen(
+                API.replace("/v1/chat/completions", "/v1/models"),
                 timeout=5) as r:
             return r.status == 200
     except Exception:                                      # noqa: BLE001
@@ -1257,7 +1274,11 @@ def fixup(tex: str) -> str:
     # 会把 `%` 后面整段注释掉，连答案括号一起没了
     # （实测青岛第 1 题，conform 报「选择题答案没写进 \paren[…]」）。
     tex = re.sub(r"(?<!\\)%", r"\\%", tex)
+    # ⚠️ **必须在 `\(…\)` 归一成 `$…$` 之后再包中文**——先包的话，
+    # 那些还是 `\(…\)` 形态的公式根本没被当成数学模式，中文照样漏
+    # （实测镇江那份就是这么漏过去的）。
     tex = tex.replace("\\(", "$").replace("\\)", "$")
+    tex = fix_math_cjk(tex)
     # `$$…$$` → `$…$`：规范里行间公式是 `\[…\]`，`$$` 块解析器不认
     # （实测华师联盟第 19 题的解析里混了 `$$`，KaTeX 渲染直接失败、四层验收挂掉）。
     # 直接换成单 `$` 最稳：定界符个数不变，永远配平。
@@ -1311,6 +1332,12 @@ def fill_blanks(stem: str, ans: str) -> str | None:
         return stem[:m.start()] + ("\\fillin[%s]" % ans if ans else "") + stem[m.end():]
     if not ans:
         return stem                       # 空位留着，答案等人工补
+    if holes == 1:
+        # **一个空就没有"多空分隔"这回事**，答案里的 `；` 会让 conform 的
+        # 「填空位数」数出 2 段（实测 5 场整卷被拦）。归一成逗号：原意不变。
+        return _FILLIN.sub(
+            lambda _m: "\\fillin[%s]" % ans.replace("；", "，").replace(";", "，"),
+            stem, count=1)
     parts = _split_answers(ans, holes)
     if len(parts) != holes:
         return None
@@ -1409,6 +1436,93 @@ def tag_point(q: dict, *, timeout: int = 300) -> str:
     return pid if pid and kb.get(pid) else ""
 
 
+# 数学模式外**允许**出现的命令（结构性命令，规范里就这么写）
+_STRUCT_CMD = {
+    "paren", "fillin", "includegraphics", "begin", "end", "item", "textbf",
+    "text", "textwidth", "linewidth", "centering", "hspace", "vspace",
+    "label", "ref", "caption", "tabular", "array", "hline", "quad", "qquad",
+    "qquad", "emph", "underline", "hfill", "par", "noindent", "vskip",
+}
+
+
+_CJK = re.compile(r"[\u4e00-\u9fff]+")
+_ENV = re.compile(r"\\(begin|end)\{([a-zA-Z*]+)\}")
+
+
+def fix_math_cjk(tex: str) -> str:
+    r"""数学模式里的裸中文包进 `\text{}`。
+
+    OCR 常把下标写成 `S_{平行四边形}`、`\frac{亩产量}{平均产量}`——
+    规范 §2.6 要求数学里的中文必须包 `\text{}`，不包 `conform` 会拦，
+    而 `ingest` 是**一票否决**：一道题害得整份卷子进不去（实测 8 场中招）。
+    这是纯机械的写法修正，改对了就能进库，不该丢题。
+    """
+    def one(m):
+        parts = re.split(r"(\\text\{[^}]*\})", m.group(1))
+        return "$" + "".join(
+            x if x.startswith("\\text{") else _CJK.sub(
+                lambda mm: "\\text{%s}" % mm.group(0), x)
+            for x in parts) + "$"
+    return re.sub(r"\$([^$]*)\$", one, tex)
+
+
+# 小节标题（「四、解答题：本题共5小题…」）。它出现在题干里 = **这一题
+# 吞掉了下一节的标题**，实测答案页的紧凑列表会把下一题整段带进来
+# （潍坊第 14 题吞了第 15 题 + 「四、解答题」标题，7 场卷子因此进不了库）。
+_SEC_IN = re.compile(r"\s*[一二三四五六七八九十]\s*[、.][^\n]{0,30}?"
+                     r"(?:选择题|填空题|解答题)[^\n]*")
+
+
+def normalize_fillin(stem: str) -> str:
+    r"""**单空题的 `illin[…]` 里不许有分号。**
+
+    分号是"多空答案"的分隔符；只有一个空时它就是答案内容的一部分
+    （`$x-y+1=0$; 2` 这种多半还是 OCR 把下一题带进来了）。
+    `conform` 的「填空位数」按分号数段，一个空数出两段就**整份卷子进不去**。
+    实测 7 场卡在这。这里统一把单空里的分号归一成逗号。
+    """
+    if len(_FILLIN.findall(stem)) != 1:
+        return stem
+    return _FILLIN.sub(
+        lambda m: m.group(0).replace("；", "，").replace(";", "，"), stem, count=1)
+
+
+def cut_section(tex: str) -> str:
+    r"""在**第一个小节标题处截断**——把吞进来的下一节内容切掉。
+
+    能救回真题，比整道丢掉好。
+    """
+    m = _SEC_IN.search(tex or "")
+    return (tex[:m.start()].rstrip() if m else tex) or ""
+
+
+def env_balanced(tex: str) -> bool:
+    r"""`\begin{}` / `\end{}` 配不配平（实测有 `\begin{cases}` 没闭合的）。"""
+    stack: list[str] = []
+    for m in _ENV.finditer(tex or ""):
+        if m.group(1) == "begin":
+            stack.append(m.group(2))
+        elif not stack or stack.pop() != m.group(2):
+            return False
+    return not stack
+
+
+def latex_leak(tex: str) -> bool:
+    r"""**数学模式外残留的 LaTeX 命令**（`conform` 的「渲染残留」查的就是这个）。
+
+    OCR 常把 `x \in A` 里的 `\in` 落到 `$…$` 外面，渲染出来是一根反斜杠。
+    `ingest` 的复核是**一票否决**的：一道题有残留，整份卷子都进不去
+    （实测湖北圆创联盟那份，14 道好题被第 19 题拦住）。
+    所以在这一层先把它剔出来，题号写进报告。
+    """
+    # ⚠️ **白名单而不是黑名单。** 题干里的 `\paren[]`、`\fillin[]`、
+    # `\includegraphics` 是规范里合法的结构性命令，一刀切会把好题也毙掉
+    # （第一版就是这么写的，自检 5 项当场红了）。
+    masked = re.sub(r"\$[^$]*\$", "", tex or "")
+    return any(m.group(1) not in _STRUCT_CMD
+               for m in re.finditer(r"\\([a-zA-Z]{2,})", masked))
+
+
 def unrenderable(q: dict) -> str:
     r"""这道题能不能成形。能就返回 `""`，不能就返回原因。
 
@@ -1449,6 +1563,13 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
         qtype = TYPE_MAP.get(q["type"], "")
         ans, sol = fixup(q["ans"].strip()), strip_marker(fixup(q["sol"].strip()))
         stem = fixup(q["stem"].strip())
+        # 吞进来的下一节内容先切掉（题干和解析都要切）
+        stem, sol = cut_section(stem), cut_section(sol)
+        if not stem:
+            if skipped is not None:
+                skipped.append({"n": n, "why": "题干只有小节标题（切完就空了）",
+                                "stem": q["stem"][:60], "ans": ans[:40]})
+            continue
         if unbalanced(stem):
             # 题干坏了就整道丢掉；解析坏了只丢解析（题干好的还能用）
             if skipped is not None:
@@ -1457,6 +1578,38 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
             continue
         if unbalanced(sol):
             sol = ""
+        # 选项也要查——实测有 optC 漏 \infty、optD 漏 \sqrt 把整卷拦下的
+        if any(unbalanced(t) or latex_leak(t) or not env_balanced(t)
+               for _l, t in q["options"]):
+            if skipped is not None:
+                skipped.append({"n": n, "why": "选项里的公式不合法",
+                                "stem": stem[:60], "ans": ans[:40]})
+            continue
+        if not env_balanced(stem) or not env_balanced(sol):
+            if skipped is not None:
+                skipped.append({"n": n, "why": "环境没闭合（begin/end 不配对）",
+                                "stem": stem[:60], "ans": ans[:40]})
+            continue
+        # 数学模式外漏出的 LaTeX：题干坏了整道丢，解析坏了只丢解析
+        if latex_leak(stem):
+            if skipped is not None:
+                skipped.append({"n": n, "why": "题干有 LaTeX 残留（数学模式外）",
+                                "stem": stem[:60], "ans": ans[:40]})
+            continue
+        if latex_leak(sol):
+            sol = ""
+        # **答案里出现"下一个题号"说明切分吞了下一题**（实测宜昌第 12 题
+        # 的答案是 `40: $13.\frac{9}{2};$`——把 13 题也吃进来了）。
+        # 这种答案宁可不录，录了就是错的。
+        if ans and re.search(r"(?:^|[\s$,])\d{1,2}\s*[.．、]\s*\S", ans):
+            if skipped is not None:
+                skipped.append({"n": n, "why": "答案里混进了下一题的题号",
+                                "stem": stem[:60], "ans": ans[:40]})
+            continue
+        if latex_leak(ans):          # 答案里漏出 \infty 之类
+            ans = ""
+        if unbalanced(ans):          # 答案里 `$` 个数是奇数
+            ans = ""
         if qtype in ("single_choice", "multi_choice"):
             # **选择题的答案只能是字母。** OCR 有时把打分标记、来源注、
             # 断掉的公式混进答案里（实测洛阳第 1 题答案是 `\)……6`）。
@@ -1499,6 +1652,7 @@ def to_tex(qs: list[dict], *, book: str, label: str, region: str = "",
         head = {"key": "%s/%s#%d" % (book, label, n), "type": qtype,
                 "points": [q["point"]] if q.get("point") else [],
                 "meta": meta}
+        stem = normalize_fillin(stem)
         env = "problem" if qtype == "detailed_answer" else "question"
         body = ["\\begin{%s}" % env, stem]
         if q["options"]:
@@ -1555,6 +1709,52 @@ def guess_year(pdf: Path) -> int | None:
     return 2000 + int(m.group(1)) if m else None
 
 
+_ANS_WORD = re.compile(r"答案|解析|详解|参考|DA|教师版|评分标准|学生版")
+
+
+def pick_main(pdfs: list[Path]) -> tuple[Path, list[Path]]:
+    r"""一个考试文件夹 → `(试题, [答案/解析…])`。
+
+    这批卷子是**一个文件夹一场考试**，里面常放 2~3 个 PDF：
+    `…数学试题.pdf` + `…数学答案.pdf`（有时还有「小题详解」第三份）。
+    所以不能按"一个 PDF 一场考试"跑——那样答案卷会被当成没有题干的卷子，
+    白烧几个小时算力。
+
+    判据用文件名：带「答案/解析/详解/DA/教师版/评分标准」的是答案卷，
+    剩下的第一个当试题。**学生版**归答案那侧（它常和教师版配套，
+    真试题另有一份）。
+    """
+    main = next((p for p in pdfs if not _ANS_WORD.search(p.stem)), None)
+    if main is None:                       # 整个文件夹都像答案卷，就取第一份
+        main = pdfs[0]
+    return main, [p for p in pdfs if p != main]
+
+
+def label_for(pdf: Path) -> str:
+    r"""出处：**优先用文件夹名**。
+
+    这批卷子的文件夹名就是考卷全名（如「161.安徽皖江名校联盟2026届高三
+    上学期12月质检」），比文件名干净得多——文件名常常是
+    「安徽皖江名校联盟2026届高三上学期12月质检数学试题」外加一截噪音。
+    开头那个序号（`161.`）要去掉。
+    """
+    name = pdf.parent.name if pdf.parent.name else pdf.stem
+    name = re.sub(r"^\s*\d{1,4}\s*[.、．]\s*", "", name)
+    s = _clean_stem(name)
+    y = guess_year(pdf) or guess_year_from_text(name)
+    if y and not re.search(r"20\d{2}", s):
+        s = "%d%s" % (y, s)
+    return s or _clean_stem(pdf.stem) or pdf.stem
+
+
+def guess_year_from_text(name: str) -> int | None:
+    m = re.search(r"(20\d{2})", name)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"(\d{2})(\d{2})(\d{2})", name)
+    return 2000 + int(m.group(1)) if m else None
+
+
 def pair_answer(pdf: Path, *, floor: float = 0.80) -> Path | None:
     r"""在同一目录里猜这份卷子的**答案卷**。
 
@@ -1583,7 +1783,7 @@ def pair_answer(pdf: Path, *, floor: float = 0.80) -> Path | None:
     return best
 
 
-def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
+def run(pdf: Path, *, answers=None, book: str = "模拟题",
         label: str = "", region: str = "", year: int | None = None,
         workers: int = 1, force: bool = False, tag: bool = True,
         on_event=None) -> dict:
@@ -1596,10 +1796,14 @@ def run(pdf: Path, *, answers: Path | None = None, book: str = "模拟题",
     label = label or guess_label(pdf)
     year = year or guess_year(pdf)
     scans = scan_pdf(pdf, workers=workers, force=force, on_event=on_event)
-    if answers:
+    # 答案卷可以有**多份**（试题 + 答案 + 小题详解是常见的三件套）
+    for a in ([answers] if isinstance(answers, (str, Path)) else (answers or [])):
+        a = Path(a)
+        if not a.exists():
+            continue
         if on_event:
-            on_event({"type": "stage", "text": "识别答案卷 %s" % answers.name})
-        scans += scan_pdf(answers, workers=workers, force=force, on_event=on_event)
+            on_event({"type": "stage", "text": "识别答案卷 %s" % a.name})
+        scans += scan_pdf(a, workers=workers, force=force, on_event=on_event)
     title = next((s["page"]["title"] for s in scans
                   if s["page"].get("title") not in ("", "-")), "")
     classify_pages(scans)                    # 先分试卷页/答案页，再合并
@@ -1638,19 +1842,24 @@ def batch(folder: Path, *, out_dir: Path | None = None, **kw) -> list[dict]:
     配对规则是 `pair_answer`（按文件名）。被配走的答案卷本身不再当试卷跑——
     否则一份答案卷会被当成一份没有题干的"试卷"，白烧几个小时算力。
     """
-    consumed: set[Path] = set()
+    # **每个含 PDF 的目录 = 一场考试**（这批卷子是 `编号段/考试名/试题.pdf`），
+    # 所以先按目录分组，再在每个目录里挑试题、把其余当答案卷。
+    dirs = sorted({p.parent for p in folder.rglob("*.pdf")})
+    if not dirs:
+        dirs = [folder]
     rows = []
-    for pdf in sorted(folder.glob("*.pdf")):
-        if pdf in consumed:
+    for d in dirs:
+        pdfs = sorted(d.glob("*.pdf"))
+        if not pdfs:
             continue
-        ans = pair_answer(pdf)
-        if ans:
-            consumed.add(ans)
-        r = run(pdf, answers=ans, **kw)
+        main, ans = pick_main(pdfs)
+        kw2 = dict(kw)
+        kw2["label"] = kw2.get("label") or label_for(main)
+        r = run(main, answers=ans, **kw2)
         rows.append(r)
         if out_dir:
-            write_out(r, out_dir, book=kw.get("book", "模拟题"),
-                      region=kw.get("region", ""))
+            write_out(r, out_dir, book=kw2.get("book", "模拟题"),
+                      region=kw2.get("region", ""))
     return rows
 
 
@@ -1672,6 +1881,90 @@ def write_out(r: dict, out_dir: Path, *, book: str = "模拟题",
                                  "fig": q["fig"]} for q in r["dropped"]],
                     "lost": r["lost"]}, ensure_ascii=False, indent=1),
         encoding="utf-8")
+
+
+def run_all(folder: Path, *, out_dir: Path | None = None,
+            state: Path | None = None, tag: bool = True, workers: int = 8,
+            book: str = "模拟题", region: str = "",
+            on_event=None) -> dict:
+    r"""**一份一份跑、跑完一份立刻入库。** 用户 2026-09-17 定的规矩：
+
+    * 一份一份录入——攒一大批最后一起导，中间一崩就全丢，也没法按份回滚
+    * 可中断续跑——这是个通宵的活，断了第二天接着来，不能从头再来
+
+    进度落在 `数据/录题/进度.json`：**每跑完一份就写一次**，所以任何时刻
+    拔电，重跑都只补没做完的那些。已经入库且没报错的目录直接跳过。
+
+    依赖：OCR 服务（1235）和本地 27B（1234，打标用）都得活着。
+    **这两个都是本地模型，不花任何云端 token。**
+    """
+    from . import ingest as ig
+
+    state_path = state or (WORK / "进度.json")
+    done: dict = {}
+    if state_path.exists():
+        try:
+            done = json.loads(state_path.read_text(encoding="utf-8"))
+        except ValueError:
+            done = {}
+    dirs = sorted({p.parent for p in folder.rglob("*.pdf")})
+    todo = [d for d in dirs if not done.get(str(d), {}).get("ok")]
+    print("[跑批] 共 %d 场，待跑 %d 场" % (len(dirs), len(todo)), flush=True)
+    if not ocr_alive():
+        raise RuntimeError("OCR 服务（%s）连不上，先起服务" % OCR_API)
+    if tag and not llm_alive():
+        raise RuntimeError(
+            "打标用的本地 27B（%s）连不上。LM Studio 常常只是**HTTP 服务**"
+            "停了而模型还在（`lms ps` 看着是加载的），先 `lms server start`；"
+            "模型没加载就 `lms load qwen/qwen3.8-27b --ttl 7200`。" % API)
+
+    stat = {"跑": 0, "新增": 0, "跳过": 0, "失败": 0, "题": 0}
+    for i, d in enumerate(todo, 1):
+        pdfs = sorted(d.glob("*.pdf"))
+        if not pdfs:
+            continue
+        main, ans = pick_main(pdfs)
+        label = label_for(main)
+        t0 = time.time()
+        try:
+            # **label 必须一路传下去。** 不传的话 `run()` 会用文件名猜一个，
+            # 而这里入库用的是文件夹名——两套标签不一致，产物文件名就对不上
+            # （实测 10 场被判"产物没生成"，其实有，只是名字不同）。
+            r = run(main, answers=ans, book=book, region=region, label=label,
+                    workers=workers, tag=tag, on_event=on_event)
+            if out_dir:
+                write_out(r, out_dir, book=book, region=region)
+            rep = ig.commit(r["tex"], book=book, label=label,
+                            region=region, year=r["year"])
+            added = rep.get("added_count")
+            ok = added is not None
+            done[str(d)] = {"label": label, "ok": ok,
+                            "新增": added or 0,
+                            "跳过": len(rep.get("skipped") or []),
+                            "秒": round(time.time() - t0),
+                            "when": time.strftime("%Y-%m-%d %H:%M")}
+            stat["跑"] += 1
+            stat["新增"] += added or 0
+            stat["跳过"] += len(rep.get("skipped") or [])
+            stat["题"] += r["stats"]["录入"]
+            print("[%d/%d] %-42s %3d题 +%-3s %4.0fs" % (
+                i, len(todo), label[:42], r["stats"]["录入"], added,
+                time.time() - t0), flush=True)
+        except Exception as e:                                 # noqa: BLE001
+            stat["失败"] += 1
+            done[str(d)] = {"label": label, "ok": False,
+                            "err": "%s: %s" % (type(e).__name__, e),
+                            "when": time.strftime("%Y-%m-%d %H:%M")}
+            print("[%d/%d] %-42s ✗ %s" % (i, len(todo), label[:42], e),
+                  flush=True)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_path.with_name(state_path.name + ".tmp")
+        tmp.write_text(json.dumps(done, ensure_ascii=False, indent=1),
+                       encoding="utf-8")
+        os.replace(tmp, state_path)
+    print("[跑批] 结束：跑 %d，新增 %d 题，跳过 %d，失败 %d" % (
+        stat["跑"], stat["新增"], stat["跳过"], stat["失败"]), flush=True)
+    return stat
 
 
 def ingest_dir(out_dir: Path, *, yes: bool = False) -> list[dict]:
@@ -1802,7 +2095,15 @@ def _main(argv: list[str] | None = None) -> int:
     ap.add_argument("--yes", action="store_true", help="配合 --ingest-dir：真写库")
     ap.add_argument("--report", default="",
                     help="把 --outdir 的产出汇成 markdown 录入报告")
+    ap.add_argument("--all", default="",
+                    help="通宵跑批：递归跑这个目录，**一份一份跑完立刻入库**，可中断续跑")
+    ap.add_argument("--no-tag", action="store_true", help="不打考点（省时间）")
     a = ap.parse_args(argv)
+    if a.all:
+        run_all(Path(a.all), out_dir=Path(a.outdir) if a.outdir else None,
+                tag=not a.no_tag, workers=a.workers, book=a.book,
+                region=a.region)
+        return 0
     if a.report:
         print(report(Path(a.report)))
         return 0
