@@ -388,10 +388,11 @@ def scan_page(img: Path, cache: Path, no: int, *, force: bool = False) -> dict:
         q = parse_block(n, block, sec)
         if q is None:
             continue
-        q["pages_bands"] = [b0, b1]
-        q["figure"] = bool(check_figure_on(img, bands, band_txt,
-                                           q["stem"] + " " + " ".join(
-                                               o[1] for o in q["options"])))
+        q["pages_bands"] = question_bands(q["n"], band_txt, q["stem"]) or [b0, b1]
+        q["figure"] = bool(check_figure_on(
+            img, bands, band_txt,
+            q["stem"] + " " + " ".join(o[1] for o in q["options"]),
+            n=q["n"], stem=q["stem"]))
         qs.append(q)
     return {"page": page, "key": {}, "figpos": {}, "questions": qs,
             "text": text}
@@ -447,30 +448,99 @@ def split_half(img: Path) -> tuple[Path, Path]:
 
 
 def check_figure_on(img: Path, bands: list, band_txt: list[str],
-                    text: str) -> bool:
+                    text: str, *, n=None, stem: str = "") -> bool:
     r"""判这道题有没有配图——**只对题干里提到「图」的题**去问 27B。
 
-    条带只用来定位：谁的文字跟这道题的题干最像，谁就是它的区域。
-    这样即使条带 OCR 把某个数字读坏了（实测有），也能靠相似度对上。
+    判据演进（两次都是**漏判**逼出来的）：
+
+    1. 最早只问"跟题干最像的那一条带"——辽宁抚顺第 9 题的图在页面右侧，
+       整页只切出 2 条带，相似度匹配到了没图的那条 → 带图题进了库。
+    2. 改成"整页任一条带有图就算有图"——漏判治好了，代价是误杀成片：
+       同一页只要有一道图题，其余题干提到「图象」的题会被一起毙掉。
+    3. 现在：**先问本题自己的条带区间**（`question_bands`），命中就返回；
+       没命中**照样把整页其余条带问一遍**。
+
+    第 3 步的敏感度**不低于**第 2 步（整页终究会问全），只是让"图就在本题
+    区间里"这种常见情况提前返回、少问几次模型。用户 2026-09-18 定的口径：
+    **宁可误杀同页其他题，也不能漏掉一道带图题**。
+
+    定位不到区间不算"没图"——那时走的也是整页，等于第 2 步。
     """
     if not _FIG_WORD.search(text or ""):
         return False
-    key = re.sub(r"\s|\\[a-zA-Z]+|[{}$\\]", "", text)[:40]
-    best, score = None, 0.0
-    for bi, bt in enumerate(band_txt, 1):
-        b = re.sub(r"\s|\\[a-zA-Z]+|[{}$\\]", "", bt)
-        if not b:
-            continue
-        from difflib import SequenceMatcher
-        r = SequenceMatcher(None, key, b[:max(len(key), 80)]).ratio()
-        if r > score:
-            best, score = bi, r
-    if not best:
-        return True                      # 定位不到也不能当"没有"
-    crop = img.parent.parent / "crops" / ("%s_%02d.jpg" % (img.stem, best))
+    region = [bi for bi in question_bands(n, band_txt, stem)
+              if 1 <= bi <= len(bands)]
+    if region and any(_band_has_figure(img, bi) for bi in region):
+        return True                      # 本题区间里就有图，不必再看别处
+    return any(_band_has_figure(img, bi) for bi in range(1, len(bands) + 1))
+
+
+def question_bands(n, band_txt: list[str], stem: str = "") -> list[int]:
+    r"""这道题在页面上占哪几条带（1 起，闭区间）。
+
+    条带是几何切出来的，题号不一定落在带首（一页文字密时几道题会挤进同一条带），
+    所以先按"行首题号"找，找不到再用题干指纹兜底。
+    **定位不到返回空**——调用方决定是退回整页还是放弃。
+    """
+    if n is None or not band_txt:
+        return []
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return []
+    nos = {bi: [int(m.group(1)) for m in
+                re.finditer(r"(?m)^\s*(\d{1,2})\s*[.．、]", t or "")]
+           for bi, t in enumerate(band_txt, 1)}
+    start = next((bi for bi in sorted(nos) if n in nos[bi]), 0)
+    if not start and stem:
+        fp = _fingerprint(stem)
+        start = next((bi for bi in sorted(nos)
+                      if fp and fp in _flat(band_txt[bi - 1])), 0)
+    if not start:
+        return []
+    end = next((bi for bi in sorted(nos)
+                if bi > start and any(v > n for v in nos[bi])),
+               len(band_txt) + 1)
+    return list(range(start, end))
+
+
+def _flat(s: str) -> str:
+    """归一化到可比对的形式：去空白、去中英标点。
+
+    条带 OCR 与题干转写的标点不一定一致（「所示，该」vs「所示该」），
+    不去标点指纹就对不上，兜底会静默失效。
+    """
+    return re.sub(r"[\s，。、；：,.;:!?！？（）()\[\]【】《》“”\"']", "", s or "")
+
+
+def _fingerprint(stem: str, k: int = 10) -> str:
+    """题干指纹：取**最长的一段纯文字**（跳过 $公式$ 与 \\命令）的前 k 个字。
+
+    题干里公式多，直接取前 k 个字容易横跨公式、在条带文本里根本不存在，
+    所以先按公式切开、挑最长的一段。**题号与分值要先剥掉**——题干是
+    「9. 某三角图标…」「15.（13分）如图…」这种带前缀的形式，不剥的话
+    指纹以数字开头，在条带文本里当然找不到。
+    不足 6 个字就不当指纹用（太短会乱匹配）。
+    """
+    stem = re.sub(r"^\s*\d{1,2}\s*[.．、]\s*|（\s*\d+\s*分\s*）", "", stem or "")
+    parts = [_flat(p) for p in re.split(r"\$[^$]*\$|\\[a-zA-Z]+", stem)]
+    parts = [p for p in parts if len(p) >= 6]
+    return max(parts, key=len)[:k] if parts else ""
+
+
+
+_FIG_CACHE: dict[str, bool] = {}
+
+
+def _band_has_figure(img: Path, bi: int) -> bool:
+    """某条带里有没有图（按页缓存，一页只问一遍）。"""
+    crop = img.parent.parent / "crops" / ("%s_%02d.jpg" % (img.stem, bi))
     if not crop.exists():
-        return True
-    return ask_figure(crop)
+        return True                      # 裁不出来也不能当"没有"
+    key = str(crop)
+    if key not in _FIG_CACHE:
+        _FIG_CACHE[key] = ask_figure(crop)
+    return _FIG_CACHE[key]
 
 
 def ask_figure(crop: Path) -> bool:
@@ -2339,6 +2409,28 @@ $a=1$
           guess_label(Path("260830深圳中学2027届高三摸底考试数学.pdf"))
           == "深圳中学2027届高三摸底考试",
           guess_label(Path("260830深圳中学2027届高三摸底考试数学.pdf")))
+
+    # 判图必须**按题定位**。整页任一条带有图就算"这道题有图"，会把同页其他
+    # 提到「图象」的题一起毙掉；只问最像的一条又会漏（辽宁抚顺第 9 题）。
+    _bt = ["二、选择题：本题共3小题。", "9. 某三角图标如图所示，该图标由三个全等的等腰梯形拼成",
+           "10. 若 0<β<α<π/2，则", "11. 已知函数 f(x) 的定义域为 (0,+∞)", "12. 若函数 f(x)=tan(x-φ)"]
+    check("按题定位：本题起始带 → 下一题之前",
+          question_bands(9, _bt) == [2], question_bands(9, _bt))
+    check("按题定位：跨到下一题就停",
+          question_bands(10, _bt) == [3], question_bands(10, _bt))
+    check("按题定位：最后一题吃到页尾",
+          question_bands(12, _bt) == [5], question_bands(12, _bt))
+    check("按题定位：从后往前也找不到就返回空（调用方退回整页）",
+          question_bands(5, _bt) == [], question_bands(5, _bt))
+    check("指纹兜底：条带 OCR 没读出题号也能定位",
+          question_bands(9, ["...", "某三角图标如图所示，该图标由三个全等的等腰梯形拼成",
+                             "10. 若"],
+                         "9. 某三角图标如图所示，该图标由三个全等的等腰梯形拼成") == [2],
+          question_bands(9, ["...", "某三角图标如图所示，该图标由三个全等的等腰梯形拼成",
+                             "10. 若"],
+                         "9. 某三角图标如图所示，该图标由三个全等的等腰梯形拼成"))
+    check("指纹太短不当指纹（免得乱匹配）", _fingerprint("若 $a>b$") == "",
+          _fingerprint("若 $a>b$"))
 
     check(r"\mathbf{R} 拉回 \mathbb{R}",
           fixup(r"$x\in\mathbf{R}$") == r"$x\in\mathbb{R}$", fixup(r"$x\in\mathbf{R}$"))
