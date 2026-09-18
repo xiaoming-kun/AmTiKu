@@ -76,6 +76,17 @@ FURNITURE = re.compile(
     r"|本试卷分|满分\s*\d+\s*分|考试时间|请在答题卡|全部选对|部分选对|有选错"
     r"|答题前|准考证|贴条形码|超出黑色矩形边框|请在各题目的答题区域内作答")
 ANSWER_IN_SOL = re.compile(r"故选\s*[:：]?\s*([A-D]{1,4})")
+# 会让 **KaTeX 渲染失败**的四种写法。全部来自 v1 那批产物的实测
+# （`amti.py accept` 层③ 报的 40 处，逐条看出来的），闸门必须先挡住：
+#   `a &lt; -1`        HTML 实体——`<` 被转义了，KaTeX 认不得 `&`
+#   `\n\cdot`          字面量 \n——换行被当成命令（双转义那个老问题）
+#   `\{ a>0 \atop …}`   `\{` 没闭合
+#   `(\tanh x)^'`     先上标后撇号，KaTeX 直接报错
+BAD_TEX = [
+    (re.compile(r"&(?:lt|gt|amp|quot|nbsp|#\d+);"), "HTML 实体（&lt; 之类）"),
+    (re.compile(r"\\n(?![a-zA-Z])"), "字面量 \\n"),
+    (re.compile(r"\^\s*['\u2032]"), "先上标后撇号 ^'"),
+]
 
 SYS_ASK = """你在给数学题库做**切题**。输入是一整份试卷的 OCR 文本，每行前面有行号，
 页与页之间有一行 `=== 第N页 ===`（那一行没有行号，不属于任何题）。
@@ -237,6 +248,11 @@ def gate(qtype: str, stem: str, opts: dict, answer: str,
             why.append("%s 里混着版面家具" % tag)
         if FOOT.search(txt or ""):
             why.append("%s 里还有页脚" % tag)
+        for pat, name in BAD_TEX:
+            if pat.search(txt or ""):
+                why.append("%s 有%s（KaTeX 会报错）" % (tag, name))
+        if (txt or "").count(r"\{") != (txt or "").count(r"\}"):
+            why.append("%s 的 `\{` 与 `\}` 不配平" % tag)
     return why
 
 
@@ -568,6 +584,19 @@ def _selftest() -> int:
     check("闸门：版面家具 → 拒收",
           any("家具" in w for w in gate("fill_in_blank", "一、选择题：本题共8小题",
                                         {}, "1", "")))
+    # KaTeX 四类硬伤（accept 层③ 实测的 40 处）
+    check("闸门：HTML 实体 → 拒收",
+          any("HTML 实体" in w for w in gate("fill_in_blank", "若 $a &lt; -1$", {}, "1", "")))
+    check("闸门：字面量 \\n → 拒收",
+          any("字面量" in w for w in gate("fill_in_blank", "求 $\\n\\cdot x$", {}, "1", "")))
+    check("闸门：`^'` → 拒收",
+          any("撇号" in w for w in gate("fill_in_blank", "求 $(\\tanh x)^'$", {}, "1", "")))
+    check("闸门：`\\{` 不配平 → 拒收",
+          any("不配平" in w for w in gate("fill_in_blank", "得 $\\{ a>0 \\atop a+2>1}$",
+                                        {}, "1", "")))
+    check("闸门：`\\{…\\}` 配平就不报", not any(
+        "不配平" in w for w in gate("fill_in_blank", "得 $\\{ a>0 \\}$", {}, "1", "")))
+
     check("闸门：选择题答案是中文 → 拒收",
           any("应为字母" in w for w in gate("single_choice", "x ( )",
                                             {"A": "a", "B": "b", "C": "c", "D": "d"},
