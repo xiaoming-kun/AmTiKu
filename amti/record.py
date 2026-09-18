@@ -637,6 +637,88 @@ def guess_type(section: str, stem: str, opts: list) -> str:
     return "解答"
 
 
+# ── 题型按题号定（规矩 R1，用户 2026-09-18 定）────────────────────
+#
+# 用户原话：「题目的类型非常固定，1-8 是单选，9-11 是多选，12-14 是填空，
+# 15-19 是解答题。」
+#
+# 为什么不能继续猜：`guess_type` 是从选项个数/答案形态反推的，**选项一丢、
+# 答案一缺就退化成"解答题"**。实测模拟题 3,516 道里约 760 道题型是错的，
+# 而且错得很有规律——#9~#11 被判成单选 316 道、#14 被判成解答 132 道，
+# 正好是"选项最容易丢、答案最容易缺"的题位。
+#
+# 结构不硬编码，**卷面上本来就印着**：「一、选择题：本题共8小题」……
+# 实测 230 场里 75 场四个标题全读到，其余缺一两个，按 8/3/3/5 补齐。
+# 不是 19 题结构的卷子（高考真题汇编里的老全国卷是 12+4+6）走"读出来的
+# 区间"，读不齐就**不猜**——宁可保持现状，也不拿 8/3/3/5 去套别的结构。
+# ⚠️ **题型标签一律用中文**（「单选/多选/填空/解答」），跟 `guess_type` 一致；
+# 转成 `single_choice` 那些英文名是 `TYPE_MAP`（本文件开头）唯一负责的事。
+# 这里曾经另写了一份英文映射表，干跑时才发现两套标签对不上——等于白改。
+_SECTION_HDR = re.compile(
+    r"([一二三四五六])?\s*[、.．]?\s*(选择题|多选题|填空题|解答题)\s*[：:]?\s*"
+    r"本题共\s*(\d+)\s*小题([^\n]{0,60})")
+# 新课标 19 题的标准结构（8 单选 + 3 多选 + 3 填空 + 5 解答）
+_STD = [("单选", 8), ("多选", 3), ("填空", 3), ("解答", 5)]
+_STD_TOTAL = sum(c for _, c in _STD)
+
+
+def paper_types(texts: list[str], max_no: int = 0) -> dict[int, str]:
+    r"""整卷文本 → `{题号: 题型}`。读不齐就返回空字典（**不猜**）。
+
+    `max_no` 是整卷实际切出来的最大题号，用来校验小节题量对不对得上：
+    对不上说明这份卷子不是这个结构（或者标题读串了），那就不改。
+    """
+    text = "\n".join(t for t in texts if t)
+    seen: dict[str, int] = {}
+    for m in _SECTION_HDR.finditer(text):
+        ordinal, name, tail = m.group(1), m.group(2), m.group(4)
+        if name in ("选择题", "多选题"):
+            # 多选的三个判据，**依次兜底**：标题写着"多选" > 正文那句
+            # 「有多项符合题目要求」 > 新课标惯例（一、是单选，二、是多选）。
+            # 少了"惯例"这条，OCR 把「有多项符合题目要求」那句整行读丢时，
+            # 三个多选会被当成单选（实测这份卷子就丢了，见 47 题那类错判）。
+            kind = ("多选" if ("多选" in name or "多项" in tail
+                              or (ordinal == "二" and "选择题" in name))
+                    else "单选")
+        else:
+            kind = name                       # 填空题 / 解答题
+        seen.setdefault(kind, int(m.group(3)))
+    if max_no == _STD_TOTAL:                  # 19 题：按标准结构补齐缺的小节
+        for kind, cnt in _STD:
+            seen.setdefault(kind, cnt)
+    if not seen or sum(seen.values()) < max_no:
+        return {}
+    out: dict[int, str] = {}
+    n = 0
+    for kind, _default in _STD:
+        for _ in range(seen.get(kind, 0)):
+            n += 1
+            out[n] = kind
+    return out
+
+
+def apply_paper_types(scans: list[dict], max_no: int) -> int:
+    r"""按整卷结构改题型，返回改了几道。
+
+    **只动 `type` 一个字段**，题干/选项/答案一律不碰。
+    """
+    ty = paper_types([s.get("text") or "" for s in scans], max_no)
+    if not ty:
+        return 0
+    changed = 0
+    for sc in scans:
+        for q in sc.get("questions") or []:
+            try:
+                no = int(q.get("n"))
+            except (TypeError, ValueError):
+                continue
+            want = ty.get(no)
+            if want and q.get("type") != want:
+                q["type"] = want
+                changed += 1
+    return changed
+
+
 # 卷首的「考试说明」——**它们也带 1. 2. 3. 的编号**，会被当成题目切进来，
 # 而且占掉 1~4 的题号，把真题挤掉（真题编号不递增就被序列过滤器丢了，
 # 正文并进说明块）。实测 13 份卷子里 10 份中招，24 道假题入库。
@@ -1045,7 +1127,15 @@ def scan_pdf(pdf: Path, *, work: Path | None = None, workers: int = 1,
             done += 1
             if on_event:
                 on_event({"type": "progress", "done": done, "total": len(imgs)})
-    return [r for r in rows if r]
+    scans = [r for r in rows if r]
+    # **题型按题号定（规矩 R1）。** 放在这里是因为它要看**整卷**——
+    # 逐页扫的时候还不知道这份卷子有几节、每节几道题。
+    max_no = max((int(q["n"]) for s in scans for q in (s.get("questions") or [])
+                  if str(q.get("n", "")).isdigit()), default=0)
+    fixed = apply_paper_types(scans, max_no)
+    if fixed and on_event:
+        on_event({"type": "types", "fixed": fixed, "max_no": max_no})
+    return scans
 
 
 # ── 合并 + 答案配对 ───────────────────────────────────────────────
@@ -2431,6 +2521,45 @@ $a=1$
                          "9. 某三角图标如图所示，该图标由三个全等的等腰梯形拼成"))
     check("指纹太短不当指纹（免得乱匹配）", _fingerprint("若 $a>b$") == "",
           _fingerprint("若 $a>b$"))
+
+    # ── 规矩 R1：题型按题号定，不靠选项猜 ──────────────────────────
+    # 用户 2026-09-18 定：1-8 单选、9-11 多选、12-14 填空、15-19 解答。
+    # 用例里的标题是**从真实卷面抄的**（十一校那份）。
+    _SEC = ("一、选择题：本题共8小题，每小题5分，共40分。在每小题给出的四个选项中，"
+            "只有一项是符合题目要求的。\n"
+            "二、选择题：本题共3小题，每小题6分，共18分。在每小题给出的选项中，"
+            "有多项符合题目要求。\n"
+            "三、填空题：本题共3小题，每小题5分，共15分。\n"
+            "四、解答题：本题共5小题，共77分。")
+    _t = paper_types([_SEC], 19)
+    check("R1 四个标题全在：题号→题型",
+          _t.get(1) == "单选" and _t.get(8) == "单选"
+          and _t.get(9) == "多选" and _t.get(11) == "多选"
+          and _t.get(12) == "填空" and _t.get(14) == "填空"
+          and _t.get(15) == "解答" and _t.get(19) == "解答",
+          str(sorted(_t.items())[:3]) + str(sorted(_t.items())[-3:]))
+    check("R1 缺标题按 8/3/3/5 补齐（OCR 常丢标题）",
+          paper_types([_SEC.replace("三、填空题：本题共3小题，每小题5分，共15分。", "")],
+                      19).get(13) == "填空",
+          str(sorted(paper_types(
+              [_SEC.replace("三、填空题：本题共3小题，每小题5分，共15分。", "")],
+              19).items())))
+    check("R1 只读到多选那一节也能补出单选",
+          paper_types(["二、选择题：本题共3小题，每小题6分。有多项符合题目要求。"],
+                      19).get(5) == "单选")
+    check("R1 不是 19 题结构就不猜（老全国卷 12+4+6）",
+          paper_types([], 22) == {}, str(paper_types([], 22)))
+    check("R1 小节题量跟题号对不上就不改",
+          paper_types(["一、选择题：本题共8小题。二、选择题：本题共3小题。"], 26) == {},
+          str(paper_types(["一、选择题：本题共8小题。二、选择题：本题共3小题。"], 26)))
+    _sc = [{"text": _SEC, "questions": [
+        {"n": "9", "type": "解答"}, {"n": "14", "type": "解答"},
+        {"n": "5", "type": "单选"}, {"n": "20", "type": "解答"}]}]
+    check("R1 只改 type，不动别的字段", apply_paper_types(_sc, 19) == 2, str(_sc))
+    check("R1 改对了（#9 多选、#14 填空、#20 不在表内不动）",
+          _sc[0]["questions"][0]["type"] == "多选"
+          and _sc[0]["questions"][1]["type"] == "填空"
+          and _sc[0]["questions"][3]["type"] == "解答", str(_sc))
 
     check(r"\mathbf{R} 拉回 \mathbb{R}",
           fixup(r"$x\in\mathbf{R}$") == r"$x\in\mathbb{R}$", fixup(r"$x\in\mathbf{R}$"))
