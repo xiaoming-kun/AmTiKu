@@ -430,33 +430,34 @@ def _check_one(r: dict, old: dict) -> list[str]:
 
 
 # ── apply ───────────────────────────────────────────────────────────
-def apply(label: str, *, yes: bool = False, allow_drop: bool = False) -> dict:
-    r"""把这一场的 JSON 写回库里。规则（交接文档 11.2，别改）：
-
-    * **只动待修清单里的题**
-    * JSON 给得出的字段 → 覆盖；给不出的（答案/解析为空）→ 保留库里原值
-    * JSON 里明确 `notfound` 的 → 进回收站（可恢复），**要另加 `--drop` 才真删**：
-      读图方判"找不到"常常是**原卷配错了**（齐鲁名校那场卷面是第三次检测、
-      册内答案却是第二次的），先让人看一眼再删。
-    """
+def _load_plan(label: str) -> dict:
+    """check 没过、或页图清单在 check 之后变过，就不许入库。"""
     d = FIX / safe(label)
     chk = json.loads((d / "check.json").read_text(encoding="utf-8"))
     if not chk.get("ok"):
-        raise SystemExit("check 没过，不许入库：%s" % "; ".join(chk["errors"][:5]))
+        raise SystemExit("check 没过：%s ← %s"
+                         % (label, "; ".join(chk["errors"][:3])))
     if chk.get("页图指纹") != page_sig(label):
-        raise SystemExit("页图清单在 check 之后变了（原卷定位改过？）——"
-                         "这一场的 JSON 是照旧页图写的，重读再入库")
-    book = json.loads((d / "model.json").read_text(encoding="utf-8"))
+        raise SystemExit("页图清单在 check 之后变过：%s ——JSON 是照旧页图写的，重读再入库"
+                         % label)
+    return json.loads((d / "model.json").read_text(encoding="utf-8"))
+
+
+def apply_into(qs: list, label: str, book: dict, *,
+               allow_drop: bool = False, stamp: str = "") -> dict:
+    r"""把一场的 JSON 落到 `qs`（**只改内存，不写盘**）。规则（交接文档 11.2）：
+
+    * **只动待修清单里的题**
+    * JSON 给得出的字段 → 覆盖；给不出的（答案/解析为空）→ 保留库里原值
+    * `notfound` 的 → 要另加 `--drop` 才移进回收站：读图方判"找不到"常常是
+      **原卷配错了**（齐鲁名校那场卷面是第三次检测、册内答案却是第二次的），
+      先让人看一眼再删。
+    """
     recs = {r["no"]: r for r in book.get("questions") or []}
     drop = {int(x["no"]) for x in book.get("notfound") or []}
     want = {it["no"] for it in pending_now().get(label) or []}
-
-    qs = store.load_all()
-    idx = {}
-    for i, q in enumerate(qs):
-        if q.meta.get("source_label") == label:
-            idx[q.meta.get("source_no")] = i
-    stamp = time.strftime("%Y-%m-%d %H:%M")
+    idx = {q.meta.get("source_no"): i for i, q in enumerate(qs)
+           if q.meta.get("source_label") == label}
     fixed, dropped, held = [], [], []
     untouched = sorted(want - set(recs) - drop)
 
@@ -466,7 +467,8 @@ def apply(label: str, *, yes: bool = False, allow_drop: bool = False) -> dict:
             continue
         old = qs[idx[no]]
         new = R2.rec_to_question({"题号": no, "题型": recs[no]["type"],
-                                  "题干": recs[no]["stem"], "选项": recs[no].get("options") or {},
+                                  "题干": recs[no]["stem"],
+                                  "选项": recs[no].get("options") or {},
                                   "答案": recs[no].get("answer") or "",
                                   "解析": recs[no].get("solution") or ""}, label)
         old.type, old.stem, old.options = new.type, new.stem, new.options
@@ -483,23 +485,68 @@ def apply(label: str, *, yes: bool = False, allow_drop: bool = False) -> dict:
         if no in idx:
             (dropped if allow_drop else held).append(qs[idx[no]].key)
 
-    rep = {"label": label, "when": stamp,
-           "修补": [{"题号": n} for n in fixed],
-           "舍弃": dropped, "待确认舍弃": held, "未处理": untouched}
+    return {"label": label, "when": stamp,
+            "修补": [{"题号": n} for n in fixed],
+            "舍弃": dropped, "待确认舍弃": held, "未处理": untouched}
+
+
+def ready_labels() -> list:
+    """check 通过、还没入库的场次。"""
+    done = {json.loads(l)["label"]
+            for l in LOG.read_text(encoding="utf-8").splitlines()} if LOG.exists() else set()
+    out = []
+    for label in pending_now():
+        d = FIX / safe(label)
+        if (d / ".applied").exists() or label in done:
+            continue
+        if (d / "check.json").exists():
+            try:
+                _load_plan(label)
+            except SystemExit as e:
+                print("跳过 %s：%s" % (label, e))
+                continue
+            out.append(label)
+    return out
+
+
+def apply_batch(labels: list, *, yes: bool = False,
+                allow_drop: bool = False) -> list:
+    r"""**一批一次读库、一次写库**——把并发窗口从"每场一次"压到"每批一次"。
+
+    另一个会话也在改题库（逐题校对），一场一次整体写回的话，
+    中间那一两秒里它写的题会被我盖掉。
+    """
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    qs = store.load_all()
+    reps, all_drop = [], []
+    for label in labels:
+        rep = apply_into(qs, label, _load_plan(label),
+                         allow_drop=allow_drop, stamp=stamp)
+        all_drop += rep["舍弃"]
+        reps.append(rep)
+        print("  %-52s 修补 %2d 待确认 %d 未处理 %d"
+              % (label[:52], len(rep["修补"]), len(rep["待确认舍弃"]),
+                 len(rep["未处理"])))
+    n = sum(len(r["修补"]) for r in reps)
     if not yes:
-        print("干跑：修补 %d、舍弃 %d、待确认 %d、未处理 %d（加 --yes 才落盘）"
-              % (len(fixed), len(dropped), len(held), len(untouched)))
-        return rep
-    if dropped:
-        r = trash.delete(dropped, reason="无", password="0808")
-        if not r.get("ok"):
-            raise SystemExit("回收站写入失败，题库未改动：%s" % r.get("error"))
+        print("干跑：%d 场 / %d 道（加 --yes 才落盘）" % (len(reps), n))
+        return reps
     store.rewrite_all(qs)
+    if all_drop:
+        r = trash.delete(all_drop, reason="无", password="0808")
+        if not r.get("ok"):
+            raise SystemExit("回收站写入失败（题库已改，舍弃未执行）：%s" % r.get("error"))
     with LOG.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(rep, ensure_ascii=False) + "\n")
-    print("已落盘：修补 %d、舍弃 %d、待确认舍弃 %d、未处理 %d"
-          % (len(fixed), len(dropped), len(held), len(untouched)))
-    return rep
+        for rep in reps:
+            f.write(json.dumps(rep, ensure_ascii=False) + "\n")
+            (FIX / safe(rep["label"]) / ".applied").write_text(stamp, encoding="utf-8")
+    print("已落盘：%d 场 / %d 道" % (len(reps), n))
+    return reps
+
+
+def apply(label: str, *, yes: bool = False, allow_drop: bool = False) -> dict:
+    """单场入库（批量请用 `apply-batch`）。"""
+    return apply_batch([label], yes=yes, allow_drop=allow_drop)[0]
 
 
 # ── prompt ─────────────────────────────────────────────────────────
@@ -712,8 +759,8 @@ def _selftest() -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="回原卷修复执行器")
-    ap.add_argument("what", choices=["prep", "check", "apply", "prompt",
-                                     "list", "report", "selftest"])
+    ap.add_argument("what", choices=["prep", "check", "apply", "apply-batch",
+                                     "prompt", "list", "report", "selftest"])
     ap.add_argument("label", nargs="*", default=[])
     ap.add_argument("--yes", action="store_true", help="apply 时真的落盘")
     ap.add_argument("--drop", action="store_true",
@@ -729,6 +776,9 @@ def main() -> int:
     elif a.what == "report":
         cmd_report()
     else:
+        if a.what == "apply-batch":
+            apply_batch(a.label or ready_labels(), yes=a.yes, allow_drop=a.drop)
+            return 0
         if not a.label and not (a.what == "prep" and a.all):
             raise SystemExit("要给卷名")
         label = (a.label or [""])[0]
