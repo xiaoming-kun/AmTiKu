@@ -341,10 +341,11 @@ def check(label: str, *, corpus: str | None = None) -> dict:
             continue
         errs += ["%s %s" % (tag, m) for m in _check_one(r, have.get(no) or {})]
     got = {r["no"] for r in recs if isinstance(r.get("no"), int)}
-    given = {x.get("no") for x in book.get("notfound") or []}
+    given = ({x.get("no") for x in book.get("notfound") or []}
+             | {x.get("no") for x in book.get("skipped") or []})
     for no in sorted(want - got):
         if no not in given:
-            errs.append("#%d 既没修也没声明找不到（要放进 notfound 并写原因）" % no)
+            errs.append("#%d 既没修、也没登记进 skipped/notfound" % no)
     for x in book.get("notfound") or []:
         if not (x.get("note") or "").strip():
             warns.append("#%s notfound 没写原因" % x.get("no"))
@@ -452,12 +453,17 @@ def apply_into(qs: list, label: str, book: dict, *,
       先让人看一眼再删。
     """
     recs = {r["no"]: r for r in book.get("questions") or []}
-    drop = {int(x["no"]) for x in book.get("notfound") or []}
+    fig_nos = {int(x["no"]) for x in book.get("skipped") or [] if x.get("no")}
+    # 读图方常把带图表的题**同时**塞进 skipped 和 notfound 来过机械校验——
+    # 这种按"图表题登记"算，不进待删队列。
+    drop = {int(x["no"]) for x in book.get("notfound") or []} - fig_nos
     want = {it["no"] for it in pending_now().get(label) or []}
+    # 带图/带表的题：不修也不删，单独登记交人工（规矩：图题不录正文但必须登记）
+    figs = sorted(fig_nos & want)
     idx = {q.meta.get("source_no"): i for i, q in enumerate(qs)
            if q.meta.get("source_label") == label}
     fixed, dropped, held = [], [], []
-    untouched = sorted(want - set(recs) - drop)
+    untouched = sorted(want - set(recs) - drop - set(figs))
 
     for no in sorted(want & set(recs)):
         if no not in idx:
@@ -485,7 +491,7 @@ def apply_into(qs: list, label: str, book: dict, *,
 
     return {"label": label, "when": stamp,
             "修补": [{"题号": n} for n in fixed],
-            "舍弃": dropped, "待确认舍弃": held, "未处理": untouched}
+            "舍弃": dropped, "待确认舍弃": held, "图表题": figs, "未处理": untouched}
 
 
 def ready_labels() -> list:
@@ -522,9 +528,9 @@ def apply_batch(labels: list, *, yes: bool = False,
                          allow_drop=allow_drop, stamp=stamp)
         all_drop += rep["舍弃"]
         reps.append(rep)
-        print("  %-52s 修补 %2d 待确认 %d 未处理 %d"
-              % (label[:52], len(rep["修补"]), len(rep["待确认舍弃"]),
-                 len(rep["未处理"])))
+        print("  %-52s 修补 %2d 图表题 %d 待确认 %d 未处理 %d"
+              % (label[:52], len(rep["修补"]), len(rep["图表题"]),
+                 len(rep["待确认舍弃"]), len(rep["未处理"])))
     n = sum(len(r["修补"]) for r in reps)
     if not yes:
         print("干跑：%d 场 / %d 道（加 --yes 才落盘）" % (len(reps), n))
@@ -589,6 +595,7 @@ PROMPT = """\
    只是文字里提到"图象/如图"而版面上没画 → 照常录入。
 9. 原卷上确实找不到、或残缺到没法修的题号：放进 `notfound`，
    `note` 写清为什么（不许默默漏掉，也不许硬凑）。
+   带图/带表的题**只进 skipped 就够了**，不要再抄一份进 notfound（那会被当成待删题）。
 
 只输出 JSON，不要代码块围栏、不要解释。**完整内容写到这个文件**：
 {out}
