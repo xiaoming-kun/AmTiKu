@@ -692,23 +692,34 @@ def cmd_todo(limit: int = 0) -> None:
 
 
 def cmd_report() -> None:
-    pend = pending_now()
+    pend = pending_now(refresh=True)          # 还剩多少，**以库为准**
     done = [json.loads(l) for l in LOG.read_text(encoding="utf-8").splitlines()] \
         if LOG.exists() else []
-    fixed = {d["label"] for d in done}
+    n_fix = sum(len(d["修补"]) for d in done)
+    held = [(d["label"], x) for d in done for x in (d.get("待确认舍弃") or [])]
+    n_fig = sum(len(d.get("图表题") or []) for d in done)
+    print("已修 %d 道（%d 条场次记录）｜库里仍缺 %d 道 / %d 场"
+          "｜待确认舍弃 %d 道｜图表题登记 %d 道"
+          % (n_fix, len(done), sum(len(v) for v in pend.values()), len(pend),
+             len(held), n_fig))
     rows = []
     for label, items in pend.items():
         d = FIX / safe(label)
-        st = "已修" if label in fixed else ("待入库" if (d / "check.json").exists()
-                                            else ("待校验" if (d / "model.json").exists()
-                                                  else ("待读" if (d / "task.json").exists()
-                                                        else "无原卷")))
+        has = (d / "task.json").exists() and any(
+            json.loads((d / "task.json").read_text(encoding="utf-8"))["页图"].values())
+        st = ("待校验" if (d / "model.json").exists() and not (d / "check.json").exists()
+              else "待入库" if (d / "check.json").exists()
+              else "待读" if has else "无原卷")
         rows.append((st, label, len(items)))
-    print("| 状态 | 场次 | 题数 |\n|---|---|---|")
-    for st in ("已修", "待入库", "待校验", "待读", "无原卷"):
+    print("\n| 还缺的场 · 状态 | 场次 | 题数 |\n|---|---|---|")
+    for st in ("待入库", "待校验", "待读", "无原卷"):
         g = [r for r in rows if r[0] == st]
         if g:
             print("| %s | %d | %d |" % (st, len(g), sum(x[2] for x in g)))
+    if held:
+        print("\n**待确认舍弃**（读图方说找不到，没删，等你定）：")
+        for label, key in held:
+            print("  %s  %s" % (label[:46], key.split("#")[-1]))
     fig = []
     for d in sorted(FIX.glob("*/model.json")) if FIX.exists() else []:
         b = json.loads(d.read_text(encoding="utf-8"))
