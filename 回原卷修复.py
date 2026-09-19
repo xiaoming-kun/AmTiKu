@@ -41,9 +41,29 @@ WORK = ROOT / "数据" / "录题"
 FIX = WORK / "_修复"
 LOG = ROOT / "变更记录" / "回原卷修复.jsonl"
 
-ANSWER_WORD = re.compile(r"答案|解析|全解全析|参考答案|评分标准|教师版")
+ANSWER_WORD = re.compile(r"答案|解析|全解全析|参考答案|评分标准|教师版|DA")
 SHEET_WORD = re.compile(r"答题卡|答题纸")
+# 名字**结尾**是角色词的，按结尾算——"…数学试题及答案 高三数学—答案" 这种
+# 一套三件的命名，中间那个"及答案"是系列名，不是"这份文件里含答案"。
+TAIL_ANSWER = re.compile(r"(答案|解析|全解全析|参考答案|评分标准|细则|DA)\s*$")
+TAIL_PAPER = re.compile(r"(试题|试卷|原卷|卷)\s*$")
+# 「试题+答案」合一（名字以"试题+答案""（含答案）"收尾）：按**试卷**算，
+# 答案就在同几页里。判成答案卷会让试卷侧空掉。
+COMBINED = re.compile(r"(试题|试卷|卷)\s*[+＋]\s*(答案|解析|全解全析)$"
+                      r"|(含|附)\s*答案\s*[)）]?$")
 PREFIX = re.compile(r"^\s*\d{1,4}[\.\-、_\s]+")
+
+
+def role_of_ws(name: str) -> str:
+    """工作区/文件名 → `试卷` / `答案`。先判合一，再判结尾，最后判含不含。"""
+    n = (name or "").strip()
+    if COMBINED.search(n):
+        return "试卷"
+    if TAIL_ANSWER.search(n):
+        return "答案"
+    if TAIL_PAPER.search(n):
+        return "试卷"
+    return "答案" if ANSWER_WORD.search(n) else "试卷"
 
 
 def safe(label: str) -> str:
@@ -76,75 +96,60 @@ def pending_now(*, refresh: bool = False) -> dict[str, list[dict]]:
 
 
 # ── 原卷定位 ────────────────────────────────────────────────────────
-def _norm_ws(name: str) -> str:
-    return re.sub(r"[\s（）()【】\[\]]+", "", PREFIX.sub("", name)).lower()
-
-
 def workspaces() -> list[Path]:
     return [p for p in WORK.iterdir() if p.is_dir() and not p.name.startswith(("_", "."))]
 
 
-def _manifest() -> dict:
-    """`v2批跑清单.json` → `{卷名: {试卷:[目录], 答案:[目录]}}`。
+_ROLE = re.compile(r"数学|试题|试卷|参考答案|答案与解析|答案|全解全析|解析|详解|及"
+                   r"|及评分细则|评分标准|标答|教师版|学生版|图片版|word版"
+                   r"|副本|含|补充|（|）|\(|\)|\s|[【】\[\]]")
 
-    清单里的 `work`/`ans` 是**跑批时确认过的原卷工作区**，比按名字猜可靠。
-    那 10 条只有 `pdf`（"相似度 0.78"猜出来的）的一律不采信——实测全是错的
-    （绍兴一模指向榆林一模），宁可报"找不到原卷"。
+
+def canon(name: str) -> str:
+    r"""工作区/卷名 → **去掉角色词**的"同一场"键。
+
+    `十一校数学试卷` 与 `十一校数学答案` 去掉角色词后都是 `十一校`，
+    于是能成对配上；而 `长郡中学月考一` 与 `月考三` 的差别（序号）**保留**，
+    不会被误并。清单 `v2批跑清单.json` 里有 20 多条是按"相似度 0.7x"猜的
+    （德州开学考配成了济南摸底考），所以配对**不信清单，信这个键**。
     """
-    f = WORK / "v2批跑清单.json"
-    out: dict[str, dict] = {}
-    if not f.exists():
-        return out
-    for t in json.loads(f.read_text(encoding="utf-8")).get("todo") or []:
-        hit = {"试卷": [], "答案": []}
-        for side in ("work", "ans"):
-            p = t.get(side)
-            if not p or "pdf" in t:
-                continue                      # 只有 `pdf` 的那 10 条是猜的，不采信
-            ws = _ws_of(Path(p))
-            if ws:
-                hit["答案" if ANSWER_WORD.search(ws.name) else "试卷"].append(ws)
-        if any(hit.values()):
-            out[t["label"]] = hit
-    return out
-
-
-def _ws_of(p: Path) -> Path | None:
-    """清单里的路径 → 工作区目录（可能是目录，也可能是原卷 PDF 的路径）。
-
-    路径规则复用 `record2.work_of`，不在这里另写一套（它对
-    `187.湖南长郡…` 这种带序号的目录名做过修正）。
-    """
-    ws = R2.work_of(p)
-    return ws if ws.is_dir() else None
-
-
-_MAN: dict = {}
+    s = PREFIX.sub("", name or "")
+    s = re.sub(r"^\d+", "", s)
+    s = _ROLE.sub("", s)
+    return re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5]", "", s)
 
 
 def locate(label: str) -> dict:
-    r"""卷名 → `{试卷: [目录…], 答案: [目录…]}`。
+    r"""卷名 → `{试卷: [目录…], 答案: [目录…]}`，按 `canon()` 找同一场的工作区。
 
-    先查清单（跑批时确认过的路径），查不到再按工作区名匹配。
+    先要**完全同键**的；一个都没有才退而求其次取公共前缀最长的一批
+    （像 `十一校` 对上 `2026届湖北省十一校…` 这种缩写）。
     """
-    if not _MAN:
-        _MAN.update(_manifest())
-    if label in _MAN:
-        return _MAN[label]
-    want = _norm_ws(label)
-    cand = []
+    want = canon(label)
+    groups: dict[str, list[Path]] = defaultdict(list)
     for d in workspaces():
         if SHEET_WORD.search(d.name):
             continue
-        n = _norm_ws(d.name)
-        if n and (n.startswith(want) or want.startswith(n)):
-            cand.append(d)
-    exact = [d for d in cand if _norm_ws(d.name) == want]
-    good = exact or [d for d in cand if min(len(_norm_ws(d.name)), len(want)) >= 8]
-    hit: dict[str, list[Path]] = {"试卷": [], "答案": []}
-    for d in good:
-        hit["答案" if ANSWER_WORD.search(d.name) else "试卷"].append(d)
+        groups[canon(d.name)].append(d)
+    keys = [k for k in groups if k and want and (k == want or k in want or want in k)]
+    if not keys:
+        pref = [k for k in groups if k and want and _common(k, want) >= 3]
+        keys = sorted(pref, key=lambda k: -_common(k, want))[:1]
+    hit = {"试卷": [], "答案": []}
+    for k in keys:
+        for d in groups[k]:
+            hit[role_of_ws(d.name)].append(d)
     return {k: sorted(v) for k, v in hit.items()}
+
+
+def _common(a: str, b: str) -> int:
+    """两段键的最长公共前缀长度。"""
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
 
 
 def _source_of(label: str) -> Path | None:
@@ -242,6 +247,9 @@ def prep(label: str) -> dict:
                  "库里": _brief(qs.get(it["no"]))} for it in items],
         "页图": {"试卷": [str(p) for p in paper], "答案": [str(p) for p in answer],
                  "原卷": [str(p) for p in src_pages]},
+        "有答案卷": bool(answer),
+        "答案同册": bool(not answer and any(COMBINED.search(ws.name)
+                                          for ws in loc["试卷"])),
         "出处": src_from or {k: [str(p) for p in v] for k, v in loc.items()},
     }
     (d / "task.json").write_text(json.dumps(card, ensure_ascii=False, indent=1),
@@ -289,13 +297,40 @@ def _ocr_corpus(label: str) -> str:
     return _loose("\n".join(txt))
 
 
+def page_sig(label: str) -> str:
+    """这一场**当前**用的页图清单指纹。
+
+    check 和 apply 各算一次，对不上就说明中间原卷定位变了（改过 `locate()`、
+    重跑过 prep），model.json 就是照着旧页图写的——**不许入库**。
+    """
+    c = json.loads((FIX / safe(label) / "task.json").read_text(encoding="utf-8"))
+    blob = "\n".join(str(x) for v in c["页图"].values() for x in v)
+    return hashlib.sha1(blob.encode()).hexdigest()[:12]
+
+
 def check(label: str, *, corpus: str | None = None) -> dict:
     d = FIX / safe(label)
     book = json.loads((d / "model.json").read_text(encoding="utf-8"))
     want = {it["no"] for it in pending_now().get(label) or []}
-    have = {it["no"]: (it.get("库里") or {})
-            for it in json.loads((d / "task.json").read_text(encoding="utf-8"))["待修"]}
+    card = json.loads((d / "task.json").read_text(encoding="utf-8"))
+    have = {it["no"]: (it.get("库里") or {}) for it in card["待修"]}
     errs, warns = [], []
+    if (book.get("错卷") or "").strip():
+        errs.append("读图方判定**页图不是这一场**：%s —— 要重新定位原卷"
+                    % book["错卷"])
+    title = (book.get("卷面标题") or "").strip()
+    loc = locate(label)
+    exact = any(canon(label) == canon(ws.name)
+                for ws in loc["试卷"] + loc["答案"])
+    if not exact and not title:
+        # 名字不是逐字对上的（清单里有二十来场是"相似度 0.7x"猜的），
+        # 必须拿卷头那行大字再核一遍，否则会拿 A 场的页去修 B 场的题。
+        errs.append("页图出处与卷名不是完全同名，必须写 卷面标题（第 1 页卷头大字）核对")
+    if (book.get("答案出处") or "").strip():
+        warns.append("答案出自**自己找到的**卷：%s —— 第一页核对过卷名了吗？"
+                     % book["答案出处"])
+    elif not card.get("有答案卷") and not card.get("答案同册"):
+        warns.append("这一场没登记答案卷：所有答案都必须有出处，否则留空并进 notfound")
     if (book.get("label") or "").strip() != label:
         warns.append("JSON 的 label 与任务卡不一致：%r" % book.get("label"))
     recs = book.get("questions") or []
@@ -330,11 +365,13 @@ def check(label: str, *, corpus: str | None = None) -> dict:
                 warns.append("#%s quote 在本地 OCR 文本里找不到"
                              "（可能只是 OCR 认错，人工看一眼）" % r.get("no"))
     out = {"label": label, "ok": not errs, "errors": errs, "warnings": warns,
+           "卷面标题": title, "页图指纹": page_sig(label),
            "题数": len(recs), "待修": sorted(want)}
     (d / "check.json").write_text(json.dumps(out, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
-    print("%s  交来 %d 道 / 待修 %d 道" % ("✓ 通过" if out["ok"] else "✗ 不合格",
-                                       len(recs), len(want)))
+    print("%s  交来 %d 道 / 待修 %d 道  卷面标题：%s"
+          % ("✓ 通过" if out["ok"] else "✗ 不合格", len(recs), len(want),
+             title or "（没写）"))
     for m in errs:
         print("   ✗ %s" % m)
     for m in warns:
@@ -377,6 +414,8 @@ def _check_one(r: dict, old: dict) -> list[str]:
         out.append("客观题答案 %d 字（像整段解析）" % len(ans))
     if FURNITURE_STEM.search(stem):
         out.append("题干里混着分值/页脚/水印")
+    if "□" in stem + sol + "".join(str(v) for v in opts.values()):
+        out.append("留着卷面的方框 □ 没处理（能确定就补成 LaTeX 并写 note，不能确定就 notfound）")
     if SECTION_HEAD.search(stem):
         out.append("题干里混着小节标题")
     if r.get("figure") or r.get("table"):
@@ -402,6 +441,9 @@ def apply(label: str, *, yes: bool = False) -> dict:
     chk = json.loads((d / "check.json").read_text(encoding="utf-8"))
     if not chk.get("ok"):
         raise SystemExit("check 没过，不许入库：%s" % "; ".join(chk["errors"][:5]))
+    if chk.get("页图指纹") != page_sig(label):
+        raise SystemExit("页图清单在 check 之后变了（原卷定位改过？）——"
+                         "这一场的 JSON 是照旧页图写的，重读再入库")
     book = json.loads((d / "model.json").read_text(encoding="utf-8"))
     recs = {r["no"]: r for r in book.get("questions") or []}
     drop = {int(x["no"]) for x in book.get("notfound") or []}
@@ -426,7 +468,12 @@ def apply(label: str, *, yes: bool = False) -> dict:
                                   "解析": recs[no].get("solution") or ""}, label)
         old.type, old.stem, old.options = new.type, new.stem, new.options
         old.answer = new.answer or old.answer
-        old.solution = new.solution or old.solution
+        sol = new.solution or old.solution
+        # 库里本来有解析、这次只抄出个"解析无" → 不许抹掉已有解析
+        # （任务卡要求"有解析"的题 solution 留空，这里兜住没照做的）。
+        if sol.strip() == "解析无" and (old.solution or "").strip() not in ("", "解析无"):
+            sol = old.solution
+        old.solution = sol
         old.meta["migrated_at"], old.meta["migrated_by"] = stamp, "回原卷重扫修复"
         fixed.append(no)
     for no in sorted(want & drop):
@@ -460,19 +507,27 @@ PROMPT = """\
 【试卷】
 {paper}
 【答案】
-{answer}{source}
+{answer}{source}{noans}
 
 库里这几道题现在缺什么（**只补这些，别改编号以外的题**）：
 {current}
 
 规矩（违反任何一条，这一场就算废）：
+0. **先核对卷面**：看【试卷】第 1 页卷头那行大字，原样写进 JSON 顶层
+   `"卷面标题":"…"`. 如果它和卷名明显不是同一场（城市、次数、月份对不上），
+   **立刻停手**：questions 留空，顶层再写 `"错卷":"页面上实际看到的标题"` 并在报告里说明。
+   （清单里有二十来场原卷是"相似度 0.7x"猜的，德州开学考配成了济南摸底考——**别信路径，信页面**。）
 1. 题型按题号定：1-8 单选 single_choice、9-11 多选 multi_choice、
    12-14 填空 fill_in_blank、15-19 解答 detailed_answer。**不许按选项个数猜**。
 2. **一个字都不许改**：每个字段都要能在原图上逐字找到；看不清写 `\\text{{【?】}}`，
    不许猜、不许"顺手改正"、不许解题、不许补条件。
+   卷面把符号印成**方框**（□，原 PDF 缺字）时：能从上下文确定是哪个命令
+   （如 `\\triangle`、`\\mid`）就照上下文写，并在这一题加 `"note":"卷面印成方框，按上下文补为 \\triangle"`；
+   确定不了就别猜，写 `\\text{{【?】}}` 或整题进 notfound。
 3. 选择题必须 A/B/C/D 四个选项（标签印坏了也按顺序补成 A）；答案写字母；
    填空题答案写那个值本身（≤40 字）；解答题 answer 写 ""。
 4. 答案去【答案】页找；**绝不许拿别的题的答案顶上**。解析里有"故选 CD"而答案栏空 → 把 CD 填进 answer。
+   答案卷没登记时按下面【答案】里的说法自己找，**但必须先核对卷名**。
    `solution`：**任务卡标了「有解析」的题写 ""**（表示沿用库里那份，不要重抄）；
    库里也没有解析的，才照答案页抄，实在没有写 "解析无"。
 5. 不录：分值「（本小题满分17分）」、页眉页脚「第 3 页 共 8 页」、考试说明、
@@ -490,7 +545,7 @@ PROMPT = """\
 {out}
 
 JSON 结构：
-{{"label":"{label}","book":"模拟题","year":{year},
+{{"label":"{label}","book":"模拟题","year":{year},"卷面标题":"卷头那行大字",
  "questions":[{{"no":9,"type":"multi_choice","stem":"…","options":{{"A":"…","B":"…","C":"…","D":"…"}},
    "answer":"CD","solution":"","figure":false,"table":false,"pages":[2],"quote":"逐字摘 10-25 字（尽量摘不含公式的那段）"}}],
  "skipped":[{{"no":18,"kind":"figure","pages":[4],"quote":"…","note":"…"}}],
@@ -520,11 +575,23 @@ def prompt(label: str) -> str:
     src = card["页图"].get("原卷") or []
     source = ("\n【原卷】这一场没有分开扫的试卷/答案，下面是同一份原卷渲染出的页"
               "（试题和答案都在这几页里，自己按页码分）\n" + fmt(src)) if src else ""
+    cd = card["页图"].get("答案") or []
+    if cd:
+        noans = ""
+    elif card.get("答案同册"):
+        noans = ("\n（这一份是**试题+答案合一**：答案就在上面【试卷】那几页的后半，"
+                 "往后翻，别处不用找。）")
+    else:
+        noans = ("\n（这一场**没有登记过答案卷**。）要找答案，先 "
+                 "`ls 数据/录题 | grep 关键词`，或去原卷所在目录看有没有配套的答案文件；"
+                 "**找到后必须读它第一页核对卷名**，对不上就不许用"
+                 "（答案留空、题号进 notfound）。确实用了，"
+                 "就在 JSON 顶层加一项 `\"答案出处\":\"<目录名或文件名>\"`。")
     return PROMPT.format(label=label, n=len(card["待修"]), nos=nos,
                          current="\n".join(cur(x) for x in card["待修"]),
-                         year=y.group(1) if y else 2026, source=source,
+                         year=y.group(1) if y else 2026, source=source, noans=noans,
                          out=str(FIX / safe(label) / "model.json"),
-                         paper=fmt(card["页图"]["试卷"]), answer=fmt(card["页图"]["答案"]))
+                         paper=fmt(card["页图"]["试卷"]), answer=fmt(cd))
 
 
 # ── list / report ──────────────────────────────────────────────────
@@ -575,15 +642,82 @@ def cmd_report() -> None:
     print("\n图/表题登记 %d 条 → %s" % (len(fig), out))
 
 
+def _selftest() -> int:
+    """用例全部来自**真实踩到的目录名**——定位错一场就把 A 场的题写进 B 场。"""
+    fails = 0
+
+    def ck(name, cond, extra=""):
+        nonlocal fails
+        print("  %s %s" % ("✓" if cond else "✗", name) + ("" if cond else "  " + str(extra)))
+        if not cond:
+            fails += 1
+
+    print("回原卷修复 自检")
+    ck("合一：…数学试题+答案 算试卷",
+       role_of_ws("厦门外国语学校2026届高三上学期十月月考数学试题+答案") == "试卷")
+    ck("合一：…（含答案）算试卷",
+       role_of_ws("江苏省扬州市2025-2026学年高三上学期11月期中考试数学试题（含答案）") == "试卷")
+    ck("结尾：…数学答案 算答案",
+       role_of_ws("湖南名校联考联合体2026届高三上学期10月月考数学答案") == "答案")
+    ck("一套三件：…试题及答案 高三数学—答案 算答案",
+       role_of_ws("山东省德州市2025-2026学年高三上学期开学考数学试题及答案 高三数学—答案") == "答案")
+    ck("一套三件：…试题及答案 高三数学—试题 算试卷",
+       role_of_ws("山东省德州市2025-2026学年高三上学期开学考数学试题及答案 高三数学—试题") == "试卷")
+    ck("DA 后缀算答案", role_of_ws("【数学DA】安徽省县中联盟2025-2026学年高三上学期学情检测") == "答案")
+    ck("【数学】算试卷", role_of_ws("【数学】安徽省县中联盟2025-2026学年高三上学期学情检测") == "试卷")
+    ck("答题卡不进这里（由 SHEET_WORD 挡）",
+       bool(SHEET_WORD.search("2026届高三数学答题卡")))
+    ck("canon：试卷/答案配成同一场",
+       canon("十一校数学试卷") == canon("十一校数学答案") == "十一校",
+       canon("十一校数学试卷"))
+    ck("canon：卷名缩写也能对上",
+       canon("2026届湖北省十一校高三上学期12月质量检测") == "届湖北省十一校高三上学期12月质量检测")
+    ck("canon：月考一 / 月考三 **不许**混",
+       canon("湖南长郡中学2026届高三上学期月考一") != canon("湖南长郡中学2026届高三上学期月考三"))
+    ck("canon：德州卷名与目录名一致",
+       canon("山东省德州市2025-2026学年高三上学期开学考 高三—")
+       == canon("山东省德州市2025-2026学年高三上学期开学考数学试题及答案 高三数学—试题"),
+       canon("山东省德州市2025-2026学年高三上学期开学考 高三—"))
+    ck("canon：济南/德州不许混",
+       canon("山东省德州市2025-2026学年高三上学期开学考 高三—")
+       != canon("山东省济南市2025-2026学年高三上学期摸底考试数学试题"))
+    ck("闸门：题型按题号（#9 必须多选）",
+       "应为 'multi_choice'" in " ".join(_check_one(
+           {"no": 9, "type": "single_choice", "stem": "x（ ）", "options": {},
+            "answer": "A", "solution": "s", "quote": ""}, {})))
+    ck("闸门：选项缺 A 就拒收",
+       any("选项标签" in m for m in _check_one(
+           {"no": 1, "type": "single_choice", "stem": "x（ ）", "options": {"B": "b"},
+            "answer": "A", "solution": "s", "quote": "x"}, {})))
+    ck("闸门：库里已有解析时允许 solution 留空",
+       not any("解析为空" in m for m in _check_one(
+           {"no": 15, "type": "detailed_answer", "stem": "已知 $x$。", "options": {},
+            "answer": "", "solution": "", "quote": "已知 $x$"}, {"solution": "原解析"})))
+    ck("闸门：库里没有解析又不写 → 拒收",
+       any("解析为空" in m for m in _check_one(
+           {"no": 15, "type": "detailed_answer", "stem": "已知 $x$。", "options": {},
+            "answer": "", "solution": "", "quote": "已知 $x$"}, {})))
+    ck("闸门：卷面方框没处理 → 拒收",
+       any("方框" in m for m in _check_one(
+           {"no": 1, "type": "single_choice", "stem": "□ABC 中", "options": {
+               "A": "a", "B": "b", "C": "c", "D": "d"}, "answer": "A",
+            "solution": "s", "quote": "□ABC 中"}, {})))
+    print("自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
+    return 1 if fails else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="回原卷修复执行器")
-    ap.add_argument("what", choices=["prep", "check", "apply", "prompt", "list", "report"])
+    ap.add_argument("what", choices=["prep", "check", "apply", "prompt",
+                                     "list", "report", "selftest"])
     ap.add_argument("label", nargs="*", default=[])
     ap.add_argument("--yes", action="store_true", help="apply 时真的落盘")
     ap.add_argument("--all", action="store_true", help="prep 时对全部待修场次跑")
     ap.add_argument("--refresh", action="store_true", help="重算待修清单")
     ap.add_argument("--limit", type=int, default=0)
     a = ap.parse_args()
+    if a.what == "selftest":
+        return _selftest()
     if a.what == "list":
         cmd_list(a.limit)
     elif a.what == "report":
