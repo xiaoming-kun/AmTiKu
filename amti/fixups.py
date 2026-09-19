@@ -333,17 +333,13 @@ PATCHES: list[dict] = [
                 "所以原式 $=\\mathrm{i}-(-\\mathrm{i})=2\\mathrm{i}$. 故选 D."),
         },
     },
-    {
-        "key": "高考真题汇编/2010/天津卷（文）#3",
-        "why": "配图和选项都是别人的——流程图配的是「i>4 时输出 s=0」那一道，"
-               "选项被提取成了 −1/0/1/3",
-        "src": "同一份天津卷的**理科第 4 题**是同一道题且完好："
-               "`i=1, s=2`，循环体 `s=s-i`、`i=i+2`，判断 `i<6` 时输出 $s=-7$，答案 D；"
-               "文理同题，直接采用理卷第 4 题的题干、框图与选项",
-        "expect": {"type": "multi_choice", "stem": "判断框内可填写",
-                   "options": ["$-1$", "$0$", "$1$", "$3$"]},
-        "set": {"_adopt": "高考真题汇编/2010/天津卷（理）#4"},
-    },
+    # ── 2026-09-19 撤下一条 ──────────────────────────────────────────
+    # 原账：`高考真题汇编/2010/天津卷（文）#3` —— 「配图和选项都是别人的，
+    # 采用同一份天津卷**理科第 4 题**（`i=1, s=2`，判断 `i<6` 时输出 $s=-7$，
+    # 答案 D）的题干、框图与选项」。
+    # 为什么撤：库里**已经没有这个题号**（2010 天津（文）从 #2 直接跳到 #4，
+    # 回收站里也查不到），`expect` 无从核对。而 `run()` 是「一条对不上就整批
+    # 不执行」，留着它整张账都跑不动（新账会被它一起卡死）。题意与改法记在这儿备查。
     {
         "key": "高考真题汇编/1998/全国卷（文）#13",
         "why": "选项串到了上一题——本题被印成了 #12 的坐标值；原卷选项是四个根式值",
@@ -521,6 +517,60 @@ PATCHES: list[dict] = [
 ]
 
 
+# ── 2026-09-19：录题时把**多选题**记成了单选（26 道） ────────────────────
+#
+# 判据（**逐题看过**，不是按规则批改）：
+#   · 题干是「（多）说法正确的有（ ）」这种**一问多项**的问法；
+#   · 四个选项是**互相独立**的命题，不是同一个量的四个取值；
+#   · 求解模型逐项判定（A 错、B 对、C 对、D 错）后给出**多字母答案**，
+#     而库里的 `single_choice` 只收一个字母，`collect` 于是整批拦下。
+#
+# ⚠ **故意没收进来**的：`2027千题册创新拔高册（上）_images/303#11`——
+#   它是真单选（问「最小值与最大值之和为」），是模型的答案串了题
+#   （答案写成 `$-2<x<1$`、解析讲的是另一道奇函数题），改题型就改反了。
+_MULTI_AS_SINGLE: list[tuple[str, str, str]] = [
+    (r"2026 高考数学全国模拟精选_images/005#5", r"在正三棱柱", "ACD"),
+    (r"2026 高考数学全国模拟精选_images/006#6", r"满足当", "AD"),
+    (r"2026 高考数学全国模拟精选_images/015#20", r"公差", "ACD"),
+    (r"2026 高考数学全国模拟精选_images/015#21", r"的前 $n$ 项和", "AC"),
+    (r"2026 高考数学全国模拟精选_images/025#9", r"命题正确的是", "BC"),
+    (r"2026 高考数学全国模拟精选_images/046#6", r"\ln(\cos x)", "ABD"),
+    (r"2026 高考数学全国模拟精选_images/048#10", r"\frac{1}{n},", "ACD"),
+    (r"2026 高考数学全国模拟精选_images/051#18", r"所有棱长均为 2", "BCD"),
+    (r"2026 高考数学全国模拟精选_images/054#25", r"项积为", "AD"),
+    (r"2026 高考数学全国模拟精选_images/055#28", r"三角形的面积为 2", "ABCD"),
+    (r"2026 高考数学全国模拟精选_images/078#24", r"连续投掷", "ABD"),
+    (r"2026 高考数学全国模拟精选_images/114#8", r"2py", "ACD"),
+    (r"2026 高考数学全国模拟精选_images/115#10", r"光学性质", "ABC"),
+    (r"2026 高考数学全国模拟精选_images/115#9", r"的一条直径", "ABD"),
+    (r"2026 高考数学全国模拟精选_images/116#11", r"x^2 = 4y", "ACD"),
+    (r"2026 高考数学全国模拟精选_images/116#12", r"点 $Q$ 在圆", "ABD"),
+    (r"2026 高考数学全国模拟精选_images/122#24", r"2026)", "ACD"),
+    (r"2026 高考数学全国模拟精选_images/124#28", r"ma_n^2", "ACD"),
+    (r"2027 高考数学考前模拟十二套卷_images/025#10", r"为母线的圆柱", "BC"),
+    (r"2027 高考数学考前模拟十二套卷_images/030#9", r"Cobb", "ABD"),
+    (r"2027 高考数学考前模拟十二套卷_images/036#9", r"a\sin x", "AC"),
+    (r"2027 高考数学考前模拟十二套卷_images/042#10", r"点 $A(1,3)$", "BCD"),
+    (r"2027 高考数学考前模拟十二套卷_images/042#9", r"文创大赛", "BD"),
+    (r"2027 高考数学考前模拟十二套卷_images/048#10", r"上的点", "AB"),
+    (r"2027 高考数学考前模拟十二套卷_images/048#11", r"已知正方体", "AC"),
+    (r"2027千题册经典重点册（下）_images/289#123", r"两个箱子", "BC"),
+]
+
+PATCHES += [
+    {
+        "key": key,
+        "why": "录题时把多选题记成了单选——题干是「…正确的有（ ）」，四个选项互相独立",
+        "src": ("题干自洽：四个选项各是一个独立命题，不是同一量的四个取值；"
+                "求解模型逐项解析后给出多字母答案 %s。库里 `single_choice` 只收一个字母，"
+                "`collect` 因此拦下——**逐题人工看过**，不是按规则批量改" % ans),
+        "expect": {"type": "single_choice", "stem": frag},
+        "set": {"type": "multi_choice"},
+    }
+    for key, frag, ans in _MULTI_AS_SINGLE
+]
+
+
 # ── 执行 ──────────────────────────────────────────────────────────────
 
 _FIELDS = ("type", "stem", "answer", "solution", "options", "meta")
@@ -550,10 +600,10 @@ def _check_expect(q: Question, expect: dict) -> list[str]:
         if field == "options":
             texts = [t or "" for t in got]
             for w in (want if isinstance(want, list) else [want]):
-                if not any(w in t for t in texts):
+                if not any(_canon(w) in _canon(t) for t in texts):
                     bad.append("选项里找不到 %r" % w)
             continue
-        if not isinstance(got, str) or want not in got:
+        if not isinstance(got, str) or _canon(want) not in _canon(got):
             bad.append("%s 里找不到 %r（现在是 %r）"
                        % (field, want, (got or "")[:60]))
     return bad
@@ -579,17 +629,18 @@ def _matches_target(q: Question, spec: dict, by_key: dict) -> bool:
     for field in ("type", "stem", "answer", "solution"):
         if field not in st:
             continue
-        cur = getattr(q, field) or ""
-        if field == "solution":
-            # 解析是长文，且写盘/读取这条路上**数学环境里的空白会被规整**
-            # （`\[\n a\ln` 读回来是 `\[\na\ln`）。只差空白不算漂移，
-            # 否则这张账永远报「对不上」，幂等就无从谈起。
-            if _squeeze(cur) != _squeeze(st[field]):
+        if field == "type":
+            if q.type != st[field]:
                 return False
-        elif cur != st[field]:
+            continue
+        # 题干/答案/解析/选项都按 `_canon` 比：**只差空白或中英标点不算漂移**。
+        # 读回来的时候这些都会被规整（`normalize` 的「句末半角句点改中文句号」
+        # 就在 ENTRY 段），拿原样文本比会永远报「对不上」，这张账就没法再跑。
+        if _canon(getattr(q, field) or "") != _canon(st[field]):
             return False
     if "options" in st:
-        if [o.text for o in q.options] != [t for _l, t in st["options"]]:
+        if ([_canon(o.text) for o in q.options]
+                != [_canon(t) for _l, t in st["options"]]):
             return False
     if "meta" in st:
         for k, v in st["meta"].items():
@@ -598,9 +649,25 @@ def _matches_target(q: Question, spec: dict, by_key: dict) -> bool:
     return True
 
 
-def _squeeze(s: str) -> str:
-    """去掉全部空白，用来比较「只差排版空白」的长文本。"""
-    return re.sub(r"\s+", "", s or "")
+# 中英标点归一表（只用于比对，见 `_canon`）
+_PUNCT = str.maketrans({
+    "。": ".", "，": ",", "、": ",", "；": ";", "：": ":",
+    "！": "!", "？": "?", "（": "(", "）": ")", "．": ".",
+    "～": "~", "－": "-",
+})
+
+
+def _canon(s: str) -> str:
+    r"""折成「只按字面意思比」的规范串：去空白 + 中英标点归一到半角。
+
+    只用于**比对**，不写回库里。为什么要这样：
+      · 写盘/读取这条路上空白会被规整（`\[\n a\ln` 读回来是 `\[\na\ln`）；
+      · `normalize` 的 ENTRY 段有「句末半角句点改中文句号」，会把 `.` 变 `。`。
+    拿原样文本比，**已经改好的老账**会一直报「对不上」，`run()` 是
+    「一条对不上就整批不执行」，于是这张账再也跑不动（2026-09-19 实测踩到：
+    13 条老账只因 `.`/`。` 之差全部报漂移，连带新账一起卡死）。
+    """
+    return re.sub(r"\s+", "", (s or "").translate(_PUNCT))
 
 
 def _apply_one(q: Question, spec: dict, by_key: dict) -> list[str]:
@@ -816,6 +883,20 @@ def _selftest() -> int:
             options=[Option("A", "$1$"), Option("B", "$2$")])
     check("选项子串命中", not _check_expect(q2, {"options": ["$2$"]}))
     check("选项子串不命中报错", bool(_check_expect(q2, {"options": ["$9$"]})))
+
+    # 标点/空白的规整**不该**让这张账「永远对不上」。
+    # 2026-09-19 踩过：13 条老账只因 `.` 被 `normalize` 换成 `。` 就全部报漂移，
+    # 而 `run()` 是「一条对不上就整批不执行」——整张账连新账一起卡死。
+    check("只差中英标点算同一串",
+          _canon("A错。故选B.") == _canon("A错. 故选B。"))
+    qp = _Q(key="t/7", type="multi_choice", stem="以下正确的有（ ）",
+            answer="AB", solution="由 $x>0$。故选 AB。")
+    check("老账已应用 + 标点被规整 ⇒ 判为已订正",
+          _matches_target(qp, {"key": "t/7", "set": {
+              "type": "multi_choice", "stem": "以下正确的有( )",
+              "answer": "AB", "solution": "由 $x>0$. 故选 AB."}}, {}))
+    check("expect 的标点也不敏感",
+          not _check_expect(qp, {"stem": "以下正确的有( )"}))
 
     # 误标多选的判据
     check("答案栏写说明文字 ⇒ 判为误标",
