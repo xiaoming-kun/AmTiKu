@@ -119,12 +119,20 @@ def canon(name: str) -> str:
     return re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5]", "", s)
 
 
+_OVR = FIX / "定位覆盖.json"
+
+
 def locate(label: str) -> dict:
     r"""卷名 → `{试卷: [目录…], 答案: [目录…]}`，按 `canon()` 找同一场的工作区。
 
     先要**完全同键**的；一个都没有才退而求其次取公共前缀最长的一批
     （像 `十一校` 对上 `2026届湖北省十一校…` 这种缩写）。
+    个别配错的场次写在 `定位覆盖.json` 里，**人工指定优先**。
     """
+    if _OVR.exists():
+        hit = (json.loads(_OVR.read_text(encoding="utf-8")) or {}).get(label)
+        if hit:
+            return {k: [Path(x) for x in hit.get(k, [])] for k in ("试卷", "答案")}
     want = canon(label)
     groups: dict[str, list[Path]] = defaultdict(list)
     for d in workspaces():
