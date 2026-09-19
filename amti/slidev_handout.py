@@ -748,6 +748,21 @@ fonts:
 <div class="p-space-lg"></div>
 """
 
+# 段落间距：**跟预览侧对齐**。
+#
+# 题目正文里的空行是有意义的（题干 / (1) / (2) 各占一段），markdown 会把它们
+# 变成多个 `<p>`。预览侧（`web/src/lib/render.ts` 的 `.q-p`）给的是 0.4em，
+# 而导出侧一直吃 Slidev 主题的默认段距（≈1em，比行距还大），于是同一道题
+# **预览里紧凑、导出后撑得很大**（用户反馈「导出的东西间距太大」）。
+# 这里把导出侧也压到 0.4em —— 与预览一致（AGENTS.md：预览与导出必须一致）。
+TIGHT_SPACING_CSS = """<style>
+.p-ex p, .p-t p, .p-ti p { margin: 0.4em 0; }
+.p-ex p:first-child, .p-t p:first-child, .p-ti p:first-child { margin-top: 0; }
+.p-ex p:last-child, .p-t p:last-child, .p-ti p:last-child { margin-bottom: 0; }
+</style>
+
+"""
+
 PAGE = """---
 layout: default
 class: style-plain
@@ -773,7 +788,7 @@ def build_markdown(questions, *, title: str, ratio: str = "16/9",
         extra = f"，选自 {questions[0].meta['source_label']}"
 
     parts = [FRONTMATTER.format(title=title, n=len(questions),
-                                ratio=ratio, extra=extra)]
+                                ratio=ratio, extra=extra), TIGHT_SPACING_CSS]
     spacer = DENSITIES.get(density, "p-space")
 
     for i, q in enumerate(questions, 1):
@@ -954,7 +969,7 @@ def build_from_blocks(blocks: list[dict], *, title: str, ratio: str = "16/9",
 
     parts = [FRONTMATTER.format(
         title=title, n=sum(1 for b in blocks if b.get("type") == "question"),
-        ratio=ratio, extra="")]
+        ratio=ratio, extra=""), TIGHT_SPACING_CSS]
     spacer = DENSITIES.get(density, "p-space")
 
     buf: list[str] = []          # 累积的内容
@@ -1470,7 +1485,7 @@ def build_canvas_pages(pages: list[dict], *, title: str, ratio: str = "16/9",
 
     `pages` 结构：[{ "blocks": [ {type,x,y,w,h,...}, ... ] }, ...]
     """
-    parts = [CANVAS_FRONTMATTER.format(title=title, ratio=ratio)]
+    parts = [CANVAS_FRONTMATTER.format(title=title, ratio=ratio), TIGHT_SPACING_CSS]
 
     # 字体选择：注入 CSS 变量覆盖 styles/index.css 的默认值
     # （老师可在编辑器里选标题/正文字体，导出必须跟着变）

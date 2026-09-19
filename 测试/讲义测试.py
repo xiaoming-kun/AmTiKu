@@ -120,6 +120,35 @@ def test_ipad_ratio_in_markdown():
     assert "aspectRatio: 2360/1640" in md, md[:200]
 
 
+# ── 段落间距：预览与导出必须一致 ──────────────────────────────
+#
+# 用户反馈：讲义**导出**的东西里，题干与 (1)(2) 之间空得很大、很别扭。
+# 根因：题目正文里的空行在 markdown 里是**分段**，预览侧 `.q-p` 给 0.4em，
+# 导出侧却吃 Slidev 默认的 ~1em —— 同一条规则两边不一样。
+# 这条测试把「两边都是 0.4em」钉住，防止再漂移。
+
+def test_paragraph_spacing_same_both_sides():
+    import pathlib as _p
+    # 导出侧：讲义 markdown 里必须带上收紧段距的样式
+    q = next(q for q in store.load_cached() if q.kind == "高考")
+    md = sh.build_markdown([q], title="段距")
+    css = sh.TIGHT_SPACING_CSS
+    assert css in md, "导出的 markdown 少了收紧段距的 <style>"
+    assert "margin: 0.4em 0" in css, css
+
+    # 加个空行分段的解答题，确认它真的落进 .p-ex 的段距规则里
+    qa = next((x for x in store.load_cached()
+               if x.type == "detailed_answer" and "\n\n" in (x.stem or "")), None)
+    if qa is not None:
+        md2 = sh.build_markdown([qa], title="段距2")
+        assert "<style>" in md2 and "0.4em" in md2, md2[:300]
+
+    # 预览侧：web/src/index.css 里同一层级的段距也是 0.4em（`.q-p` 定义在那儿）
+    root = _p.Path(__file__).resolve().parent.parent
+    prev = (root / "web" / "src" / "index.css").read_text(encoding="utf-8")
+    assert ".q-p" in prev and "0.4em" in prev, "预览侧 .q-p 的段距不是 0.4em"
+
+
 # ── 选项里的图片（用户报过的 bug）────────────────────────────
 #
 # 现象：卷面上选项显示成 `(A)\includegraphics[width=0.15\paperwidth]{x.png}` 源码。
