@@ -430,12 +430,14 @@ def _check_one(r: dict, old: dict) -> list[str]:
 
 
 # ── apply ───────────────────────────────────────────────────────────
-def apply(label: str, *, yes: bool = False) -> dict:
+def apply(label: str, *, yes: bool = False, allow_drop: bool = False) -> dict:
     r"""把这一场的 JSON 写回库里。规则（交接文档 11.2，别改）：
 
     * **只动待修清单里的题**
     * JSON 给得出的字段 → 覆盖；给不出的（答案/解析为空）→ 保留库里原值
-    * JSON 里明确 `notfound` 的 → 进回收站（可恢复）
+    * JSON 里明确 `notfound` 的 → 进回收站（可恢复），**要另加 `--drop` 才真删**：
+      读图方判"找不到"常常是**原卷配错了**（齐鲁名校那场卷面是第三次检测、
+      册内答案却是第二次的），先让人看一眼再删。
     """
     d = FIX / safe(label)
     chk = json.loads((d / "check.json").read_text(encoding="utf-8"))
@@ -455,7 +457,8 @@ def apply(label: str, *, yes: bool = False) -> dict:
         if q.meta.get("source_label") == label:
             idx[q.meta.get("source_no")] = i
     stamp = time.strftime("%Y-%m-%d %H:%M")
-    fixed, dropped, untouched = [], [], sorted(want - set(recs) - drop)
+    fixed, dropped, held = [], [], []
+    untouched = sorted(want - set(recs) - drop)
 
     for no in sorted(want & set(recs)):
         if no not in idx:
@@ -478,14 +481,14 @@ def apply(label: str, *, yes: bool = False) -> dict:
         fixed.append(no)
     for no in sorted(want & drop):
         if no in idx:
-            dropped.append(qs[idx[no]].key)
+            (dropped if allow_drop else held).append(qs[idx[no]].key)
 
     rep = {"label": label, "when": stamp,
            "修补": [{"题号": n} for n in fixed],
-           "舍弃": dropped, "未处理": untouched}
+           "舍弃": dropped, "待确认舍弃": held, "未处理": untouched}
     if not yes:
-        print("干跑：修补 %d、舍弃 %d、未处理 %d（加 --yes 才落盘）"
-              % (len(fixed), len(dropped), len(untouched)))
+        print("干跑：修补 %d、舍弃 %d、待确认 %d、未处理 %d（加 --yes 才落盘）"
+              % (len(fixed), len(dropped), len(held), len(untouched)))
         return rep
     if dropped:
         r = trash.delete(dropped, reason="无", password="0808")
@@ -494,7 +497,8 @@ def apply(label: str, *, yes: bool = False) -> dict:
     store.rewrite_all(qs)
     with LOG.open("a", encoding="utf-8") as f:
         f.write(json.dumps(rep, ensure_ascii=False) + "\n")
-    print("已落盘：修补 %d、舍弃 %d、未处理 %d" % (len(fixed), len(dropped), len(untouched)))
+    print("已落盘：修补 %d、舍弃 %d、待确认舍弃 %d、未处理 %d"
+          % (len(fixed), len(dropped), len(held), len(untouched)))
     return rep
 
 
@@ -712,6 +716,8 @@ def main() -> int:
                                      "list", "report", "selftest"])
     ap.add_argument("label", nargs="*", default=[])
     ap.add_argument("--yes", action="store_true", help="apply 时真的落盘")
+    ap.add_argument("--drop", action="store_true",
+                    help="apply 时把 notfound 的题真的移进回收站")
     ap.add_argument("--all", action="store_true", help="prep 时对全部待修场次跑")
     ap.add_argument("--refresh", action="store_true", help="重算待修清单")
     ap.add_argument("--limit", type=int, default=0)
@@ -739,7 +745,7 @@ def main() -> int:
         elif a.what == "check":
             sys.exit(0 if check(label)["ok"] else 1)
         elif a.what == "apply":
-            apply(label, yes=a.yes)
+            apply(label, yes=a.yes, allow_drop=a.drop)
         else:
             print(prompt(label))
     return 0
