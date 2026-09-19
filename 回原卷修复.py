@@ -297,17 +297,6 @@ def _ocr_corpus(label: str) -> str:
     return _loose("\n".join(txt))
 
 
-def page_sig(label: str) -> str:
-    """这一场**当前**用的页图清单指纹。
-
-    check 和 apply 各算一次，对不上就说明中间原卷定位变了（改过 `locate()`、
-    重跑过 prep），model.json 就是照着旧页图写的——**不许入库**。
-    """
-    c = json.loads((FIX / safe(label) / "task.json").read_text(encoding="utf-8"))
-    blob = "\n".join(str(x) for v in c["页图"].values() for x in v)
-    return hashlib.sha1(blob.encode()).hexdigest()[:12]
-
-
 def check(label: str, *, corpus: str | None = None) -> dict:
     d = FIX / safe(label)
     book = json.loads((d / "model.json").read_text(encoding="utf-8"))
@@ -315,6 +304,9 @@ def check(label: str, *, corpus: str | None = None) -> dict:
     card = json.loads((d / "task.json").read_text(encoding="utf-8"))
     have = {it["no"]: (it.get("库里") or {}) for it in card["待修"]}
     errs, warns = [], []
+    if (d / "task.json").stat().st_mtime > (d / "model.json").stat().st_mtime:
+        errs.append("任务卡比 JSON 新——页图清单在誊录之后变过（改过定位或重跑过 prep），"
+                    "这份 JSON 是照旧页图写的，重读")
     if (book.get("错卷") or "").strip():
         errs.append("读图方判定**页图不是这一场**：%s —— 要重新定位原卷"
                     % book["错卷"])
@@ -365,7 +357,7 @@ def check(label: str, *, corpus: str | None = None) -> dict:
                 warns.append("#%s quote 在本地 OCR 文本里找不到"
                              "（可能只是 OCR 认错，人工看一眼）" % r.get("no"))
     out = {"label": label, "ok": not errs, "errors": errs, "warnings": warns,
-           "卷面标题": title, "页图指纹": page_sig(label),
+           "卷面标题": title,
            "题数": len(recs), "待修": sorted(want)}
     (d / "check.json").write_text(json.dumps(out, ensure_ascii=False, indent=1),
                                   encoding="utf-8")
@@ -410,7 +402,8 @@ def _check_one(r: dict, old: dict) -> list[str]:
         out.append("题干为空")
     if not sol.strip() and not old.get("solution"):
         out.append("解析为空（库里也没有；确实没有解析写「解析无」）")
-    if len(ans) > 40:
+    if len(ans) > 40 and not (qt == "fill_in_blank" and len(ans) <= 80
+                             and "。" not in ans):
         out.append("客观题答案 %d 字（像整段解析）" % len(ans))
     if FURNITURE_STEM.search(stem):
         out.append("题干里混着分值/页脚/水印")
@@ -418,6 +411,9 @@ def _check_one(r: dict, old: dict) -> list[str]:
         out.append("留着卷面的方框 □ 没处理（能确定就补成 LaTeX 并写 note，不能确定就 notfound）")
     if SECTION_HEAD.search(stem):
         out.append("题干里混着小节标题")
+    if re.search(r"_{3,}|\\fillin", stem) and re.search(r"[（(]\s*[)）]\s*$", stem):
+        # conform 的「空括号残留」：卷面上会印出两个作答位
+        out.append("题干既有填空位又留着空括号（  ）")
     if r.get("figure") or r.get("table"):
         out.append("带图/带表的题不许进 questions，要放 skipped")
     q = R2.norm(r.get("quote") or "")
@@ -425,21 +421,23 @@ def _check_one(r: dict, old: dict) -> list[str]:
         out.append("quote %d 字（要 10–25 字，归一化后 10–60）" % len(q))
     elif q and q not in R2.norm(stem):
         out.append("quote 对不上题干（说明改写了原文）")
-    out += R2.gate(qt, stem, opts, ans, sol)
+    soft = R2.gate(qt, stem, opts, ans, sol)
+    if qt == "fill_in_blank" and 40 < len(ans) <= 80 and "。" not in ans:
+        # 一空一答的短答案不会超过 40 字；超过的多半是**多空填空题**
+        # （两三个答案用"和/或"连起来）。真·整段解析一定带句号，那种照样拦。
+        soft = [m for m in soft if "像整段解析" not in m]
+    out += soft
     return out
 
 
 # ── apply ───────────────────────────────────────────────────────────
 def _load_plan(label: str) -> dict:
-    """check 没过、或页图清单在 check 之后变过，就不许入库。"""
+    """入库前**重新跑一遍 check**——不信任上次留下的 check.json
+    （校验规则会加，旧的 JSON 得按新规则再过一遍）。"""
     d = FIX / safe(label)
-    chk = json.loads((d / "check.json").read_text(encoding="utf-8"))
-    if not chk.get("ok"):
-        raise SystemExit("check 没过：%s ← %s"
-                         % (label, "; ".join(chk["errors"][:3])))
-    if chk.get("页图指纹") != page_sig(label):
-        raise SystemExit("页图清单在 check 之后变过：%s ——JSON 是照旧页图写的，重读再入库"
-                         % label)
+    res = check(label)
+    if not res["ok"]:
+        raise SystemExit("check 没过：%s ← %s" % (label, "; ".join(res["errors"][:3])))
     return json.loads((d / "model.json").read_text(encoding="utf-8"))
 
 
