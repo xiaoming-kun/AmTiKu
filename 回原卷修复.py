@@ -147,6 +147,63 @@ def locate(label: str) -> dict:
     return {k: sorted(v) for k, v in hit.items()}
 
 
+def _source_of(label: str) -> Path | None:
+    """工作区里没有页图时，`来源.json` 里登记的原卷文件（人工核对过名字）。"""
+    f = FIX / "来源.json"
+    if not f.exists():
+        return None
+    hit = (json.loads(f.read_text(encoding="utf-8")) or {}).get(label)
+    p = Path(hit["file"]) if hit else None
+    return p if p and p.exists() else None
+
+
+def render_docx(docx: Path, out_dir: Path) -> list[Path]:
+    r""".docx 也是图片壳子：解 zip 取 `word/media/*`，按文件名顺序就是页序。"""
+    import zipfile
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(docx) as z:
+        names = sorted(n for n in z.namelist()
+                       if n.startswith("word/media/")
+                       and n.lower().endswith((".png", ".jpg", ".jpeg")))
+        out = []
+        for i, n in enumerate(names, 1):
+            dst = out_dir / ("p%03d%s" % (i, Path(n).suffix))
+            dst.write_bytes(z.read(n))
+            out.append(dst)
+    return out
+
+
+def render_pdf(pdf: Path, out_dir: Path, dpi: int = 200) -> list[Path]:
+    r"""PDF → 整页图。**一定渲染整页，不抽内嵌图**（有些 PDF 的 xref 是坏的，
+    抽出来的图会张冠李戴，同一张图对应好几页）。"""
+    import fitz
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = []
+    with fitz.open(str(pdf)) as doc:
+        for i, page in enumerate(doc, 1):
+            dst = out_dir / ("p%03d.png" % i)
+            page.get_pixmap(dpi=dpi).save(str(dst))
+            out.append(dst)
+    return out
+
+
+def render_from_source(label: str, d: Path) -> tuple[list[Path], str]:
+    r"""原卷（PDF/Word）→ `(单页图, 出处)`。
+
+    **不去猜哪几页是答案**——这一批的原始文件常常是"试题+答案"合一，
+    按文件名判角色会把整份判成答案卷。页图统一交给读图的人自己分。
+    """
+    src = _source_of(label)
+    if not src:
+        return [], ""
+    raw = (render_docx(src, d / "src") if src.suffix.lower() in (".docx", ".doc")
+           else render_pdf(src, d / "src"))
+    pages = [q for p in raw for q in G.split_spread(p, d / "pages_src")]
+    return pages, str(src)
+
+
 def half_pages(ws: Path, out_dir: Path) -> list[Path]:
     r"""工作区 → 单页图（横版双页按 L0 几何切开，纯代码不碰模型）。"""
     done = sorted(p for p in (ws / "v2" / "pages").glob("p???_[LR].png"))
@@ -169,27 +226,31 @@ def prep(label: str) -> dict:
     loc = locate(label)
     d = FIX / safe(label)
     d.mkdir(parents=True, exist_ok=True)
-    qs = {q.meta.get("source_no"): q for q in store.load_all()
+    qs = {q.meta.get("source_no"): q for q in store.load_cached()
           if q.meta.get("source_label") == label}
     paper, answer = [], []
     for ws in loc["试卷"]:
         paper += half_pages(ws, d / "pages")
     for ws in loc["答案"]:
         answer += half_pages(ws, d / "pages_ans")
+    src_pages, src_from = ([], "")
+    if not paper and not answer:
+        src_pages, src_from = render_from_source(label, d)
     card = {
         "label": label,
         "待修": [{"no": it["no"], "原因": it["原因"],
                  "库里": _brief(qs.get(it["no"]))} for it in items],
-        "页图": {"试卷": [str(p) for p in paper], "答案": [str(p) for p in answer]},
-        "工作区": {k: [str(p) for p in v] for k, v in loc.items()},
+        "页图": {"试卷": [str(p) for p in paper], "答案": [str(p) for p in answer],
+                 "原卷": [str(p) for p in src_pages]},
+        "出处": src_from or {k: [str(p) for p in v] for k, v in loc.items()},
     }
     (d / "task.json").write_text(json.dumps(card, ensure_ascii=False, indent=1),
                                  encoding="utf-8")
     print("任务卡 → %s" % (d / "task.json"))
-    print("  待修 %d 道；试卷页图 %d 张；答案页图 %d 张"
-          % (len(card["待修"]), len(paper), len(answer)))
-    if not paper and not answer:
-        print("  ✗ 没有任何页图——这一场要回桌面找原卷，先别修")
+    print("  待修 %d 道；页图：试卷 %d、答案 %d、原卷渲染 %d"
+          % (len(card["待修"]), len(paper), len(answer), len(src_pages)))
+    if not (paper or answer or src_pages):
+        print("  ✗ 没有任何页图——这一场找不到原卷，只能舍弃")
     return card
 
 
@@ -399,7 +460,7 @@ PROMPT = """\
 【试卷】
 {paper}
 【答案】
-{answer}
+{answer}{source}
 
 库里这几道题现在缺什么（**只补这些，别改编号以外的题**）：
 {current}
@@ -425,7 +486,10 @@ PROMPT = """\
 9. 原卷上确实找不到、或残缺到没法修的题号：放进 `notfound`，
    `note` 写清为什么（不许默默漏掉，也不许硬凑）。
 
-只输出 JSON，不要代码块围栏、不要解释：
+只输出 JSON，不要代码块围栏、不要解释。**完整内容写到这个文件**：
+{out}
+
+JSON 结构：
 {{"label":"{label}","book":"模拟题","year":{year},
  "questions":[{{"no":9,"type":"multi_choice","stem":"…","options":{{"A":"…","B":"…","C":"…","D":"…"}},
    "answer":"CD","solution":"","figure":false,"table":false,"pages":[2],"quote":"逐字摘 10-25 字（尽量摘不含公式的那段）"}}],
@@ -453,9 +517,13 @@ def prompt(label: str) -> str:
                    len(o.get("options") or {}), o.get("answer") or "",
                    "有解析" if o.get("有解析") else "无解析"))
 
+    src = card["页图"].get("原卷") or []
+    source = ("\n【原卷】这一场没有分开扫的试卷/答案，下面是同一份原卷渲染出的页"
+              "（试题和答案都在这几页里，自己按页码分）\n" + fmt(src)) if src else ""
     return PROMPT.format(label=label, n=len(card["待修"]), nos=nos,
                          current="\n".join(cur(x) for x in card["待修"]),
-                         year=y.group(1) if y else 2026,
+                         year=y.group(1) if y else 2026, source=source,
+                         out=str(FIX / safe(label) / "model.json"),
                          paper=fmt(card["页图"]["试卷"]), answer=fmt(card["页图"]["答案"]))
 
 
@@ -512,6 +580,7 @@ def main() -> int:
     ap.add_argument("what", choices=["prep", "check", "apply", "prompt", "list", "report"])
     ap.add_argument("label", nargs="*", default=[])
     ap.add_argument("--yes", action="store_true", help="apply 时真的落盘")
+    ap.add_argument("--all", action="store_true", help="prep 时对全部待修场次跑")
     ap.add_argument("--refresh", action="store_true", help="重算待修清单")
     ap.add_argument("--limit", type=int, default=0)
     a = ap.parse_args()
@@ -520,12 +589,19 @@ def main() -> int:
     elif a.what == "report":
         cmd_report()
     else:
-        if not a.label:
+        if not a.label and not (a.what == "prep" and a.all):
             raise SystemExit("要给卷名")
-        label = a.label[0]
+        label = (a.label or [""])[0]
         if a.what == "prep":
             pending_now(refresh=a.refresh)
-            prep(label)
+            if a.all:
+                for label in sorted(pending_now()):
+                    try:
+                        prep(label)
+                    except SystemExit as e:      # 没待修/卷名不对：记下继续
+                        print("跳过 %s：%s" % (label, e))
+            else:
+                prep(a.label[0])
         elif a.what == "check":
             sys.exit(0 if check(label)["ok"] else 1)
         elif a.what == "apply":

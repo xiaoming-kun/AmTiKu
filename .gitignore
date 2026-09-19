@@ -36,3 +36,6 @@ _handout_build/
 *.bak
 *.bak_*
 *.tmp
+
+# 录题修复的派生缓存（每次从库里重算，不入库）
+数据/录题/_修复/pending.json
