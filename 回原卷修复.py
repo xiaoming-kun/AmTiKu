@@ -662,6 +662,30 @@ def cmd_list(limit: int = 0) -> None:
                                     else "✗ 无页图"))
 
 
+def cmd_todo(limit: int = 0) -> None:
+    r"""**从库里重算**还剩哪些场真缺数据（修好的会自动从单子上消失）。
+
+    不用 FIX/pending.json 的旧快照，也不用 .applied 标记——
+    判"修没修好"的唯一标准是库里现在这道题完不完整。
+    """
+    pend = pending_now(refresh=True)
+    rows = []
+    for label, items in pend.items():
+        d = FIX / safe(label)
+        npg = 0
+        if (d / "task.json").exists():
+            c = json.loads((d / "task.json").read_text(encoding="utf-8"))
+            npg = sum(len(v) for v in c["页图"].values())
+        rows.append((len(items), npg, label))
+    rows.sort(key=lambda x: (-x[0], x[1] or 999))
+    noimg = [r for r in rows if not r[1]]
+    print("还剩 %d 场 / %d 道（其中 %d 场找不到原卷）"
+          % (len(rows), sum(r[0] for r in rows), len(noimg)))
+    for n, pg, label in (rows[:limit] if limit else rows):
+        if pg:
+            print(" %2d道 %2d页 %s" % (n, pg, label))
+
+
 def cmd_report() -> None:
     pend = pending_now()
     done = [json.loads(l) for l in LOG.read_text(encoding="utf-8").splitlines()] \
@@ -760,7 +784,7 @@ def _selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="回原卷修复执行器")
     ap.add_argument("what", choices=["prep", "check", "apply", "apply-batch",
-                                     "prompt", "list", "report", "selftest"])
+                                     "prompt", "list", "todo", "report", "selftest"])
     ap.add_argument("label", nargs="*", default=[])
     ap.add_argument("--yes", action="store_true", help="apply 时真的落盘")
     ap.add_argument("--drop", action="store_true",
@@ -773,6 +797,8 @@ def main() -> int:
         return _selftest()
     if a.what == "list":
         cmd_list(a.limit)
+    elif a.what == "todo":
+        cmd_todo(a.limit)
     elif a.what == "report":
         cmd_report()
     else:
