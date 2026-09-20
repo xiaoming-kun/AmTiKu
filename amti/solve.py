@@ -327,6 +327,12 @@ def main() -> int:
     ap.add_argument("--audit", action="store_true",
                     help="逐题审题模式：从后往前，一道一道交本地模型"
                          "（补答案/补解析/修题干）")
+    ap.add_argument("--fill-answer", action="store_true",
+                    help="补缺②：有解析、没答案的客观题——读现成解析把答案补上")
+    ap.add_argument("--fill-solution", action="store_true",
+                    help="补缺①：有答案、没解析的题——本地模型写解析")
+    ap.add_argument("--reset-fill", action="store_true",
+                    help="补缺：清掉该任务的进度，从头跑")
     ap.add_argument("--only-missing", action="store_true",
                     help="审题时只挑「缺答案或缺解析」的题")
     ap.add_argument("--reset", action="store_true",
@@ -336,6 +342,9 @@ def main() -> int:
     if a.audit:
         return run_audit(limit=a.limit, only_missing=a.only_missing,
                          reset=a.reset, check=a.check)
+    if a.fill_answer or a.fill_solution:
+        return run_fill("ans" if a.fill_answer else "sol", limit=a.limit,
+                        reset=a.reset_fill, check=a.check)
 
     todo = pending(a.difficulty)
     from collections import Counter as _C
@@ -569,19 +578,30 @@ def audit_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str, dict]:
     return True, msg, rec
 
 
-def _load_cursor() -> dict:
-    if AUDIT_CURSOR.exists():
+def _load_cursor(path: Path = AUDIT_CURSOR, key: str = "") -> dict:
+    r"""读进度。`key` 给了就从那份进度文件里取子字典（补缺任务一个文件放两条任务）。"""
+    if path.exists():
         try:
-            return json.loads(AUDIT_CURSOR.read_text(encoding="utf-8"))
+            d = json.loads(path.read_text(encoding="utf-8"))
+            return (d.get(key) or {}) if key else d
         except Exception:
-            log.warning("审题进度文件坏了，从头开始", exc_info=True)
+            log.warning("进度文件坏了，从头开始", exc_info=True)
     return {}
 
 
-def _save_cursor(d: dict) -> None:
-    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
-    AUDIT_CURSOR.write_text(json.dumps(d, ensure_ascii=False, indent=1),
-                            encoding="utf-8")
+def _save_cursor(d: dict, path: Path = AUDIT_CURSOR, key: str = "") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if key:                                  # 子字典：先读回整份，再替换这一条
+        all_: dict = {}
+        if path.exists():
+            try:
+                all_ = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                all_ = {}
+        all_[key] = d
+        path.write_text(json.dumps(all_, ensure_ascii=False, indent=1), encoding="utf-8")
+        return
+    path.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def audit_queue(cursor: dict, *, only_missing: bool = False) -> list[Question]:
@@ -663,6 +683,198 @@ def run_audit(*, limit: int = 0, only_missing: bool = False,
     return 0
 
 
+# ══════════════════════════════════════════════════════════════
+#  补缺：只补"少了的那一样"（本地大模型，一题一问、一题一写）
+# ══════════════════════════════════════════════════════════════
+#
+# 用户的要求：
+#   ② `ans` 有解析、没答案的**客观题** → **读现成解析，把答案补上**（不重写解析）；
+#   ① `sol` 有答案、没解析的题 → 写解析（"先慢慢做着"）。
+#
+# 一题一问、写完立刻落盘、可断点续跑（进度按 key 锚定）；**只动缺的那一栏**，
+# 另一栏一个字不改——这是这两条任务的安全边界。
+
+FILL_CURSOR = AUDIT_DIR / "补缺进度.json"
+FILL_JSONL = AUDIT_DIR / "补缺.jsonl"
+
+FILL_ANS_SYSTEM = (
+    "你是高中数学老师。给你一道题**和它已有的解析**，你只做一件事："
+    "从解析里读出这道题的答案。\n\n"
+    "严格按格式回答，不要有别的内容：\n"
+    "<答案>\n"
+    "（选择题只写字母，如 A 或 ACD；填空题只写最终结果，数学式子用 $…$ 括起来）\n"
+    "</答案>\n\n"
+    "注意：\n"
+    "- **不要重写解析**，不要解释过程，不要输出别的标签；\n"
+    "- 解析里如果出现多个结论，答案栏只放**这道题最后要的那个结果**。"
+)
+
+FILL_SOL_SYSTEM = (
+    "你是高中数学老师。给你一道题（**答案已经给出**），你要写出**完整、简洁**的解析，"
+    "讲清怎么想、每步为什么。\n\n"
+    "严格按格式回答，不要有别的内容：\n"
+    "<解析>\n"
+    "（可以含 LaTeX 公式，行内用 $…$，行间用 \\[ … \\]）\n"
+    "</解析>\n\n"
+    "注意：\n"
+    "- LaTeX 里不要写中文，中文放公式外面或用 \\text{} 包起来。\n"
+    "- 不要用 \\begin{enumerate}，小问直接写「(1)」「(2)」。\n"
+    "- 解析要能让人看懂，但别啰嗦。"
+)
+
+
+def fill_todo(kind: str) -> list[Question]:
+    r"""待补的题：`ans` = 有解析缺答案（**只取客观题**）；`sol` = 有答案缺解析。
+
+    连败 `MAX_ATTEMPTS` 次的跳过，免得反复卡在同一道。顺序按 key，便于断点续跑。
+    """
+    out: list[Question] = []
+    for q in store.load_all():
+        if int(q.meta.get("fill_attempts") or 0) >= MAX_ATTEMPTS:
+            continue
+        have_a = bool((q.answer or "").strip())
+        have_s = bool((q.solution or "").strip())
+        if kind == "ans":
+            if have_s and not have_a and q.type in ("single_choice", "multi_choice",
+                                                    "fill_in_blank"):
+                out.append(q)
+        elif kind == "sol":
+            if have_a and not have_s:
+                out.append(q)
+    out.sort(key=lambda q: q.key)
+    return out
+
+
+def _fill_prompt(q: Question, kind: str) -> str:
+    parts = ["题型：%s" % q.type, "题干：%s" % q.stem]
+    if q.options:
+        parts.append("选项：")
+        for o in q.options:
+            parts.append("  %s. %s" % (o.label, o.text or "（图片选项）"))
+    if kind == "ans":
+        parts.append("已有解析：\n%s" % (q.solution or "").strip())
+    else:
+        parts.append("已有答案：%s" % (q.answer or "").strip())
+    return "\n".join(parts)
+
+
+def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
+    r"""补一道题的那一栏并**立刻写盘**。"""
+    system = FILL_ANS_SYSTEM if kind == "ans" else FILL_SOL_SYSTEM
+    try:
+        raw = call_model(_fill_prompt(q, kind), system=system)
+    except urllib.error.URLError as e:
+        return False, "模型连不上：%s" % e
+    except Exception as e:
+        _bump_attempts(q)
+        return False, "调用失败：%s: %s" % (type(e).__name__, e)
+
+    # **重新读一遍库**：别覆盖别的进程刚写的内容
+    qs = store.load_all()
+    tgt = next((x for x in qs if x.key == q.key), None)
+    if tgt is None:
+        return False, "题不在库里了"
+
+    if kind == "ans":
+        ans = clean_answer(tgt, _block(raw, "答案"))
+        if not ans:
+            _bump_attempts(tgt, raw=raw)
+            return False, "没读到答案（正文 %d 字，finish=%s）" % (
+                len(raw), LAST_CALL.get("finish_reason") or "?")
+        if (tgt.answer or "").strip():
+            return False, "库里有答案了（%s），不动" % tgt.answer
+        tgt.answer = ans
+        tgt.meta["filled_answer_by"] = MODEL
+        tgt.meta["filled_answer_at"] = time.strftime("%Y-%m-%d %H:%M")
+        msg = "补答案=%s" % ans
+    else:
+        sol = _block(raw, "解析")
+        if not sol:
+            _bump_attempts(tgt, raw=raw)
+            return False, "没取到解析（正文 %d 字，finish=%s）" % (
+                len(raw), LAST_CALL.get("finish_reason") or "?")
+        if (tgt.solution or "").strip():
+            return False, "库里有解析了，不动"
+        tgt.solution = sol
+        tgt.meta["filled_solution_by"] = MODEL
+        tgt.meta["filled_solution_at"] = time.strftime("%Y-%m-%d %H:%M")
+        msg = "补解析(%d字)" % len(sol)
+
+    tgt.meta["fill_attempts"] = int(tgt.meta.get("fill_attempts") or 0) + 1
+    # 答案要写进 `\paren[…]` / `\fillin[…]`（与求解路径同一道规范）
+    norm.normalize(tgt, norm.ENTRY)
+    vol = vmap.get(q.key, 1)
+    store.rewrite_volume(vol, [x for x in qs if vmap.get(x.key, 1) == vol])
+    return True, msg
+
+
+def run_fill(kind: str, *, limit: int = 0, reset: bool = False,
+             check: bool = False) -> int:
+    r"""补缺主循环：一题一问、一题一写、随时可停可续。"""
+    if kind not in ("ans", "sol"):
+        print("kind 只能是 ans / sol")
+        return 2
+    cur = _load_cursor(FILL_CURSOR, kind) if reset is False else {}
+    if reset and FILL_CURSOR.exists():
+        d = json.loads(FILL_CURSOR.read_text(encoding="utf-8"))
+        d.pop(kind, None)
+        FILL_CURSOR.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+        cur = {}
+    todo = fill_todo(kind)
+    start = (cur or {}).get("下一个key") or ""
+    if start:
+        i = next((n for n, q in enumerate(todo) if q.key == start), None)
+        if i is not None:
+            todo = todo[i:]
+    label = "补答案（读现成解析）" if kind == "ans" else "补解析"
+    print("任务：%s；待补 %d 道；上次停在 %s" % (label, len(todo), start or "（还没开始）"))
+    if check:
+        try:
+            call_model("回一个字：好", timeout=120,
+                       system=FILL_ANS_SYSTEM if kind == "ans" else FILL_SOL_SYSTEM)
+            print("模型连通 ✓  %s" % MODEL)
+        except Exception as e:
+            print("模型不通 ✗  %s" % e)
+        return 0
+    if not todo:
+        print("补完了")
+        return 0
+    if limit:
+        todo = todo[:limit]
+
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    vmap = volume_map()
+    ok = bad = 0
+    t0 = time.time()
+    for i, q in enumerate(todo, 1):
+        t = time.time()
+        good, msg = fill_one(q, vmap, kind)
+        ok += good
+        bad += not good
+        # **模型掉线就停**：连不上时继续跑只会一路刷失败（虽然不计入连败次数，
+        # 但会把 885 道白跑一遍）。停下来等人把模型起回来，进度还在。
+        if not good and msg.startswith("模型连不上"):
+            print("✗ %s —— 停下（进度已存，模型起来后重跑本命令即可续上）" % msg,
+                  flush=True)
+            break
+        line = "[%d/%d] %s  %.0fs  %s" % (i, len(todo), q.key, time.time() - t, msg)
+        print(line, flush=True)
+        with FILL_JSONL.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"kind": kind, "key": q.key, "ok": good, "说明": msg,
+                                "用时秒": round(time.time() - t), "模型": MODEL},
+                               ensure_ascii=False) + "\n")
+        nxt = todo[i].key if i < len(todo) else ""
+        _save_cursor({"下一个key": nxt, "已补": (cur or {}).get("已补", 0) + i,
+                      "最后一道": q.key, "成功": ok, "失败": bad,
+                      "最后更新": time.strftime("%Y-%m-%d %H:%M:%S")}, FILL_CURSOR, kind)
+        if i % 5 == 0:
+            print("   —— 已补 %d：成功 %d、失败 %d，用时 %.1f 分钟 ——"
+                  % (i, ok, bad, (time.time() - t0) / 60), flush=True)
+    print("\n本轮完成：%d 道（成功 %d、失败 %d），用时 %.1f 分钟"
+          % (len(todo), ok, bad, (time.time() - t0) / 60))
+    return 0
+
+
 # ── 自检 ──────────────────────────────────────────────────────────────
 
 def _selftest() -> int:
@@ -731,12 +943,13 @@ def _selftest() -> int:
     q3 = Question(key="t/3", type="fill_in_blank", stem="已知 $x$ 的方程为\\fillin[]。")
     check("修正稿太短 → 不换", not _stem_fix_ok(q3, "无")[0])
     q4 = Question(key="t/4", type="single_choice",
-                  stem="如图，" + r"\includegraphics[width=0.4\linewidth]{b7124aa7bf01623d.png}" + " 则 $x=$\paren[A]")
+                  stem="如图，" + r"\includegraphics[width=0.4\linewidth]{b7124aa7bf01623d.png}" + r" 则 $x=$\paren[A]")
     ok, why = _stem_fix_ok(q4, "换个说法，但没有图")
     check("修正稿丢配图 → 不换", not ok and "配图" in why, why)
     ok2, why2 = _stem_fix_ok(
         q4, r"如图，$\triangle ABC$ 中 $AB=2$，" + "\n\n" +
-        r"\includegraphics[width=0.4\linewidth]{b7124aa7bf01623d.png}" + "\n\n则 $x=$\paren[A]")
+        r"\includegraphics[width=0.4\linewidth]{b7124aa7bf01623d.png}" + "\n\n" +
+        r"则 $x=$\paren[A]")
     check("修正稿保留配图且合规 → 换", ok2, why2)
 
     # ── 队列：从后往前，且用 key 锚定续跑 ────────────────────────
@@ -750,6 +963,30 @@ def _selftest() -> int:
               audit_queue(anchor)[0].key == tail[3].key)
     check("锚点不存在时从头来（不报错）",
           audit_queue({"下一个key": "不存在的/钥匙#1"})[0].key == qs[-1].key)
+
+    # ── 补缺：两条任务的取题口径 ────────────────────────────────
+    # ② 补答案：**只取客观题**（解答题的答案栏本来就该空着，不能乱补）
+    a_todo = fill_todo("ans")
+    check("补答案只取客观题",
+          all(q.type in ("single_choice", "multi_choice", "fill_in_blank") for q in a_todo))
+    check("补答案的题都有解析、没答案",
+          all((q.solution or "").strip() and not (q.answer or "").strip() for q in a_todo),
+          "%d 道" % len(a_todo))
+    # ① 补解析：有答案、没解析
+    s_todo = fill_todo("sol")
+    check("补解析的题都有答案、没解析",
+          all((q.answer or "").strip() and not (q.solution or "").strip() for q in s_todo),
+          "%d 道" % len(s_todo))
+    check("两条任务不重叠", not ({q.key for q in a_todo} & {q.key for q in s_todo}))
+
+    # 补答案的提示词里必须带上现成解析（否则模型只能重做一遍）
+    if a_todo:
+        p = _fill_prompt(a_todo[0], "ans")
+        check("补答案的提示里有现成解析", "已有解析" in p and a_todo[0].solution[:20] in p)
+    if s_todo:
+        p2 = _fill_prompt(s_todo[0], "sol")
+        check("补解析的提示里有答案", "已有答案" in p2)
+    check("kind 只认 ans/sol", run_fill("xx", check=True) == 2)
 
     print("solve 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0
