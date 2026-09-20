@@ -69,27 +69,37 @@ def tidy(recs):
     2. 生成脚本里用 Python **原始字符串** 写正文时，`\\n` 不会变成换行，
        落库就成了正文里的两个字符（实测第 28 场 8 道题被闸门拒收）。
        只认后面不接字母的那种，`\\neq`、`\\nu` 这类命令不受影响。
+    3. 反过来，用**普通字符串**写 LaTeX 时 `\\v`、`\\f`、`\\b`、`\\a`、`\\e`
+       会被 Python 吃掉成控制符，**而且命令的首字母一起没了**
+       （实测：第 79、132 场的 `$\\varphi$` 落成 `$<0x0b>arphi$`）。
+       所以必须还原成「反斜杠 + 那个字母」，只补反斜杠会得到 `\\arphi` 这种假命令。
+       **不动 `\\t`(0x09) 和 `\\n`(0x0a)**——这两个在本项目正文里是合法的段落分隔。
+       映射表以外的控制符（0x01-0x06 等）不动，留着让闸门报错，别猜。
     """
     import re
     fake_nl = re.compile(r"\\n(?![a-zA-Z])")
+    CTRL2CMD = {"\x07": "\\a", "\x08": "\\b", "\x0b": "\\v",
+                "\x0c": "\\f", "\x0d": "\\r", "\x1b": "\\e", "\x00": "\\0"}
+    ctrl = re.compile("[" + "".join(CTRL2CMD) + "]")
     n = 0
+
+    def fix(t):
+        nonlocal n
+        if "$$" in t:
+            n += t.count("$$")
+            t = t.replace("$$", "$ $")
+        t, k = fake_nl.subn("\n", t)
+        n += k
+        t, k = ctrl.subn(lambda mo: CTRL2CMD[mo.group()], t)
+        n += k
+        return t
+
     for r in recs:
         for f in ("题干", "答案", "解析"):
-            t = r.get(f) or ""
-            if "$$" in t:
-                n += t.count("$$")
-                t = t.replace("$$", "$ $")
-            t2, k = fake_nl.subn("\n", t)
-            r[f] = t2
-            n += k
+            r[f] = fix(r.get(f) or "")
         opts = {}
         for k, v in list((r.get("选项") or {}).items()):
-            if "$$" in v:
-                n += v.count("$$")
-                v = v.replace("$$", "$ $")
-            v, k2 = fake_nl.subn("\n", v)
-            opts[k] = v
-            n += k2
+            opts[k] = fix(v)
         if r.get("选项"):
             r["选项"] = opts
     return n
