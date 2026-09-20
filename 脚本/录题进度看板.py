@@ -6,6 +6,7 @@ r"""生成录题进度看板：数据/录题/Qoder录题进度看板.md
 
 用法：python3 脚本/录题进度看板.py
 只读不写题库；写出来的 md 也在 数据/录题/ 下，不碰 题目/。
+生成后单独 git 提交这一个文件（绝不 git add -A），每次都留痕。
 """
 import json, subprocess, sys, time
 from collections import Counter
@@ -32,6 +33,31 @@ def rate_hours(n_todo, span_min):
         return None, 0
     per_hour = len(done_recent) / (span_min / 60.0)
     return (n_todo / per_hour if per_hour else None), len(done_recent)
+
+
+def commit_board(msg):
+    """只提交看板这一个文件。抢不到 index.lock（解析任务正在提交）就不提交、不重试，
+    改动留在工作区，下一场自动任务会顺手带上。"""
+    rel = str(OUT.relative_to(ROOT))
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+
+    def err(out):
+        return (out.stderr or out.stdout).strip().splitlines()[-1:] or ["无输出"]
+
+    add = git("add", "--", rel)
+    if add.returncode:
+        print("看板未提交（git add 失败）：%s" % "；".join(err(add)), file=sys.stderr)
+        return
+    if not git("diff", "--cached", "--quiet", "--", rel).returncode:
+        print("看板内容无变化，未提交")
+        return
+    c = git("commit", "-m", msg)
+    if c.returncode:
+        print("看板未提交（git commit 失败）：%s" % "；".join(err(c)), file=sys.stderr)
+    else:
+        print("已提交：" + msg)
 
 
 def main():
@@ -127,6 +153,8 @@ def main():
 
     OUT.write_text("\n".join(L), encoding="utf-8")
     print(OUT.relative_to(ROOT))
+    commit_board("录题看板：剩 %d 场待解析，累计成品 %d 份 / %d 题，待复核 %d 条"
+                 % (left, len(files), nq, np_))
 
 
 if __name__ == "__main__":
