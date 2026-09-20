@@ -62,7 +62,8 @@ def build_prompt(q: Question) -> str:
     return "\n".join(parts)
 
 
-def call_model(prompt: str, *, timeout: int = 600) -> str:
+def call_model(prompt: str, *, timeout: int = 600,
+               system: str = SYSTEM) -> str:
     r"""问模型一次，返回正文。
 
     ⚠️ **`max_tokens` 必须给足。** 这是推理模型：它先在 `reasoning_content`
@@ -74,7 +75,7 @@ def call_model(prompt: str, *, timeout: int = 600) -> str:
     """
     body = json.dumps({
         "model": MODEL,
-        "messages": [{"role": "system", "content": SYSTEM},
+        "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": MAX_TOKENS,
@@ -323,7 +324,18 @@ def main() -> int:
                     help="只要这一档，如「简单题」。留空=易→难全做。"
                          "本地模型只能串行，一次做一档更可控")
     ap.add_argument("--check", action="store_true", help="只报状态，不解")
+    ap.add_argument("--audit", action="store_true",
+                    help="逐题审题模式：从后往前，一道一道交本地模型"
+                         "（补答案/补解析/修题干）")
+    ap.add_argument("--only-missing", action="store_true",
+                    help="审题时只挑「缺答案或缺解析」的题")
+    ap.add_argument("--reset", action="store_true",
+                    help="审题：清掉进度，从最后一道重新开始")
     a = ap.parse_args()
+
+    if a.audit:
+        return run_audit(limit=a.limit, only_missing=a.only_missing,
+                         reset=a.reset, check=a.check)
 
     todo = pending(a.difficulty)
     from collections import Counter as _C
@@ -364,6 +376,290 @@ def main() -> int:
                   % (ok, fail, (time.time() - t0) / 60), flush=True)
 
     print("\n完成：成功 %d，失败 %d，用时 %.1f 分钟" % (ok, fail, (time.time()-t0)/60))
+    return 0
+
+
+# ══════════════════════════════════════════════════════════════
+#  逐题审题：**从后往前**，一题一问、一题一写（本地大模型）
+# ══════════════════════════════════════════════════════════════
+#
+# 用户的要求：把题库里的题**一道一道**交给本地模型审——
+#   · 没有解析就补解析、没有答案就补答案；
+#   · 题干有问题就按模型给的修正稿修（修稿要过规范才写）；
+#   · 一题一次、从后往前、不怕慢（这是个长期活）。
+#
+# 两条安全线（都**不是**"替模型判断"，只是防止把库写坏）：
+#   1. **已有的答案/解析不覆盖**——用户说的是"没有就补上"；
+#      模型若与库里的答案冲突，只记进备注，交给人看。
+#   2. 题干修正稿必须过 `normalize` + `conform`，且模型要同时在 `<备注>`
+#      里说明题干确实有问题——两道门都过才动题干。
+# 模型回了什么、改了什么，逐条落到 `数据/录题/大模型审题.jsonl`，便于复核。
+
+AUDIT_SYSTEM = (
+    "你是高中数学老师，正在**一道一道审题**。给你一道题和它现在的状态，你要：\n"
+    "1. 判断题干本身有没有问题（条件矛盾、缺条件、缺图、抄错符号、设问不完整…）；\n"
+    "2. 给出答案；\n"
+    "3. 给出完整、简洁的解析。\n\n"
+    "严格按下面四个标签回答，不要有别的内容：\n\n"
+    "<题干>\n"
+    "题干**确实有问题**时，这里写修正后的**完整题干**（保留原有的 LaTeX 写法与配图引用）；"
+    "题干没问题就写：无\n"
+    "</题干>\n"
+    "<答案>\n"
+    "（选择题只写字母，如 A 或 ACD；填空题只写结果；解答题写最终结论）\n"
+    "</答案>\n"
+    "<解析>\n"
+    "（可以含 LaTeX 公式，行内用 $…$，行间用 \\[ … \\]）\n"
+    "</解析>\n"
+    "<备注>\n"
+    "（一句话：题干有什么问题；没问题就写：无）\n"
+    "</备注>\n\n"
+    "注意：\n"
+    "- 库里已经有的答案/解析**不要改写**；若与你的结论明显冲突，写在备注里。\n"
+    "- LaTeX 里不要写中文，中文放公式外面或用 \\text{} 包起来。\n"
+    "- 不要用 \\begin{enumerate}，小问直接写「(1)」「(2)」。\n"
+    "- 解析要能让人看懂，但别啰嗦。"
+)
+
+AUDIT_DIR = Path(__file__).resolve().parent.parent / "数据" / "录题"
+AUDIT_CURSOR = AUDIT_DIR / "大模型审题进度.json"
+AUDIT_JSONL = AUDIT_DIR / "大模型审题.jsonl"
+_NONE_WORDS = {"无", "无。", "なし", "-", "—", "none", "None", "（无）", "(无)"}
+
+
+def build_audit_prompt(q: Question) -> str:
+    r"""把一道题（连同它现在的状态）交给模型。"""
+    parts = ["题型：%s" % q.type, "题干：%s" % q.stem]
+    if q.options:
+        parts.append("选项：")
+        for o in q.options:
+            parts.append("  %s. %s" % (o.label, o.text or "（图片选项）"))
+    parts.append("现在的状态：答案%s；解析%s" % (
+        ("已有：%s（不要改写）" % q.answer) if q.answer.strip() else "缺失（请补）",
+        "已有（不要重写）" if q.solution.strip() else "缺失（请补）"))
+    return "\n".join(parts)
+
+
+def parse_audit_reply(text: str) -> tuple[str, str, str, str]:
+    r"""(修正后的题干, 答案, 解析, 备注)。取不到就是空串，**不猜**。"""
+    stem = _block(text, "题干")
+    if stem.strip() in _NONE_WORDS:
+        stem = ""
+    note = _block(text, "备注")
+    if note.strip() in _NONE_WORDS:
+        note = ""
+    return stem, _block(text, "答案"), _block(text, "解析"), note
+
+
+def _stem_fix_ok(q: Question, new_stem: str) -> tuple[bool, str]:
+    r"""题干修正稿能不能用：先过规范，再要求它"看得出是同一道题"。
+
+    只做**防写坏**的检查，不代替模型判断：
+      · 太短（<8 字）直接不要；
+      · 过 `normalize` + `conform`，有一条不合规就不换；
+      · 原来的配图引用必须还在（模型重写题干时很容易把图弄丢）。
+    """
+    import copy
+    from . import conform
+    if len(new_stem.strip()) < 8:
+        return False, "修正稿太短"
+    old_imgs = set(re.findall(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}",
+                              q.stem or ""))
+    new_imgs = set(re.findall(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}",
+                              new_stem))
+    lost = old_imgs - new_imgs
+    if lost:
+        return False, "修正稿把配图弄丢了：%s" % "、".join(sorted(lost)[:2])
+    probe = copy.deepcopy(q)
+    probe.stem = new_stem
+    try:
+        norm.normalize(probe, norm.ENTRY)
+        viol = conform.run([probe])
+    except Exception as e:                       # 规范化炸了也不换
+        return False, "过不了规范：%s" % e
+    if viol:
+        return False, "过不了规范：%s（%s）" % (viol[0]["why"], viol[0]["check"])
+    return True, ""
+
+
+def audit_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str, dict]:
+    r"""审一道题并**立刻写盘**。返回 (是否成功, 说明, 记录)。
+
+    写库规则（严格按用户要求）：
+      · 答案栏是空的 → 填模型给的答案；
+      · 解析栏是空的 → 填模型给的解析；
+      · 题干：模型说有问题、且给了修正稿、且修正稿过规范 → 换；
+      · 库里已有的答案/解析**一个字都不动**（冲突只记备注）。
+    """
+    t0 = time.time()
+    try:
+        raw = call_model(build_audit_prompt(q), system=AUDIT_SYSTEM)
+    except urllib.error.URLError as e:
+        return False, "模型连不上：%s" % e, {}
+    except Exception as e:
+        _bump_attempts(q)
+        return False, "调用失败：%s: %s" % (type(e).__name__, e), {}
+
+    stem_fix, ans_raw, sol, note = parse_audit_reply(raw)
+    ans = clean_answer(q, ans_raw)
+
+    qs = store.load_all()
+    tgt = next((x for x in qs if x.key == q.key), None)
+    if tgt is None:
+        return False, "题不在库里了", {}
+
+    actions: list[str] = []
+    conflict = ""
+    if ans and not tgt.answer.strip():
+        tgt.answer = ans
+        actions.append("补答案=%s" % ans)
+    elif ans and tgt.answer.strip() and ans != tgt.answer.strip():
+        conflict = "库里答案 %s / 模型答案 %s" % (tgt.answer.strip(), ans)
+    if sol and not tgt.solution.strip():
+        tgt.solution = sol
+        actions.append("补解析(%d字)" % len(sol))
+
+    stem_note = ""
+    if stem_fix and note:
+        ok, why = _stem_fix_ok(tgt, stem_fix)
+        if ok:
+            tgt.stem = stem_fix
+            actions.append("修题干")
+        else:
+            stem_note = "题干修正稿没用上：%s" % why
+
+    if actions or conflict or note or stem_note:
+        tgt.meta["audit_at"] = time.strftime("%Y-%m-%d %H:%M")
+        tgt.meta["audit_model"] = MODEL
+        # 补答案/补解析也算"本地模型解出来的"——这样 `amti.py diff` 会把它
+        # 归到「求解写入」那一栏（本来就该如此），不会误报成"存量被偷改"。
+        if any(("补答案" in a) or ("补解析" in a) for a in actions):
+            tgt.meta["solved_by"] = MODEL
+            tgt.meta["solved_at"] = time.strftime("%Y-%m-%d %H:%M")
+        if note:
+            tgt.meta["audit_note"] = note
+        if conflict:
+            tgt.meta["audit_conflict"] = conflict          # 界面标黄，人工复核
+        if stem_note:
+            tgt.meta["audit_warn"] = stem_note
+        if not (tgt.answer or "").strip() or not (tgt.solution or "").strip():
+            tgt.meta["audit_incomplete"] = True            # 还是缺东西，下次再说
+        else:
+            tgt.meta.pop("audit_incomplete", None)
+    else:
+        tgt.meta["audit_at"] = time.strftime("%Y-%m-%d %H:%M")
+        tgt.meta["audit_model"] = MODEL
+        tgt.meta.pop("audit_note", None)
+        tgt.meta.pop("audit_conflict", None)
+        tgt.meta.pop("audit_warn", None)
+        tgt.meta.pop("audit_incomplete", None)
+
+    norm.normalize(tgt, norm.ENTRY)
+    vol = vmap.get(q.key, 1)
+    store.rewrite_volume(vol, [x for x in qs if vmap.get(x.key, 1) == vol])
+
+    rec = {"key": q.key, "用时秒": round(time.time() - t0),
+           "动作": actions, "备注": note, "冲突": conflict, "题干提醒": stem_note,
+           "模型": MODEL}
+    if note or stem_note or conflict or actions:
+        rec["原始回复"] = raw[-4000:]
+    msg = ("；".join(actions) if actions else "无需改动") + \
+        ("  ⚠ " + conflict if conflict else "") + \
+        ("  ✎ " + note if note else "")
+    return True, msg, rec
+
+
+def _load_cursor() -> dict:
+    if AUDIT_CURSOR.exists():
+        try:
+            return json.loads(AUDIT_CURSOR.read_text(encoding="utf-8"))
+        except Exception:
+            log.warning("审题进度文件坏了，从头开始", exc_info=True)
+    return {}
+
+
+def _save_cursor(d: dict) -> None:
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    AUDIT_CURSOR.write_text(json.dumps(d, ensure_ascii=False, indent=1),
+                            encoding="utf-8")
+
+
+def audit_queue(cursor: dict, *, only_missing: bool = False) -> list[Question]:
+    r"""**从后往前**排好的审题队列。
+
+    起点用 key 锚定（不用下标）——库在跑的过程中会变，下标会漂。
+    """
+    qs = list(reversed(store.load_all()))
+    if only_missing:
+        qs = [q for q in qs if not (q.answer or "").strip()
+              or not (q.solution or "").strip()]
+    start = (cursor or {}).get("下一个key") or ""
+    if start:
+        idx = next((i for i, q in enumerate(qs) if q.key == start), None)
+        if idx is not None:
+            qs = qs[idx:]
+    return qs
+
+
+def run_audit(*, limit: int = 0, only_missing: bool = False,
+              reset: bool = False, check: bool = False) -> int:
+    r"""审题主循环：一题一问、一题一写、随时可停可续。"""
+    if reset and AUDIT_CURSOR.exists():
+        AUDIT_CURSOR.unlink()
+    cursor = _load_cursor()
+    todo = audit_queue(cursor, only_missing=only_missing)
+    print("审题队列：%d 道（从后往前%s）；上次停在 %s"
+          % (len(todo), "，只审缺答案/解析的" if only_missing else "",
+             cursor.get("下一个key") or "（还没开始）"))
+    if check:
+        try:
+            call_model("回一个字：好", timeout=120, system=AUDIT_SYSTEM)
+            print("模型连通 ✓  %s" % MODEL)
+        except Exception as e:
+            print("模型不通 ✗  %s" % e)
+        return 0
+    if not todo:
+        print("审完了")
+        return 0
+    if limit:
+        todo = todo[:limit]
+
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    vmap = volume_map()
+    n_ans = n_sol = n_stem = n_note = n_bad = 0
+    t0 = time.time()
+    for i, q in enumerate(todo, 1):
+        try:
+            good, msg, rec = audit_one(q, vmap)
+        except KeyboardInterrupt:
+            print("\n被中断，进度已存", flush=True)
+            raise
+        el = time.time() - t0
+        if good:
+            acts = rec.get("动作", [])
+            n_ans += any("补答案" in a for a in acts)
+            n_sol += any("补解析" in a for a in acts)
+            n_stem += any(a == "修题干" for a in acts)
+            n_note += bool(rec.get("备注"))
+        else:
+            n_bad += 1
+        line = "[%d/%d] %s  %s" % (i, len(todo), q.key, msg)
+        print(line, flush=True)
+        with (AUDIT_JSONL).open("a", encoding="utf-8") as f:
+            f.write(json.dumps({**rec, "说明": msg, "成功": good},
+                               ensure_ascii=False) + "\n")
+        # 进度锚点：**记下一道的 key**，这样停了也能从断点接上
+        nxt = todo[i].key if i < len(todo) else ""
+        _save_cursor({"下一个key": nxt, "已审": cursor.get("已审", 0) + i,
+                      "补答案": n_ans, "补解析": n_sol, "修题干": n_stem,
+                      "有备注": n_note, "失败": n_bad,
+                      "最后更新": time.strftime("%Y-%m-%d %H:%M:%S"),
+                      "最后一道": q.key})
+        if i % 5 == 0:
+            print("   —— 已审 %d：补答案 %d、补解析 %d、修题干 %d、有备注 %d、失败 %d"
+                  "，用时 %.1f 分钟 ——"
+                  % (i, n_ans, n_sol, n_stem, n_note, n_bad, el / 60), flush=True)
+    print("\n本轮完成：%d 道，用时 %.1f 分钟" % (len(todo), (time.time() - t0) / 60))
     return 0
 
 
@@ -417,6 +713,43 @@ def _selftest() -> int:
     check("多选答出单字母给提示", bool(answer_hint(q2, "B")))
     check("多选多字母无提示", not answer_hint(q2, "ABD"))
     check("没给出答案要给提示", bool(answer_hint(q1, "")))
+
+    # ── 审题模式：题干/答案/解析/备注 四段 ──────────────────────────
+    # 实测坑：模型大多数时候在 <题干> 里写「无」，那一栏必须当"不动题干"，
+    # 不然每道题都会拿「无」去覆盖题干（灾难）。
+    check("题干写「无」= 不动题干",
+          parse_audit_reply("<题干>无</题干><答案>B</答案><解析>x</解析>"
+                            "<备注>无</备注>") == ("", "B", "x", ""))
+    check("题干给修正稿时才取",
+          parse_audit_reply("<题干>已知 $x>0$，求…</题干><答案>B</答案>"
+                            "<解析>x</解析><备注>题干漏了 $x>0$</备注>")
+          == ("已知 $x>0$，求…", "B", "x", "题干漏了 $x>0$"))
+    check("备注「无」当空", parse_audit_reply("<备注>无</备注>")[3] == "")
+    check("审题缺标签不炸", parse_audit_reply("") == ("", "", "", ""))
+
+    # 题干修正稿的防写坏检查
+    q3 = Question(key="t/3", type="fill_in_blank", stem="已知 $x$ 的方程为\\fillin[]。")
+    check("修正稿太短 → 不换", not _stem_fix_ok(q3, "无")[0])
+    q4 = Question(key="t/4", type="single_choice",
+                  stem="如图，" + r"\includegraphics[width=0.4\linewidth]{b7124aa7bf01623d.png}" + " 则 $x=$\paren[A]")
+    ok, why = _stem_fix_ok(q4, "换个说法，但没有图")
+    check("修正稿丢配图 → 不换", not ok and "配图" in why, why)
+    ok2, why2 = _stem_fix_ok(
+        q4, r"如图，$\triangle ABC$ 中 $AB=2$，" + "\n\n" +
+        r"\includegraphics[width=0.4\linewidth]{b7124aa7bf01623d.png}" + "\n\n则 $x=$\paren[A]")
+    check("修正稿保留配图且合规 → 换", ok2, why2)
+
+    # ── 队列：从后往前，且用 key 锚定续跑 ────────────────────────
+    qs = store.load_all()
+    tail = audit_queue({})
+    check("审题队列是倒序", bool(tail) and tail[0].key == qs[-1].key,
+          "%s vs %s" % (tail[0].key if tail else "-", qs[-1].key if qs else "-"))
+    if len(tail) > 3:
+        anchor = {"下一个key": tail[3].key}
+        check("按 key 续跑从锚点开始",
+              audit_queue(anchor)[0].key == tail[3].key)
+    check("锚点不存在时从头来（不报错）",
+          audit_queue({"下一个key": "不存在的/钥匙#1"})[0].key == qs[-1].key)
 
     print("solve 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0
