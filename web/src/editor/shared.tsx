@@ -286,25 +286,58 @@ export function QuestionRow({ q, onAdd }: { q: Q; onAdd: () => void }) {
   )
 }
 
-/** 高考题出处标签，如「2024新高考I卷 第1题」。
+/** 模拟题出处名的脏数据过滤器（与后端 `_LABEL_JUNK` 必须一致）。
+ *  老数据的 `meta.source_label` 常是卷头/页码（「满分：150 分…」「004」）。 */
+const LABEL_JUNK = /满分|考试时间|共\s*\d+\s*页|第\s*\d+\s*页|答题卡|评分标准|参考答案|须知|^\s*\d+\s*$/
+
+/** 把出处名洗干净：去扩展名、去 `_images` 这种录入后缀、去首尾符号 */
+function cleanHead(s: any): string {
+  return String(s ?? '').trim().replace(/\.(pdf|docx?)$/i, '')
+    .replace(/_images/g, '').replace(/^[\s_\-—·、]+|[\s_\-—·、]+$/g, '')
+}
+
+/** 模拟题的出处名；取不到详细信息就用「精选模拟题」（与后端 `_sim_head` 一致） */
+function simHead(q: Q): string {
+  const key = String(q.key || '')
+  if (key.startsWith('模拟题/') && key.includes('#')) {
+    const head = cleanHead(key.split('/').slice(1).join('/').split('#')[0])
+    if (head && !LABEL_JUNK.test(head)) return head
+  }
+  const meta = (q.meta || {}) as Record<string, any>
+  let head = cleanHead(meta.source_label)
+  if (head && !LABEL_JUNK.test(head) && head.length <= 40) return head
+  head = cleanHead(key.includes('/') ? key.split('/')[0] : '')
+  if (head && !LABEL_JUNK.test(head) && head.length >= 4 && head.length <= 40
+      && /[\u4e00-\u9fff]/.test(head)) return head
+  return '精选模拟题'
+}
+
+/** 出处标签：高考「2024新高考I卷 第1题」；模拟「卷名 第N题」/「精选模拟题 第N题」。
  *
  *  ⚠️ 与后端 `slidev_handout.source_label()` **必须保持一致** ——
- *  预览和导出不一致是本项目反复踩的坑。
- *  只给高考题加（模拟题出处杂乱，用户要求只标高真题）。
+ *  预览和导出不一致是本项目反复踩的坑（`测试/讲义测试.py` 会逐题比对）。
  */
 export function sourceLabel(q: Q | undefined): string {
-  if (!q || q.kind !== '高考') return ''
-  const meta = (q.meta || {}) as Record<string, any>
-  let region = String(meta.region || '').trim()
-  if (!region && q.key.includes('/')) {
-    const parts = q.key.split('/')
-    if (parts.length >= 3) region = parts[parts.length - 1].split('#')[0].trim()
+  if (!q) return ''
+  const key = String(q.key || '')
+  const no = key.includes('#') ? key.split('#').pop()!.trim() : ''
+  if (q.kind === '高考') {
+    const meta = (q.meta || {}) as Record<string, any>
+    let region = String(meta.region || '').trim()
+    if (!region && key.includes('/')) {
+      const parts = key.split('/')
+      if (parts.length >= 3) region = parts[parts.length - 1].split('#')[0].trim()
+    }
+    const year = String(meta.year || '').trim()
+    const head = `${year}${region}`
+    if (!head && !no) return ''
+    return no ? `${head} 第${no}题` : head
   }
-  const year = String(meta.year || '').trim()
-  const no = q.key.includes('#') ? q.key.split('#').pop()!.trim() : ''
-  const head = `${year}${region}`
-  if (!head && !no) return ''
-  return no ? `${head} 第${no}题` : head
+  if (q.kind === '模拟') {
+    const head = simHead(q)
+    return no ? `${head} 第${no}题` : head
+  }
+  return ''
 }
 
 /** 选项尺寸：**必须与后端 option_html() 一致**

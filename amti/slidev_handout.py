@@ -528,33 +528,88 @@ def convert_math(text: str) -> str:
     return "".join(parts)
 
 
-def source_label(q) -> str:
-    r"""高考题的出处标签，如「2024新高考I卷 第1题」。
+# 模拟题出处名的**脏数据过滤器**。
+#
+# 老数据的 `meta.source_label` 常是卷头/页码被误当卷名（实测：
+# 「满分：150 分，考试时间：120 分钟」「004」），直接拿来当标签很荒唐。
+# 命中这些词就当成"没有详细信息"→ 用兜底标签。
+_LABEL_JUNK = re.compile(
+    r"满分|考试时间|共\s*\d+\s*页|第\s*\d+\s*页|答题卡|评分标准|参考答案|须知|"
+    r"^\s*\d+\s*$")
 
-    为什么只给高考题加（用户要求）：讲义里注明「这是 2026 新课标 I 卷
-    第 7 题」会显得正式、也方便学生回查原卷。模拟题/练习册的出处
-    五花八门，加上反而杂乱。
 
-    数据来自题库元数据：
-        meta.year    2024            （年份）
-        meta.region  新高考I卷        （卷别）
-        key 里的 #N  第几题
+def _clean_head(s) -> str:
+    r"""把出处名洗干净：去扩展名、去 `_images` 这种录入后缀、去首尾符号。"""
+    s = re.sub(r"\.(pdf|docx?)$", "", str(s or "").strip(), flags=re.I)
+    return s.replace("_images", "").strip(" _-—·、")
+
+
+def _sim_head(q) -> str:
+    r"""模拟题的出处名。**取不到详细信息就用「精选模拟题」。**
+
+    三个来源，按可靠程度排：
+      1. `模拟题/<卷名>#N` 的 key 段——**key 是题库唯一真相**（3699 道走这条）；
+      2. `meta.source_label`——但老数据常是脏的（「满分：150 分…」「004」），要过滤；
+      3. key 的第一段（书册类，`2027千题册经典重点册（上）_images/085#12`）
+         → 洗成「2027千题册经典重点册（上）」。
+    都没有 → 「精选模拟题」（用户定的兜底话术）。
     """
-    if getattr(q, "kind", "") != "高考":
-        return ""
+    key = str(getattr(q, "key", "") or "")
+    if key.startswith("模拟题/") and "#" in key:
+        head = _clean_head(key.split("/", 1)[1].rsplit("#", 1)[0])
+        if head and not _LABEL_JUNK.search(head):
+            return head
     meta = getattr(q, "meta", None) or {}
-    year = str(meta.get("year") or "").strip()
-    region = str(meta.get("region") or "").strip()
-    # 卷别兜底：老数据可能没有 region，从 key 里取（高考真题汇编/2024/新高考I卷#1）
-    if not region and "/" in q.key:
-        parts = q.key.split("/")
-        if len(parts) >= 3:
-            region = parts[-1].split("#")[0].strip()
-    no = q.key.rsplit("#", 1)[1].strip() if "#" in q.key else ""
-    head = f"{year}{region}"
-    if not head and not no:
-        return ""
-    return f"{head} 第{no}题" if no else head
+    head = _clean_head(meta.get("source_label"))
+    if head and not _LABEL_JUNK.search(head) and len(head) <= 40:
+        return head
+    head = _clean_head(key.split("/", 1)[0] if "/" in key else "")
+    if (head and not _LABEL_JUNK.search(head) and 4 <= len(head) <= 40
+            and re.search(r"[\u4e00-\u9fff]", head)):
+        return head
+    return "精选模拟题"
+
+
+def source_label(q) -> str:
+    r"""出处标签，如「2024新高考I卷 第1题」「武汉市2027届高中毕业生九月调研考试 第13题」。
+
+    * **高考题**：`meta.year` + `meta.region`（老数据从 key 兜底），格式「2024新高考I卷 第1题」。
+    * **模拟题**：卷名 + 第 N 题（卷名怎么取见 `_sim_head`）；取不到就写
+      「精选模拟题 第 N 题」——用户的要求：**模拟题也要带标签**，没有详细信息
+      就用这句兜底。
+    * 其它 kind（目前没有）：不给标签。
+
+    标签在讲义里**并进题干同一行**（`（标签）题干…`），方便学生回查原卷。
+    """
+    kind = getattr(q, "kind", "")
+    key = str(getattr(q, "key", "") or "")
+    no = key.rsplit("#", 1)[1].strip() if "#" in key else ""
+    if kind == "高考":
+        meta = getattr(q, "meta", None) or {}
+        year = str(meta.get("year") or "").strip()
+        region = str(meta.get("region") or "").strip()
+        # 卷别兜底：老数据可能没有 region，从 key 里取（高考真题汇编/2024/新高考I卷#1）
+        if not region and "/" in key:
+            parts = key.split("/")
+            if len(parts) >= 3:
+                region = parts[-1].split("#")[0].strip()
+        head = f"{year}{region}"
+        if not head and not no:
+            return ""
+        return f"{head} 第{no}题" if no else head
+    if kind == "模拟":
+        head = _sim_head(q)
+        return f"{head} 第{no}题" if no else head
+    return ""
+
+
+def source_name(q) -> str:
+    r"""出处名（**不含题号**）：高考「2024新高考I卷」，模拟「<卷名>」/「精选模拟题」。
+
+    讲义封面的「，选自 X」用它——带题号读着别扭。
+    """
+    lab = source_label(q)
+    return lab.split(" 第")[0] if " 第" in lab else lab
 
 
 def _run_slidev_export(md: Path, pdf: Path, env: dict) -> tuple[bool, str]:
@@ -829,8 +884,12 @@ def build_markdown(questions, *, title: str, ratio: str = "16/9",
                    show_source: bool = False) -> str:
     """题目列表 → Slidev 讲义 markdown。"""
     extra = ""
-    if questions and questions[0].meta.get("source_label"):
-        extra = f"，选自 {questions[0].meta['source_label']}"
+    first = questions[0].meta.get("source_label") if questions else ""
+    if questions:
+        # 用**洗过的**出处名（模拟题走 `_sim_head`：脏数据过滤 + 「精选模拟题」兜底）
+        first = source_name(questions[0])
+    if first:
+        extra = f"，选自 {first}"
 
     parts = [FRONTMATTER.format(title=title, n=len(questions),
                                 ratio=ratio, extra=extra), TIGHT_SPACING_CSS]
@@ -838,9 +897,11 @@ def build_markdown(questions, *, title: str, ratio: str = "16/9",
 
     for i, q in enumerate(questions, 1):
         lines = []
-        # 题源标签（如「2024年新高考I卷」）默认不显示——讲义要页面干净
+        # 题源标签（如「2024年新高考I卷 第1题」「武汉市2027届… 第13题」）默认不显示
+        # ——讲义要页面干净。⚠️ 必须走 `source_label()`：直接读 `meta.source_label`
+        # 会把卷头/页码当标签印出来（实测「满分：150 分…」「008」）。
         if show_source:
-            tag = q.meta.get("source_label", "")
+            tag = source_label(q)
             if tag:
                 lines.append(f'<div class="p-point">{tag}</div>\n\n')
                 if spacer:
@@ -1051,7 +1112,7 @@ def build_from_blocks(blocks: list[dict], *, title: str, ratio: str = "16/9",
             page_no += 1
             body = []
             if show_source:
-                tag = q.meta.get("source_label", "")
+                tag = source_label(q)          # 同上：走洗过的出处名
                 if tag:
                     body.append(f'<div class="p-point">{tag}</div>\n\n')
                     if spacer:

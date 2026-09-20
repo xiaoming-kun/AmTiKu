@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from amti import slidev_handout as sh          # noqa: E402
 from amti import store                          # noqa: E402
+from amti.schema import Question                # noqa: E402
 
 
 # ── 后端：出处标签 ────────────────────────────────────────────
@@ -42,10 +43,51 @@ def test_gaokao_label_format():
     assert " 第" in lab, f"年份卷别与题号之间应有空格：{lab!r}"
 
 
-def test_non_gaokao_has_no_label():
-    """模拟题/练习册不加（用户要求只标高真题）。"""
-    q = next(q for q in store.load_cached() if q.kind != "高考")
-    assert sh.source_label(q) == "", f"{q.key} 不该有标签"
+def test_sim_label_from_key():
+    r"""模拟题也要带标签（用户要求：跟高考的标签类似）。
+
+    `模拟题/<卷名>#N` 的卷名直接取 key ——**key 是题库唯一真相**。
+    """
+    q = next(q for q in store.load_cached()
+             if q.kind == "模拟" and q.key.startswith("模拟题/") and "#" in q.key)
+    lab = sh.source_label(q)
+    assert lab, f"模拟题应有出处标签：{q.key}"
+    assert lab.endswith(f"第{q.key.rsplit('#', 1)[1]}题"), lab
+    assert " 第" in lab, f"卷名与题号之间应有空格：{lab!r}"
+    assert lab.split(" 第")[0] == q.key.split("/", 1)[1].rsplit("#", 1)[0], lab
+
+
+def test_sim_label_not_junk():
+    r"""书册类模拟题的标签不许把卷头/页码当卷名。
+
+    实测脏数据：「满分：150 分，考试时间：120 分钟」「004」——
+    直接用会印出「满分：150 分… 第1题」这种荒唐标签。
+    """
+    q = next(q for q in store.load_cached()
+             if q.kind == "模拟" and not q.key.startswith("模拟题/"))
+    lab = sh.source_label(q)
+    assert lab, f"模拟题应有出处标签：{q.key}"
+    assert not re.search(r"满分|考试时间|答题卡|^\s*\d+\s*$", lab.split(" 第")[0]), lab
+
+
+def test_sim_label_falls_back_to_jingxuan():
+    r"""没有详细信息 → 「精选模拟题」（用户定的兜底话术）。"""
+    q = Question(key="004#7", type="single_choice", stem="已知 $x$", answer="A",
+                 solution="解析无",
+                 meta={"book": "模拟题", "source_label": "满分：150 分，考试时间：120 分钟"})
+    assert q.kind == "模拟"
+    assert sh.source_label(q) == "精选模拟题 第7题", sh.source_label(q)
+
+
+def test_sim_label_shown_in_render():
+    r"""模拟题的标签要**真的印在题干那一行**（这才是用户要的效果）。"""
+    q = next(q for q in store.load_cached()
+             if q.kind == "模拟" and q.key.startswith("模拟题/") and "#" in q.key)
+    lab = sh.source_label(q)
+    out = sh.render_canvas_block({"type": "question", "key": q.key,
+                                  "x": 4, "y": 4, "w": 92, "showSource": True})
+    assert lab in out, f"模拟题的出处没进渲染：{lab!r}"
+    assert f"（{lab}）" in out, "标签要带括号并进题干"
 
 
 def test_render_puts_label_inline_with_stem():
