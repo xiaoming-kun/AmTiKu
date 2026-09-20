@@ -23,10 +23,15 @@ def main(path, do_commit, force=False):
     tex = "\n\n".join(store.render_question(q) for q in qs)
     pv = ingest.preview(tex, book="模拟题", label=label, update_force=force)
     print("count=%s dup=%s" % (pv["count"], pv["dup"]))
-    bad = pv["errors"] or pv["problems"] or pv["missing_images"]
+    # ⚠️ `spec.after` 也要拦：commit 里还有一道「规范复核不过就不录」的闸门，
+    # 只查 errors/problems 会白跑一次 commit 才被拒（实测第 29 场 #19）。
+    spec_after = pv["spec"]["after"]
+    bad = pv["errors"] or pv["problems"] or pv["missing_images"] or spec_after
     for k in ("errors", "problems", "missing_images"):
         if pv[k]:
             print("%s: %s" % (k, json.dumps(pv[k], ensure_ascii=False)[:1200]))
+    if spec_after:
+        print("spec.after: %s" % json.dumps(spec_after, ensure_ascii=False)[:1200])
     if bad:
         sys.exit("⛔ preview 不干净，不许入库")
     if not do_commit:
