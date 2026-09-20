@@ -23,6 +23,17 @@ def main(path, do_commit, force=False):
     tex = "\n\n".join(store.render_question(q) for q in qs)
     pv = ingest.preview(tex, book="模拟题", label=label, update_force=force)
     print("count=%s dup=%s" % (pv["count"], pv["dup"]))
+    # `merge` > 0 = 有题**指纹完全相同**已在库。整场录题里出现它，多半说明
+    # **这一整场就是重复卷**，只是队列的卷名和库里的 source_label 写法不同，
+    # 卷面标题预检没拦住（实测第 43 场：队列叫「2025年10月杭二高三月考」，
+    # 库里叫「杭州第二中学2025年10月高三年级适应性检测」，#17/#18 指纹 1.0）。
+    # 这时先停下来核对，别把同一场录两遍。
+    if pv["dup"]["merge"]:
+        print("⚠️ 有 %d 题指纹已在库，先核对是不是整场撞车：" % pv["dup"]["merge"])
+        for it in pv["items"]:
+            if it["same_key"]:
+                hits = it["dups"][:1]
+                print("   %s ←→ %s" % (it["key"], hits[0]["key"] if hits else "同 key"))
     # ⚠️ `spec.after` 也要拦：commit 里还有一道「规范复核不过就不录」的闸门，
     # 只查 errors/problems 会白跑一次 commit 才被拒（实测第 29 场 #19）。
     spec_after = pv["spec"]["after"]
