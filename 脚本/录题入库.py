@@ -45,21 +45,37 @@ def main(path, do_commit, force=False):
 
 
 def tidy(recs):
-    r"""相邻两个数学段之间没有分隔会拼成 `$$`，让 conform 的 `$…$` 配对错位、
-    把中文吞进数学模式（实测第 3 场 #7/#19 被闸门拒收）。补一个空格即可。
-    本项目行间公式一律 `\\[ \\]`，所以 `$$` 不可能是合法写法。
+    r"""两处固化下来的清洗（都是实测踩过、闸门会拒的写法）：
+
+    1. 相邻两个数学段之间没有分隔会拼成 `$$`，让 conform 的 `$…$` 配对错位、
+       把中文吞进数学模式（实测第 3 场 #7/#19 被闸门拒收）。补一个空格即可。
+       本项目行间公式一律 `\\[ \\]`，所以 `$$` 不可能是合法写法。
+    2. 生成脚本里用 Python **原始字符串** 写正文时，`\\n` 不会变成换行，
+       落库就成了正文里的两个字符（实测第 28 场 8 道题被闸门拒收）。
+       只认后面不接字母的那种，`\\neq`、`\\nu` 这类命令不受影响。
     """
+    import re
+    fake_nl = re.compile(r"\\n(?![a-zA-Z])")
     n = 0
     for r in recs:
-        for f in ("题干", "解析"):
+        for f in ("题干", "答案", "解析"):
             t = r.get(f) or ""
             if "$$" in t:
-                r[f] = t.replace("$$", "$ $")
                 n += t.count("$$")
+                t = t.replace("$$", "$ $")
+            t2, k = fake_nl.subn("\n", t)
+            r[f] = t2
+            n += k
+        opts = {}
         for k, v in list((r.get("选项") or {}).items()):
             if "$$" in v:
-                r["选项"][k] = v.replace("$$", "$ $")
                 n += v.count("$$")
+                v = v.replace("$$", "$ $")
+            v, k2 = fake_nl.subn("\n", v)
+            opts[k] = v
+            n += k2
+        if r.get("选项"):
+            r["选项"] = opts
     return n
 
 
