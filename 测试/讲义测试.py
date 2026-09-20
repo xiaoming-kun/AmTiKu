@@ -247,6 +247,59 @@ console.log(JSON.stringify(cases.map((q) => mod.sourceLabel(q))))
 """
 
 
+_NODE_PROBE_ANS = r"""
+// 把 qlatex.ts 里的 showAnswers 转出来，和后端 show_answers 逐字比对。
+import { execSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'amti-ans-'))
+const out = path.join(dir, 'qlatex.mjs')
+execSync(
+  `npx esbuild "src/lib/qlatex.ts" --bundle --format=esm --platform=node `
+  + `--alias:@=./src --outfile="${out}" --log-level=error`,
+  { cwd: '%s/web', stdio: 'pipe' })
+
+const mod = await import('file://' + out)
+const cases = JSON.parse(process.argv[2])
+console.log(JSON.stringify(cases.map((s) => mod.showAnswers(s))))
+"""
+
+
+def test_frontend_backend_answer_red_parity():
+    r"""答案的**红色渲染**前后端必须逐字一致。
+
+    用户要求「答案标红，一眼看到」。染红只能走数学模式（`\textcolor`）——
+    编辑器预览的 `RichText` **不解析 HTML**，塞 `<span style="color:red">`
+    会显示成字面量。所以两边各实现一份，**必须一模一样**：
+    不一样就会出现「预览是红的、导出 PDF 不是」（或反过来），而人只看其中一个。
+    """
+    samples = [
+        r"则 $A\cap B=$\paren[A]",
+        r"离心率为$\fillin[$\frac{3}{2}$]。",
+        r"答案\paren[见解析]",
+        r"$\fillin[2 或 3]$",
+        r"\paren[ACD]",
+        r"$\fillin[]$",                      # 空答案：不该被染
+    ]
+    backend = [sh.show_answers(s) for s in samples]
+
+    probe = ROOT / "测试" / "_answer_red_probe.mjs"
+    probe.write_text(_NODE_PROBE_ANS % ROOT, encoding="utf-8")
+    try:
+        r = subprocess.run(["node", str(probe), json.dumps(samples, ensure_ascii=False)],
+                           cwd=str(ROOT / "web"), capture_output=True, text=True, timeout=180)
+        assert r.returncode == 0, (r.stdout + r.stderr)[-500:]
+        frontend = json.loads(r.stdout.strip().splitlines()[-1])
+    finally:
+        probe.unlink(missing_ok=True)
+    for s, b, f in zip(samples, backend, frontend):
+        assert b == f, "答案渲染前后端不一致：\n  输入 %r\n  后端 %r\n  前端 %r" % (s, b, f)
+    # 红色必须真的出现在结果里（防止两边"一致地都不染红"）
+    assert all(sh.ANS_RED in b for s, b in zip(samples, backend) if "fillin[]" not in s), backend
+
+
 def test_frontend_backend_label_parity():
     """前端 sourceLabel 与后端 source_label 必须逐题一致。
 

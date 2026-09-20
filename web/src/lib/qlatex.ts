@@ -49,13 +49,50 @@ function stripAnswers(t: string): string {
   return s.replace(/＿＿＿＿\s*\{\}/g, '＿＿＿＿')
 }
 
-/** 答案宏 → 显示答案（教师版） */
-function showAnswers(t: string): string {
+/** 答案标红用的红（与讲义配色 --hc-accent 同值；和后端 `ANS_RED` 必须一致） */
+export const ANS_RED = '#d22116'
+
+/** 非数学的一段文字 → 红色数学（装进 `\text{}`，顺手转义 & % #） */
+function redSeg(s: string): string {
+  if (!s.trim()) return s
+  const esc = s.replace(/&/g, '\\&').replace(/%/g, '\\%').replace(/#/g, '\\#')
+  return `$\\textcolor{${ANS_RED}}{\\text{${esc}}}$`
+}
+
+/**
+ * 把答案串整段染红，其中的数学原样保留。
+ *
+ * ⚠️ 只能走数学模式（`\textcolor`），**不能塞 HTML**：编辑器预览的
+ * `RichText` 只把 `$…$` 交给 KaTeX、不解析 HTML，塞 `<span>` 会显示成字面量。
+ * 后端 `slidev_handout.red_answer` 是**同一条规则**，改一处必须改两处
+ * （`测试/讲义测试.py` 会逐字比对）。
+ */
+export function redAnswer(ans: string): string {
+  const a = String(ans || '').trim()
+  if (!a) return a
+  const out: string[] = []
+  const re = /\$([^$]+)\$/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(a))) {
+    if (m.index > last) out.push(redSeg(a.slice(last, m.index)))
+    out.push(`$\\textcolor{${ANS_RED}}{${m[1]}}$`)
+    last = m.index + m[0].length
+  }
+  out.push(redSeg(a.slice(last)))
+  return out.filter(Boolean).join('')
+}
+
+/** 答案宏 → 显示**红色**答案（教师版）
+ *
+ *  导出是为了让 `测试/讲义测试.py` 把它和后端 `show_answers` 逐字比对——
+ *  两边不一致的后果很隐蔽：**预览是红的、导出到 PDF 就不是**（或反过来）。 */
+export function showAnswers(t: string): string {
   return t
-    .replace(/\\paren\s*\[([^\]]*)\]/g, (_, a) => `（ ${a} ）`)
-    .replace(/\\fillin\s*\[([^\]]*)\]/g, '$1')
+    .replace(/\\paren\s*\[([^\]]*)\]/g, (_, a) => `（ ${redAnswer(a)} ）`)
+    .replace(/\\fillin\s*\[([^\]]*)\]/g, (_, a) => redAnswer(a))
     .replace(/\\fillin\s*\{\}/g, '＿＿＿＿')
-    .replace(/\\fillin\s*\{([^}]*)\}/g, '$1')
+    .replace(/\\fillin\s*\{([^}]*)\}/g, (_, a) => redAnswer(a))
     .replace(/\\fillin\b/g, '＿＿＿＿')
 }
 

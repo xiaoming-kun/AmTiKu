@@ -387,16 +387,61 @@ def strip_answers(text: str) -> str:
     return text
 
 
-def show_answers(text: str) -> str:
-    r"""把答案宏还原成可见文字（教师版）。
+# ── 答案标红 ──────────────────────────────────────────────────────────
+#
+# 用户要求：**答案要标红**，一眼就能看到。
+#
+# ⚠️ 染红只能走**数学模式** `\textcolor`，不能塞 HTML：
+# 编辑器预览走 `web/src/editor/shared.tsx` 的 `RichText`——它只把 `$…$`
+# 交给 KaTeX，**不解析 HTML**，塞 `<span style="color:red">` 在预览里会
+# 显示成字面量。前后端因此用**同一条规则**（`web/src/lib/qlatex.ts` 的
+# `redAnswer`），讲义测试里逐字比对，谁改一边都会红。
+ANS_RED = "#d22116"          # 与讲义配色里的 --hc-accent 同一个红
 
-    \paren[A] → （ A ）    \fillin[答案] → 答案
+_MATH_SPAN = re.compile(r"\$([^$]+)\$")
+
+
+def _red_seg(s: str) -> str:
+    r"""非数学的一段文字 → 红色数学（装进 `\text{}`，顺手转义 `&` `%` `#`）。"""
+    if not s.strip():
+        return s
+    esc = (s.replace("&", r"\&").replace("%", r"\%").replace("#", r"\#"))
+    return "$\\textcolor{%s}{\\text{%s}}$" % (ANS_RED, esc)
+
+
+def red_answer(ans: str) -> str:
+    r"""把答案串整段染红，其中的数学原样保留在数学模式里。
+
+    `$x=1$或$x=2$` → `$\textcolor{…}{x=1}$` + `$\textcolor{…}{\text{或}}$` + …
+    纯字母答案 `A` → `$\textcolor{…}{\text{A}}$`。
     """
-    text = re.sub(r"\\paren\s*\[([^\]]*)\]", lambda m: f"（ {m.group(1)} ）", text)
-    text = re.sub(r"\\fillin\s*\[([^\]]*)\]", r"\1", text)
-    # 空花括号：没答案就显示空位；有答案就显示答案
+    ans = (ans or "").strip()
+    if not ans:
+        return ans
+    out: list[str] = []
+    last = 0
+    for m in _MATH_SPAN.finditer(ans):
+        if m.start() > last:
+            out.append(_red_seg(ans[last:m.start()]))
+        out.append("$\\textcolor{%s}{%s}$" % (ANS_RED, m.group(1)))
+        last = m.end()
+    out.append(_red_seg(ans[last:]))
+    return "".join(x for x in out if x)
+
+
+def show_answers(text: str) -> str:
+    r"""把答案宏还原成**红色**可见文字（教师版）。
+
+    \paren[A] → （ $\textcolor{…}{\text{A}}$ ）    \fillin[答案] → 红色的答案
+    """
+    text = re.sub(r"\\paren\s*\[([^\]]*)\]",
+                  lambda m: "（ %s ）" % red_answer(m.group(1)), text)
+    text = re.sub(r"\\fillin\s*\[([^\]]*)\]",
+                  lambda m: red_answer(m.group(1)), text)
+    # 空花括号：没答案就显示空位；有答案就显示红色答案
     text = re.sub(r"\\fillin\s*\{\}", "＿＿＿＿", text)
-    text = re.sub(r"\\fillin\s*\{([^}}]*)\}", r"\1", text)
+    text = re.sub(r"\\fillin\s*\{([^}}]*)\}",
+                  lambda m: red_answer(m.group(1)), text)
     return text
 
 

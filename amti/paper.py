@@ -18,6 +18,32 @@ from . import generate as gen
 from .schema import Question
 from .render_tex import question_to_tex, source_tag
 
+# ── 答案标红（出卷子时）────────────────────────────────────────────────
+#
+# 用户要求：**答案要标红**，一眼能看到。
+# 只在**卷面上会显示答案**的时候才染（学生版里答案本来就不印，
+# 染了会把一对空括号也弄成红的）；**题库里存的 LaTeX 一个字都不动**——
+# 这纯粹是出卷子这一步的修饰，和 `tikzfig.to_image` 一个性质。
+#
+# 为什么整块染色（把 `\paren[A]` 连括号一起包进 color 组）而不是只染里面的
+# 字母：`exam-zh` 要按括号里的内容算宽度，把 `\textcolor` 塞进参数里有风险。
+#
+# ⚠️ **必须用"命名颜色"**：exam-zh 会把题干捕获进宏里，正文里写
+# `{\color{#d22116}…}` 的 `#` 会被当成宏参数符，直接报
+# `Illegal parameter number in definition of \XC@@tmp`（实测编译失败）。
+# 所以导言区 `\definecolor`，正文只写颜色名。
+ANS_RED = "amtiAnsRed"                     # 颜色名（定义见导言区）
+ANS_RED_HEX = "D22116"                     # 与讲义/网页同一个红
+_ANS_DEFINE = r"\definecolor{%s}{HTML}{%s}" % (ANS_RED, ANS_RED_HEX)
+
+_ANS_MACRO = re.compile(r"(\\paren\s*\[[^\]]*\]|\\fillin\s*\[[^\]]*\]|"
+                        r"\\fillin\s*\{[^}]*\})")
+
+
+def red_answer_macros(tex: str) -> str:
+    r"""把 `\paren[…]` / `\fillin[…]` 整块染红（**只在出卷子时调用**）。"""
+    return _ANS_MACRO.sub(lambda m: "{\\color{%s}%s}" % (ANS_RED, m.group(1)), tex)
+
 # 难度 → 显示
 DIFF_STARS = {"简单题": 1, "中档题": 2, "难题": 3}
 
@@ -283,6 +309,9 @@ def _q_tex(q: Question, mode: str, show_answers: bool,
     # `to_image` 只换**渲染过**的；没渲染过的原样走内联 TikZ。
     from . import tikzfig as _tz
     tex, _n = _tz.to_image(tex, q.figures)
+    # **答案标红**：只在"卷面上真的显示答案"时才染（学生版不染，见模块顶部说明）。
+    if show_answers:
+        tex = red_answer_macros(tex)
     if mode != "test":
         return tex
     # 测试模式：题干第一行前加灰色前缀（`\small\color{gray}` 不抢视线）。
@@ -369,6 +398,10 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"\documentclass{exam-zh}",
         r"\usepackage{siunitx}",
         r"\usepackage{multicol}",
+        # 答案标红要用 `\color`（exam-zh 自己多半也装过 xcolor，
+        # 这里显式装一次，免得换模板时突然没有颜色宏）。
+        r"\usepackage{xcolor}",
+        _ANS_DEFINE,
         # 有些题的配图是 pgfplots 画的（`\begin{axis}`），没有这个包编译不了。
         # `compat` 是 pgfplots 自己要求的版本声明，不写会警告。
         r"\usepackage{pgfplots}",
@@ -675,9 +708,10 @@ def _answers_section(numbering: list[tuple[int, Question]]) -> list[str]:
         # 免得出现"题号后面空着"的答案册
         if q.type == "detailed_answer" and not ans:
             ans = "见解析"
-        # 题号**和答案**都加粗——对答案的时候是扫的，字重比字号管用
-        out.append(r"\noindent\textbf{%d.}\quad\textbf{%s}"
-                   % (no_, ans or "（暂无）"))
+        # 题号**和答案**都加粗——对答案的时候是扫的，字重比字号管用；
+        # 答案另外**标红**（用户要求：一眼能对上）。
+        out.append(r"\noindent\textbf{%d.}\quad{\color{%s}\textbf{%s}}"
+                   % (no_, ANS_RED, ans or "（暂无）"))
         out.append("")
         if sol:
             out.append(sol)

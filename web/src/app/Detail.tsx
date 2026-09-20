@@ -393,7 +393,7 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
           ② 输入随手写没问题（全角、小写、带顿号都认），由后端统一规整；
           ③ 规整不了就**明确报错**，不猜、不硬塞。 */}
       <div className="mb-1 mt-5 flex items-baseline gap-2 text-[11px] font-semibold tracking-wide text-ink-faint">
-        <span>答案</span>
+        <span className="text-red-600">答案</span>
         {!ansEdit && (
           <button onClick={() => { setAnsEdit(true); setAnsText(q.answer || ''); setAnsErr('') }}
             className={`press rounded border px-1.5 py-[1px] text-[10.5px] font-normal transition-colors ${
@@ -437,7 +437,8 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
           {ansErr && <div className="mt-1.5 text-[11.5px] text-warn">✗ {ansErr}</div>}
         </div>
       ) : q.answer ? (
-        <div className="q-answer text-[14px] font-medium text-has">{renderBlocks(q.blocks?.answer)}</div>
+        // 答案**标红**（用户要求：要一眼看到）。学生版/题目列表不受影响。
+        <div className="q-answer text-[14px] font-semibold text-red-600">{renderBlocks(q.blocks?.answer)}</div>
       ) : (
         <div className="text-[12.5px] text-ink-faint">（暂时没有答案）</div>
       )}
