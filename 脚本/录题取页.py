@@ -63,14 +63,19 @@ def main(no):
         f.unlink()
     report = {}
     for tag, files in (("试卷", it["试卷"]), ("答案", it["答案"])):
-        cands = [src / f for f in files if (src / f).exists()]
+        cands = [src / f for f in files
+                 if (src / f).exists() and "副本" not in f]
         if not cands:
             report[tag] = "缺文件"
             continue
-        p = cands[0]                                  # 只取第一份，副本不用
-        report[tag] = (render if p.suffix.lower() == ".pdf" else unzip_docx)(
-            p, out, tag)
-        report[tag + "_文件"] = p.name
+        # 一场可能有多份答案文件（例：「小题解析」+「答案」各一册），
+        # 只取第一份会把解答题的解析整块漏掉——所以每份都要取，
+        # 依次标 答案 / 答案2 / 答案3。
+        for i, p in enumerate(cands, 1):
+            t = tag if i == 1 else "%s%d" % (tag, i)
+            report[t] = (render if p.suffix.lower() == ".pdf" else unzip_docx)(
+                p, out, t)
+            report[t + "_文件"] = p.name
     print("%s → %s" % (it["卷名"], report))
     print("页图目录:", out)
 
