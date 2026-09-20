@@ -63,7 +63,7 @@ def build_prompt(q: Question) -> str:
 
 
 def call_model(prompt: str, *, timeout: int = 600,
-               system: str = SYSTEM) -> str:
+               system: str = SYSTEM, reasoning_effort: str = "") -> str:
     r"""问模型一次，返回正文。
 
     ⚠️ **`max_tokens` 必须给足。** 这是推理模型：它先在 `reasoning_content`
@@ -72,14 +72,23 @@ def call_model(prompt: str, *, timeout: int = 600,
     正文返回**空字符串**——白等一趟，还查不出原因。
     所以这里给 8000，并在失败信息里带上 `finish_reason`：
     被截断（`length`）和没按格式（`stop`）是两回事，得能分开看。
+
+    `reasoning_effort="none"` 能**关掉思考**（LM Studio 认这个字段）——实测同一道题
+    从 361 秒 / 思考 5934 字 / 正文被截断，变成 **8 秒 / 思考 0 字 / 正文正常**。
+    ⚠️ 注意 `/no_think`（提示词软开关）和 `chat_template_kwargs.enable_thinking=false`
+    **在这个模型上都无效**（照样想 7000 字），别用那两个。
+    只给"纯读取"的任务关（如从现成解析里取答案）；**写解析必须留着思考**。
     """
-    body = json.dumps({
+    payload = {
         "model": MODEL,
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": prompt}],
         "temperature": 0.2,
         "max_tokens": MAX_TOKENS,
-    }).encode("utf-8")
+    }
+    if reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(API, data=body,
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -762,7 +771,9 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     r"""补一道题的那一栏并**立刻写盘**。"""
     system = FILL_ANS_SYSTEM if kind == "ans" else FILL_SOL_SYSTEM
     try:
-        raw = call_model(_fill_prompt(q, kind), system=system)
+        # 补答案 = 纯读取任务 → 关思考（8 秒 vs 361 秒）；写解析保留思考
+        raw = call_model(_fill_prompt(q, kind), system=system,
+                         reasoning_effort="none" if kind == "ans" else "")
     except urllib.error.URLError as e:
         return False, "模型连不上：%s" % e
     except Exception as e:
