@@ -549,13 +549,39 @@ def run(src: Path, *, phase: str = "run", label: str = "") -> dict:
     return out
 
 
+# 交接文档 §5 那份 JSON 用的是**英文键**（`no`/`type`/`stem`/`options`/`answer`/`solution`），
+# 流水线内部的成品记录用**中文键**（`题号`/`题型`/`题干`/`选项`/`答案`/`解析`）。
+#
+# **两份都收**：文档是给大模型看的、代码是给流水线用的，让它们对不上是纯坑——
+# 实测照着文档写好的 JSON 直接喂进 `rec_to_question`，第一行就
+# `KeyError: '题号'`（交接文档 §11 的例子当时就是这么写的，等于跑不通）。
+_DOC_KEYS = {"no": "题号", "type": "题型", "stem": "题干", "options": "选项",
+             "answer": "答案", "solution": "解析", "pages": "页码", "quote": "原文",
+             "figure": "有图", "table": "有表"}
+
+
+def _as_rec(rec: dict) -> dict:
+    r"""英文键（交接文档 §5）→ 中文键（内部）。本来就是中文键的原样返回。"""
+    if not isinstance(rec, dict) or "题号" in rec:
+        return rec
+    out = dict(rec)
+    for en, zh in _DOC_KEYS.items():
+        if en in out and zh not in out:
+            out[zh] = out.pop(en)
+    return out
+
+
 def rec_to_question(rec: dict, label: str) -> Question:
     r"""成品记录 → 入库用的 `Question`，**并走项目唯一的规范化入口**。
+
+    `rec` 中英文键都认（见 `_as_rec`）：交接文档 §5 给大模型看的 JSON 和
+    流水线内部的成品记录，键名不一样。
 
     ⚠️ 闸门只保证"数据齐、不脏"，**不等于符合项目规范**。实测：回原卷修完
     13 道之后 `conform` 报 35 处（句末标点 18、答案写法 14、填空位数 3），
     全都得靠 `normalize(ENTRY)` ——少了这一步，修完的题照样不合规。
     """
+    rec = _as_rec(rec)
     q = Question(
         key="模拟题/%s#%d" % (label, rec["题号"]), type=rec["题型"],
         stem=rec["题干"],
@@ -617,6 +643,20 @@ def _selftest() -> int:
     check("题型按题号：9-11 多选", all(BY_NO[i] == "多选" for i in range(9, 12)))
     check("题型按题号：12-14 填空", all(BY_NO[i] == "填空" for i in range(12, 15)))
     check("题型按题号：15-19 解答", all(BY_NO[i] == "解答" for i in range(15, 20)))
+
+    # 键名兼容：交接文档 §5 的**英文键**（给大模型看的）与流水线的**中文键**都要认。
+    # 实测坑：照文档写好的 JSON 直接喂 `rec_to_question`，第一行就 KeyError: '题号'。
+    doc_rec = {"no": 13, "type": "fill_in_blank",
+               "stem": "若 $S_{15}=5(a_{2}+a_{7}+a_{k})$，则正整数 $k$ 的值为\\fillin{}",
+               "options": {}, "answer": "15", "solution": "解析无", "pages": [3]}
+    q1 = rec_to_question(doc_rec, "键名自检")
+    q2 = rec_to_question({"题号": 13, "题型": "fill_in_blank", "题干": doc_rec["stem"],
+                          "选项": {}, "答案": "15", "解析": "解析无"}, "键名自检")
+    check("英文键（文档 §5）能直接入库",
+          q1.key == "模拟题/键名自检#13" and q1.answer == "15", q1.key + repr(q1.answer))
+    check("英文键与中文键结果一致",
+          (q1.key, q1.answer, q1.stem) == (q2.key, q2.answer, q2.stem))
+    check("空位被规范化填上答案", "\\fillin[15]" in q1.stem, q1.stem)
 
     # 选项切分：**一行并排四个**（A10 的常态）
     stem, opts = split_stem_options(["1. 已知集合 ( )",
