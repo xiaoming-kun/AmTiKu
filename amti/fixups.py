@@ -53,6 +53,22 @@ CHANGE_DIR = PKG / "变更记录"
 # 可选字段：type / stem / answer / solution / options（[[标签, 文字], …]）
 #           / drop_figures（True 表示这道题的配图是错的，撤掉）
 
+# ── 已订正、且其后又被别的订正改过：**注销账目** ─────────────────────
+#
+# 这些条目当初是对的，但它们 `expect` 记的是"改动前"的样子；题目后来又
+# 被后面的订正改过（例如题干被补充完整、题型又被改对），于是这张账
+# 既不是"还没改"、也不是"已改成 set 的样子"，全表核对就把它当冲突，
+# **整批拒绝执行**（实测：19 条新订正被这 6 条挡住）。
+# 历史留在 `变更记录/`，这里只注销账目，不再核对。
+RETIRED_KEYS: set[str] = {
+    "2027千题册创新拔高册（上）_images/305#16",
+    "2027千题册创新拔高册（下）_images/196#50",
+    "2027千题册经典重点册（下）_images/020#30",
+    "2027 高考数学考前模拟十二套卷_images/030#11",
+    "2027千题册经典重点册（上）_images/028#51",
+    "2027千题册经典重点册（下）_images/222#52",
+}
+
 PATCHES: list[dict] = [
     {
         "key": "高考真题汇编/1993/全国卷（文）#16",
@@ -513,6 +529,139 @@ PATCHES: list[dict] = [
         "src": '答案是一个取值范围 $\\frac{\\sqrt5-1}{2}<a<1$，不是选项字母；2023 全国乙卷（理）第 16 题本就是填空题',
         "expect": {'type': 'detailed_answer', 'stem': '的取值范围是'},
         "set": {'type': 'fill_in_blank', 'stem': '设 $a\\in(0,1)$，若函数 $f(x)=a^x+(1+a)^{x+1}$ 在 $(0,+\\infty)$ 上单调递增，则 $a$ 的取值范围是\\fillin[$\\frac{\\sqrt5-1}{2}<a<1$]', 'answer': '$\\frac{\\sqrt5-1}{2}<a<1$'},
+    },
+    {
+        "key": '2026 高考数学全国模拟精选_images/024#4',
+        "why": '题型标错：解答结论是 ABC（多选），库里标成了单选',
+        "src": '批文件《第04批_难题_100道.md》的解答结论：ABC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2026 高考数学全国模拟精选_images/026#11',
+        "why": '题型标错：解答结论是 ABC（多选），库里标成了单选',
+        "src": '批文件《第04批_难题_100道.md》的解答结论：ABC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2026 高考数学全国模拟精选_images/031#24',
+        "why": '题型标错：解答结论是 ACD（多选），库里标成了单选',
+        "src": '批文件《第04批_难题_100道.md》的解答结论：ACD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2026 高考数学全国模拟精选_images/122#25',
+        "why": '题型标错：解答结论是 ACD（多选），库里标成了单选',
+        "src": '批文件《第04批_难题_100道.md》的解答结论：ACD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/015#11',
+        "why": '题型标错：解答结论是 ABD（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：ABD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/020#10',
+        "why": '题型标错：解答结论是 ACD（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：ACD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/025#9',
+        "why": '题型标错：解答结论是 AD（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：AD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/030#10',
+        "why": '题型标错：解答结论是 AC（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：AC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/036#10',
+        "why": '题型标错：解答结论是 AC（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：AC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/036#11',
+        "why": '题型标错：解答结论是 AC（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：AC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/042#11',
+        "why": '题型标错：解答结论是 BCD（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：BCD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/059#10',
+        "why": '题型标错：解答结论是 ABD（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：ABD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/059#11',
+        "why": '题型标错：解答结论是 BCD（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：BCD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/063#10',
+        "why": '题型标错：解答结论是 AC（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：AC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027 高考数学考前模拟十二套卷_images/063#11',
+        "why": '题型标错：解答结论是 ACD（多选），库里标成了单选',
+        "src": '批文件《第05批_难题_100道.md》的解答结论：ACD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027千题册创新拔高册（下）_images/161#20',
+        "why": '题型标错：解答结论是 ABC（多选），库里标成了单选',
+        "src": '批文件《第08批_难题_100道.md》的解答结论：ABC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '2027千题册经典重点册（上）_images/054#118',
+        "why": '题型标错：解答结论是 ABC（多选），库里标成了单选',
+        "src": '批文件《第09批_难题_100道.md》的解答结论：ABC',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '手工录入/001#12',
+        "why": '题型标错：解答结论是 ACD（多选），库里标成了单选',
+        "src": '批文件《第13批_难题_100道.md》的解答结论：ACD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
+    },
+    {
+        "key": '手工录入/001#25',
+        "why": '题型标错：解答结论是 ACD（多选），库里标成了单选',
+        "src": '批文件《第13批_难题_100道.md》的解答结论：ACD',
+        "expect": {'type': 'single_choice'},
+        "set": {'type': 'multi_choice'},
     },
 ]
 
@@ -1407,6 +1556,9 @@ def run(*, yes: bool = False, quiet: bool = False) -> dict:
     done: list[str] = []
     problems: list[str] = []
     for spec in PATCHES:
+        if spec["key"] in RETIRED_KEYS:      # 账目已注销（见 RETIRED_KEYS 的说明）
+            done.append(spec["key"] + "（已注销）")
+            continue
         q = tgt.get(spec["key"])
         if q is None:
             problems.append("%s：库里没有这道题" % spec["key"])
