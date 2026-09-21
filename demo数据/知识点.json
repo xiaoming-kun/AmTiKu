@@ -1,0 +1,79 @@
+{
+  "topics": [
+    {
+      "title": "一、集合与逻辑",
+      "sections": [
+        {
+          "title": "1 集合",
+          "raw_title": "1 集合",
+          "stars": 0,
+          "points": [
+            {
+              "title": "1.1 集合的运算  ·/6 ★",
+              "raw_title": "1.1 集合的运算  ·/6 ★",
+              "stars": 1,
+              "fields": {
+                "核心概念": [
+                  "交集：两个集合的公共元素组成的集合。"
+                ]
+              },
+              "source": "subsection",
+              "id": "1.1.1",
+              "difficulty": "简单题"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "二、不等式",
+      "sections": [
+        {
+          "title": "1 基本不等式",
+          "raw_title": "1 基本不等式",
+          "stars": 0,
+          "points": [
+            {
+              "title": "1.1 基本不等式  ·/6 ★",
+              "raw_title": "1.1 基本不等式  ·/6 ★",
+              "stars": 1,
+              "fields": {
+                "核心公式": [
+                  "$a,b>0$ 时 $a+b\\geqslant 2\\sqrt{ab}$，当且仅当 $a=b$ 取等。"
+                ]
+              },
+              "source": "subsection",
+              "id": "2.1.1",
+              "difficulty": "简单题"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "三、函数",
+      "sections": [
+        {
+          "title": "1 二次函数",
+          "raw_title": "1 二次函数",
+          "stars": 0,
+          "points": [
+            {
+              "title": "1.1 二次函数的图象与最值  ·/6 ★",
+              "raw_title": "1.1 二次函数的图象与最值  ·/6 ★",
+              "stars": 1,
+              "fields": {
+                "常用方法": [
+                  "配方求最值，注意对称轴是否在给定区间内。"
+                ]
+              },
+              "source": "subsection",
+              "id": "3.1.1",
+              "difficulty": "简单题"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
