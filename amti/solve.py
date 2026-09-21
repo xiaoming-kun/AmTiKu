@@ -63,7 +63,8 @@ def build_prompt(q: Question) -> str:
 
 
 def call_model(prompt: str, *, timeout: int = 600,
-               system: str = SYSTEM, reasoning_effort: str = "") -> str:
+               system: str = SYSTEM, reasoning_effort: str = "",
+               max_tokens: int = MAX_TOKENS) -> str:
     r"""问模型一次，返回正文。
 
     ⚠️ **`max_tokens` 必须给足。** 这是推理模型：它先在 `reasoning_content`
@@ -84,7 +85,7 @@ def call_model(prompt: str, *, timeout: int = 600,
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": prompt}],
         "temperature": 0.2,
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": max_tokens,
     }
     if reasoning_effort:
         payload["reasoning_effort"] = reasoning_effort
@@ -793,8 +794,14 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     system = FILL_ANS_SYSTEM if kind == "ans" else FILL_SOL_SYSTEM
     try:
         # 补答案 = 纯读取任务 → 关思考（8 秒 vs 361 秒）；写解析保留思考
-        raw = call_model(_fill_prompt(q, kind), system=system,
-                         reasoning_effort="none" if kind == "ans" else "")
+        raw = call_model(
+            _fill_prompt(q, kind), system=system,
+            # 写解析：思考很长，**一道要 400–600 秒**，600 秒超时会被打断（实测）
+            timeout=(600 if kind == "ans" else 1800),
+            reasoning_effort="none" if kind == "ans" else "",
+            # 写解析：**思考动辄 7000+ tokens**，8000 会被思考吃光、正文空着回来
+            # （实测 24/35 失败）。16k 上下文下给 12000，装得下思考+正文。
+            max_tokens=(MAX_TOKENS if kind == "ans" else 12000))
     except urllib.error.URLError as e:
         return False, "模型连不上：%s" % e
     except Exception as e:
