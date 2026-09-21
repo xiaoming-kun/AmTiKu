@@ -191,7 +191,7 @@ def _selftest() -> int:
     check("答案：十一校数学答案.pdf", role_of("十一校数学答案.pdf") == ANSWER)
     check("答案：评分标准", role_of("数学参考答案及评分标准.pdf") == ANSWER)
     check("答案：教师版", role_of("（教师版）雅礼月考四数学.pdf") == ANSWER)
-    check("答案：全解全析", role_of("2026深圳一模全解全析.pdf") == ANSWER)
+    check("答案：全解全析", role_of("2026某市一模全解全析.pdf") == ANSWER)
     check("试卷：数学试题.pdf", role_of("数学试题.pdf") == PAPER)
     check("试卷：没线索的名字", role_of("scan_001.pdf") == PAPER)
     check("首屏文字兜底：文件名干净但内容是答题卡",

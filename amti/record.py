@@ -20,7 +20,7 @@ exam-zh LaTeX。链路：
 
 用法：
     python3 -m amti.record --pdf 试卷.pdf --answers 答案.pdf \\
-        --book 模拟题 --label 2026深圳中学摸底 --region 深圳 --year 2026
+        --book 模拟题 --label 2026某校摸底 --region 某市 --year 2026
 """
 from __future__ import annotations
 
