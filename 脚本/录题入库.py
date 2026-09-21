@@ -37,12 +37,29 @@ def main(path, do_commit, force=False):
     # ⚠️ `spec.after` 也要拦：commit 里还有一道「规范复核不过就不录」的闸门，
     # 只查 errors/problems 会白跑一次 commit 才被拒（实测第 29 场 #19）。
     spec_after = pv["spec"]["after"]
-    bad = pv["errors"] or pv["problems"] or pv["missing_images"] or spec_after
-    for k in ("errors", "problems", "missing_images"):
-        if pv[k]:
-            print("%s: %s" % (k, json.dumps(pv[k], ensure_ascii=False)[:1200]))
+    # ⚠️ 「缺答案/缺解析」这一类 errors 是**入库**的闸门（ingest._incomplete_errors，
+    # 2026-09-21 新规矩），不是解析阶段的闸门。无答案卷的成品本来就该空着，
+    # 把它算进失败会逼着执行的人去凑答案 —— 那是伪造原卷内容。
+    # 所以这里按「是不是完整性闸拦的」分流：只有**其它**错误才算失败。
+    # 精确匹配 ingest._incomplete_errors 的固定句式，不用宽松关键词
+    # ——「缺」+「答案」这种组合会误吞真正的错误。
+    _INC_REASON = "本库规矩：没有答案或没有解析的题目不许入库"
+
+    def _incomplete(e):
+        return _INC_REASON in json.dumps(e, ensure_ascii=False)
+
+    inc = [e for e in pv["errors"] if _incomplete(e)]
+    hard = [e for e in pv["errors"] if not _incomplete(e)]
+    bad = hard or pv["problems"] or pv["missing_images"] or spec_after
+    for k, arr in (("errors", hard), ("problems", pv["problems"]),
+                   ("missing_images", pv["missing_images"])):
+        if arr:
+            print("%s: %s" % (k, json.dumps(arr, ensure_ascii=False)[:1200]))
     if spec_after:
         print("spec.after: %s" % json.dumps(spec_after, ensure_ascii=False)[:1200])
+    if inc:
+        print("ℹ️ 另有 %d 条「缺答案/缺解析」被入库完整性闸拦下 —— 无答案卷属正常，"
+              "**不许为了清空它去编答案**，照常收尾即可" % len(inc))
     if bad:
         sys.exit("⛔ preview 不干净，不许入库")
     if not do_commit:
