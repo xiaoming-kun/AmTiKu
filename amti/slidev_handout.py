@@ -7,7 +7,7 @@
   export.py  → LaTeX/elegantbook，A4 印刷讲义
   本模块     → Slidev，16:9 / A4 / 4:3 幻灯片讲义（可批注、低密度）
 
-依赖 MiniMaxH3 的 Slidev 项目（含自定义样式与字体）。
+依赖本仓库内的 Slidev 工程 `AmTiKu/slidev/`（含自定义样式；原先在 ~/MiniMaxH3）。
 """
 from __future__ import annotations
 
@@ -19,11 +19,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Slidev 渲染工程（复用已验证的环境，避免重复 486MB 的 node_modules）
-SLIDEV_PROJ = Path("/Users/ximing/MiniMaxH3")
+# Slidev 渲染工程。
+#
+# ⚠️ 原来写死成 `~/MiniMaxH3`（视频项目的目录）—— 那个目录一旦清理，
+#    讲义导出就整体不可用（报「Slidev 工程不可用」）。现在工程**搬进本仓库**：
+#        AmTiKu/slidev/{package.json, node_modules, styles/, public/img/}
+#    路径从**本文件的位置**推导，不再依赖用户主目录下的任何外部项目。
+SLIDEV_PROJ = Path(__file__).resolve().parent.parent / "slidev"
 SLIDEV_STYLES = SLIDEV_PROJ / "styles" / "index.css"
 NODE_BIN = Path.home() / ".local" / "node24" / "bin"
-AMTIKU = Path.home() / "Documents" / "AmTiKu"
+AMTIKU = Path(__file__).resolve().parent.parent
 OUT_DIR = AMTIKU / "试卷"
 PUBLIC_IMG = SLIDEV_PROJ / "public" / "img"
 

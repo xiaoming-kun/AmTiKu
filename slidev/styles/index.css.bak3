@@ -1,0 +1,434 @@
+/* ============================================================
+   课件视觉风格 — 三套配色
+   改 --bg / --accent 就能换整套观感
+   ============================================================ */
+
+/* ---------- A：墨黑（深色，录课首选）---------- */
+.style-ink {
+  --bg: #0f1115;
+  --fg: #e8eaed;
+  --muted: #9aa0a6;
+  --accent: #4ea1ff;
+  --warn: #ff6b5e;
+  --card: rgba(255, 255, 255, 0.05);
+  --line: rgba(255, 255, 255, 0.14);
+}
+
+/* ---------- B：讲义（浅色，打印友好）---------- */
+.style-paper {
+  --bg: #fbfaf7;
+  --fg: #1f2328;
+  --muted: #6b7280;
+  --accent: #1f6feb;
+  --warn: #d1242f;
+  --card: rgba(0, 0, 0, 0.035);
+  --line: rgba(0, 0, 0, 0.12);
+}
+
+/* ---------- C：深蓝夜（对比最强）---------- */
+.style-night {
+  --bg: #0a1428;
+  --fg: #eaf0ff;
+  --muted: #8fa6cc;
+  --accent: #5eb0ff;
+  --warn: #ff8a73;
+  --card: rgba(94, 176, 255, 0.1);
+  --line: rgba(94, 176, 255, 0.25);
+}
+
+/* ============================================================
+   基础应用
+   ============================================================ */
+.style-ink,
+.style-paper,
+.style-night {
+  background: var(--bg) !important;
+  color: var(--fg);
+}
+
+.style-ink h1,
+.style-paper h1,
+.style-night h1,
+.style-ink h2,
+.style-paper h2,
+.style-night h2,
+.style-ink h3,
+.style-paper h3,
+.style-night h3 {
+  color: var(--fg);
+  border-bottom: none;
+}
+
+/* 标题下装饰线 */
+.style-ink .hd,
+.style-paper .hd,
+.style-night .hd {
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 0.3em;
+}
+
+/* ============================================================
+   组件
+   ============================================================ */
+
+/* 卡片 */
+.cardx {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+/* 公式框（左侧强调条） */
+.eqbox {
+  background: var(--card);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 14px 0;
+}
+
+/* 文字强调 */
+.accent {
+  color: var(--accent);
+  font-weight: 600;
+}
+.warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+.dim {
+  color: var(--muted);
+}
+
+/* 页脚：课程名 + 页码 */
+.foot {
+  position: absolute;
+  left: 2.5rem;
+  right: 2.5rem;
+  bottom: 1.1rem;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  padding-top: 0.45rem;
+}
+
+/* 页码标记 */
+.pgno {
+  position: absolute;
+  right: 2.5rem;
+  bottom: 1.1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 封面大标题 */
+.cover-title {
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   栅格：自己实现，不依赖 UnoCSS（grid-cols-* 未生效）
+   ============================================================ */
+.g3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.g2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+/* 栅格内卡片：居中，去掉额外外边距 */
+.g3 .cardx,
+.g2 .cardx {
+  margin: 0;
+  text-align: center;
+}
+
+/* 卡片主副文字 */
+.cardx .k {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+.cardx .v {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+/* 底部留白：避免内容压到页脚 */
+.padfoot {
+  padding-bottom: 2.2rem;
+}
+
+/* ============================================================
+   风格 D · 教辅手写（复刻 B站「一数」风格）
+   暖米底 + 手写标题 + 荧光笔高亮 + 红色考点圆点
+   ============================================================ */
+.style-tutor {
+  --bg: #fdf9ec;
+  --fg: #1b1a18;
+  --muted: #6b6558;
+  --accent: #c0392b;
+  --warn: #d92b2b;
+  --hl: #ffe94d;
+  --card: rgba(0, 0, 0, 0.028);
+  --line: rgba(0, 0, 0, 0.11);
+
+  --font-hand: "HanziPen SC", "Xingkai SC", "Kaiti SC", serif;
+  --font-hei: "PingFang SC", "Heiti SC", sans-serif;
+  --font-song: "Songti SC", "Source Han Serif SC", "STSong", serif;
+}
+
+/* 底色与文字 */
+.style-tutor {
+  background: var(--bg) !important;
+  color: var(--fg);
+}
+.style-tutor h1,
+.style-tutor h2,
+.style-tutor h3 {
+  color: var(--fg);
+  border-bottom: none;
+}
+
+/* 手写主标题 */
+.t-hand {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  font-size: 2.05rem;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+}
+
+/* 荧光笔高亮（黄色马克笔效果） */
+.hl {
+  background: linear-gradient(
+    transparent 52%,
+    var(--hl) 52%,
+    var(--hl) 94%,
+    transparent 94%
+  );
+  padding: 0 0.1em;
+}
+
+/* 考点标注：● 2020 新课标三卷 */
+.tag {
+  font-family: var(--font-hei);
+  font-weight: 700;
+  font-size: 1.02rem;
+  color: var(--fg);
+  margin: 0.7rem 0 0.35rem;
+  display: flex;
+  align-items: center;
+}
+.tag::before {
+  content: "";
+  width: 0.56em;
+  height: 0.56em;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 0.42em;
+  flex: none;
+}
+
+/* 题目正文（宋体） */
+.q {
+  font-family: var(--font-song);
+  font-size: 1.02rem;
+  line-height: 1.95;
+  letter-spacing: 0.01em;
+}
+
+/* 选项横排 */
+.opts {
+  display: flex;
+  gap: 3.2rem;
+  font-family: var(--font-song);
+  font-size: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* 填空下划线 */
+.blk {
+  display: inline-block;
+  min-width: 6.5em;
+  border-bottom: 1.5px solid var(--fg);
+  vertical-align: baseline;
+  height: 1em;
+}
+
+/* 分区留白 */
+.qgap {
+  height: 2.9rem;
+}
+
+/* ============================================================
+   风格 E · 讲义（A4 竖版，仿 elegantbook）
+   配合 aspectRatio: 210/297 使用
+   绿框=知识点  橙框=公式/思路  蓝框=提要
+   ============================================================ */
+.style-book {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #6b7280;
+  --accent: #1f6feb;
+  --line: #d8dee6;
+
+  --def-bar: #2f9e68;      /* 知识点：绿 */
+  --def-bg: #eef8f2;
+  --thm-bar: #e8892b;      /* 公式/思路：橙 */
+  --thm-bg: #fef5ea;
+  --sum-bar: #3b74c4;      /* 内容提要：蓝 */
+  --sum-bg: #eef3fb;
+
+  --font-song: "Songti SC", "Source Han Serif SC", "STSong", serif;
+  --font-hei: "PingFang SC", "Heiti SC", sans-serif;
+}
+
+.style-book {
+  background: var(--bg) !important;
+  color: var(--fg);
+  font-family: var(--font-song);
+}
+
+/* 章标题 */
+.bk-chapter {
+  text-align: center;
+  font-family: var(--font-hei);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #2b3a4a;
+  margin: 0.2rem 0 1.1rem;
+}
+
+/* 节标题 */
+.bk-sec {
+  font-family: var(--font-hei);
+  font-size: 1.18rem;
+  font-weight: 700;
+  color: #2b3a4a;
+  margin: 1.1rem 0 0.6rem;
+}
+
+/* 正文段落：首行缩进两字 */
+.bk-p {
+  font-size: 0.95rem;
+  line-height: 1.85;
+  text-indent: 2em;
+  text-align: justify;
+  margin: 0.5rem 0;
+}
+
+/* 无缩进正文 */
+.bk-p0 {
+  font-size: 0.95rem;
+  line-height: 1.85;
+  text-align: justify;
+  margin: 0.5rem 0;
+}
+
+/* ---------- 彩色卡片：知识点 / 公式 / 思路 ---------- */
+.bk-box {
+  border-radius: 5px;
+  margin: 0.75rem 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.bk-box .bar {
+  font-family: var(--font-hei);
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 0.3rem 0.7rem;
+}
+.bk-box .body {
+  padding: 0.6rem 0.85rem 0.7rem;
+  font-size: 0.93rem;
+  line-height: 1.8;
+}
+.bk-def { border-color: #bfe3cf; }
+.bk-def .bar { background: var(--def-bar); }
+.bk-def .body { background: var(--def-bg); }
+.bk-thm { border-color: #f0d2ab; }
+.bk-thm .bar { background: var(--thm-bar); }
+.bk-thm .body { background: var(--thm-bg); }
+.bk-sum { border-color: #c3d5ee; }
+.bk-sum .bar { background: var(--sum-bar); text-align: center; }
+.bk-sum .body { background: var(--sum-bg); }
+
+/* 卡片内的有序列表 */
+.bk-box .body ol,
+.bk-box .body ul {
+  margin: 0.25rem 0 0.25rem 1.2rem;
+  padding-left: 0.6rem;
+}
+.bk-box .body li { margin: 0.18rem 0; }
+
+/* ---------- 练习题 ---------- */
+.bk-ex {
+  font-family: var(--font-song);
+  font-size: 0.94rem;
+  line-height: 1.9;
+}
+.bk-ex > ol {
+  margin-left: 1.1rem;
+  padding-left: 0.7rem;
+}
+.bk-ex li { margin: 0.35rem 0; }
+.bk-ex ol ol,
+.bk-ex ul {
+  margin-left: 1.1rem;
+  padding-left: 0.5rem;
+}
+.bk-ex ol ol li { margin: 0.12rem 0; }
+
+/* 练习题标题：居中带装饰 */
+.bk-extitle {
+  text-align: center;
+  font-family: var(--font-hei);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #35507a;
+  margin: 1rem 0 0.8rem;
+  letter-spacing: 0.15em;
+}
+
+/* 公式行（居中，右侧编号） */
+.bk-eq {
+  position: relative;
+  text-align: center;
+  margin: 0.55rem 0;
+}
+.bk-eq .no {
+  position: absolute;
+  right: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-family: var(--font-song);
+}
+
+/* 页脚页码 */
+.bk-foot {
+  position: absolute;
+  left: 2rem;
+  right: 2rem;
+  bottom: 0.9rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: var(--font-song);
+}

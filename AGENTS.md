@@ -159,6 +159,8 @@ AmTiKu/
 | `README.md` | 全局：项目有什么、日常怎么用、下一步能做什么 |
 | `设计/讲义系统.md` | **改讲义/画布相关代码前必读**（含「预览与导出必须一致」的规矩和踩过的坑） |
 | `CHANGELOG.md` | 想知道「这版做了什么、怎么验证的」 |
+| `设计/讲义系统.md` | 讲义/画布（含 `AmTiKu/slidev/` 工程说明） |
+| `设计/审查报告/` | 前后端审查报告（改代码后自查用） |
 | `设计/题目规范.md` | **改数据前必读**（唯一格式定义） |
 | `设计/答案与解析规范.md` | **写/补答案与解析前必读**（LaTeX 标准 + 质量要求 + 硬门槛） |
 
@@ -229,8 +231,8 @@ cd web && npm run build                # 构建通过
 
 ### 审查清单（两份报告就是清单本体）
 
-- 前端：`MiniMaxH3/_集成/前端代码审查报告.md`（依据 [front-review skill](https://github.com/Effeilo/claude-code-frontend-skills)）
-- 后端：`MiniMaxH3/_集成/后端代码审查报告.md`（依据 [fastapi-best-practices 18k★](https://github.com/zhanymkanov/fastapi-best-practices) + [wshobson/agents 39.7k★](https://github.com/wshobson/agents)）
+- 前端：`设计/审查报告/前端代码审查报告.md`（依据 [front-review skill](https://github.com/Effeilo/claude-code-frontend-skills)）
+- 后端：`设计/审查报告/后端代码审查报告.md`（依据 [fastapi-best-practices 18k★](https://github.com/zhanymkanov/fastapi-best-practices) + [wshobson/agents 39.7k★](https://github.com/wshobson/agents)）
 
 改完代码后**对着这两份清单自查**：新代码有没有踩同类问题
 （未使用的导入/声明、无 timeout 的子进程、无上界的 limit、静默吞异常、

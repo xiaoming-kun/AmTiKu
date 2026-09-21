@@ -73,6 +73,27 @@ DYLD_LIBRARY_PATH="$B" "$B/llama-server" -m "$D/PaddleOCR-VL-1.6-GGUF.gguf" \
 
 ---
 
+## v1.5 · 依赖内部化：Slidev 工程搬进本仓库（2026-09-21）
+
+**背景**：讲义的 Slidev 渲染工程原先在 `~/MiniMaxH3`（视频项目的目录），
+`amti/slidev_handout.py` 把路径**写死**在那儿。那个目录一旦清理，
+讲义导出就整体不可用（报「Slidev 工程不可用」）。
+
+**改动**
+
+- 工程搬进 `AmTiKu/slidev/`：`package.json` / `package-lock.json` /
+  `styles/index.css` / `public/img/` / `node_modules/`
+- `SLIDEV_PROJ` 改为**从本文件位置推导**（`amti/` 的上一级 + `slidev`），
+  不再依赖用户主目录下的任何外部项目
+- `.gitignore`：排除 `slidev/node_modules`、`slidev/public/img`、
+  `slidev/_handout_build`、`slidev/dist`；**样式与依赖清单入库**（以前不在 git 里）
+- 抢救文档：原 `MiniMaxH3/_集成/` 的 4 份文档 → `设计/审查报告/`
+  （前端/后端代码审查报告、顶层设计、讲义编辑器设计文档）
+
+**验证**：导出 PDF 页面 735×512pt（iPad 11″ 比例 1.436）、5 张图齐全、
+出处标签在、无源码泄漏；界面上选「iPad 11″」→ 画布 1.439 → 生成成功；
+讲义测试 18/18 · 接口 14/14 · `amti.py accept` 四层全绿。
+
 ## v1.4 · iPad 画布比例（2026-09-16）
 
 - **新增 `iPad 11″` 比例**（2360×1640 ≈ 1.439）：iPad 11″/10.9″/Air/Pro 11 铺满屏

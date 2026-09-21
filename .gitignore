@@ -19,6 +19,14 @@ venv/
 待录入图片/
 _handout_build/
 
+# ══ Slidev 渲染工程（AmTiKu/slidev/）══
+# 依赖与产物可再生成；**package.json / package-lock.json / styles/index.css 要入库**
+slidev/node_modules/
+slidev/public/img/
+slidev/_handout_build/
+slidev/dist/
+slidev/_canvas_*
+
 # ══ LaTeX 编译中间产物 ══
 # 组卷编译会在 试卷/ 下留 .aux/.log/.out；这些是**可重新生成**的，
 # 不该进版本库（初版 .gitignore 漏了，误跟踪了 3 个文件，已删除）。
