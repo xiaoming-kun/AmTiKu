@@ -10,7 +10,7 @@
 ```bash
 cp -r demo数据/题目   ./题目        # 题库主文件（001.tex）
 cp -r demo数据/图片   ./图片        # 配图（内容寻址命名）
-cp    demo数据/知识点.json ./知识点.json   # 考点大纲（3 章 3 考点）
+cp    demo数据/知识点.json ./知识点.json   # 考点大纲（完整 152 个考点）
 python3 amti.py snapshot            # 建一次基线
 python3 amti.py 网页                 # 起服务 + 打开浏览器
 ```
