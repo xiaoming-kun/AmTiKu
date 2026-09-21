@@ -51,6 +51,21 @@ def unzip_docx(docx, out, tag):
     return len(fs)
 
 
+def _dedup(paths):
+    """按文件内容 md5 去重，保留第一次出现的那个名字（顺序不变）。"""
+    import hashlib
+    seen, out = set(), []
+    for p in paths:
+        try:
+            h = hashlib.md5(p.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        if h not in seen:
+            seen.add(h)
+            out.append(p)
+    return out
+
+
 def main(no):
     q = json.loads((SRC / "Qoder录题队列.json").read_text(encoding="utf-8"))
     it = next((i for i in q["队列"] if i["序号"] == int(no)), None)
@@ -63,8 +78,14 @@ def main(no):
         f.unlink()
     report = {}
     for tag, files in (("试卷", it["试卷"]), ("答案", it["答案"])):
-        cands = [src / f for f in files
-                 if (src / f).exists() and "副本" not in f]
+        exist = [src / f for f in files if (src / f).exists()]
+        cands = [p for p in exist if "副本" not in p.name]
+        if not cands:
+            # 整个目录只登记了「_副本」命名的文件（实测 #300 湖北楚天协作体二模：
+            # 试卷、答案各只有两份同名 _副本，压根没有不带副本的正本）。
+            # 这时副本就是唯一正本——按内容去重后照用，
+            # 别报「缺文件」让整场从队列里悄悄消失。
+            cands = _dedup(exist)
         if not cands:
             report[tag] = "缺文件"
             continue
