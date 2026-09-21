@@ -90,3 +90,6 @@ slidev/_canvas_*
 !demo数据/题目/
 !demo数据/图片/
 !demo数据/知识点.json
+
+# 发布产物（打包目录，不进仓库；发布包作为 GitHub Release 附件）
+发布/
