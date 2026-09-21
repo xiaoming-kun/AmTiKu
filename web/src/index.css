@@ -218,3 +218,18 @@ body {
   }
   .press:active { transform: none; }
 }
+
+/* ── 打印（试卷/讲义 → 浏览器「存储为 PDF」）────────────────────────
+   走浏览器打印这条路，就不必在发布包里内置几百 MB 的 LaTeX。
+   这里只管"打印出来长什么样"：A4、去掉界面、题目不被跨页切断。 */
+@media print {
+  @page { size: A4; margin: 14mm 12mm; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-root { min-height: 0 !important; }
+  /* 一道题/一段解析尽量不跨页断开（长题除外，否则会留大片空白） */
+  .q-block { break-inside: avoid-page; page-break-inside: avoid; }
+  .ans-section { break-before: page; page-break-before: always; }
+  /* 打印时不需要交互色 */
+  .print-root a { color: inherit; text-decoration: none; }
+}
