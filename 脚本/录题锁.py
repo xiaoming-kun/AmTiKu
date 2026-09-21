@@ -13,6 +13,9 @@ r"""录题并发控制：认领（谁做哪场）+ 记账锁（改共享状态�
   python3 脚本/录题锁.py book             # 抢记账锁；已被占则退出码 3，等会儿再试
   python3 脚本/录题锁.py unbook           # 放记账锁
   python3 脚本/录题锁.py status           # 看两把锁的当前状态
+  python3 脚本/录题锁.py sweep [分钟]     # 收掉僵尸认领（默认 90 分钟没动、或已做完却没 drop 的）
+
+**每轮开工先 sweep 一次**，否则崩掉的会话会把场次永久占死。
 
 记账锁 TTL 默认 3 分钟（只包几次文件写 + 一次 commit，崩了也会自动放开）。
 认领标记**不带 TTL**：一场做完由本人 drop，避免 20 分钟后第二个人重复做同一场。
@@ -75,6 +78,36 @@ def main(argv):
         if HB.exists():
             HB.unlink()
         print("记账锁已释放")
+        return
+    if act == "sweep":
+        # 收尸。认领不带 TTL 是故意的（防慢场被抢），但会话崩了/被截断就没人 drop，
+        # 结果比停摆更糟：那两场被永久占位，任何 worker 都再也拿不到，等于从队列里消失。
+        # 实测 2026-09-21 攒了 3 个僵尸认领，其中 #147 挂了 12.5 小时。
+        ttl = int(argv[1]) * 60 if len(argv) > 1 else 90 * 60
+        done = {}
+        try:
+            q = json.loads((SRC / "Qoder录题队列.json").read_text(encoding="utf-8"))["队列"]
+            done = {i["序号"]: i["状态"] for i in q}
+        except Exception:
+            pass
+        dropped = []
+        for p in list(CLAIMS.glob("*")):
+            if not p.name.isdigit():
+                continue
+            no = int(p.name)
+            a = age(p)
+            if done.get(no) in ("已解析-待入库", "done"):
+                why = "已做完但没 drop（状态 %s）" % done[no]
+            elif a is not None and a > ttl:
+                why = "认领挂了 %d 分钟没动" % (a // 60)
+            else:
+                continue
+            p.unlink()
+            dropped.append("#%s %s" % (no, why))
+        for d_ in dropped:
+            print("收掉僵尸认领：%s" % d_)
+        if not dropped:
+            print("没有僵尸认领")
         return
     a = age(HB)
     ns = sorted(int(p.name) for p in CLAIMS.glob("*") if p.name.isdigit())
