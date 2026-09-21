@@ -845,6 +845,43 @@ def ensure_fillin(q: Question) -> bool:
     return True
 
 
+@rule(name="解答题答案栏写「见解析」", scope=ENTRY,
+      why="规范 §2.2：解答题的答案就是解析本身。答案栏空着，界面会显示「（暂时没有答案）」、"
+          "导出也没有答案可印——用户要求统一写「见解析」，保证每道题都有答案")
+def answer_for_detailed(q: Question) -> bool:
+    r"""解答题答案栏空着 → 填「见解析」。**只填空的**，已经有答案的（旧数据里有写了结果的）不动。
+
+    解答题没有作答位可内联（题干既无 `\paren` 也无 `\fillin`），`render_tex` 会把它
+    写成解析开头的 `\textbf{答案：见解析}`，所以**往返可逆**（`roundtrip_problems` 可验）。
+    """
+    if q.type != "detailed_answer":
+        return False
+    if (q.answer or "").strip():
+        return False
+    q.answer = "见解析"
+    return True
+
+
+@rule(name="解答题不留空作答位", scope=ENTRY,
+      why="规范 §2.2：解答题的答案是「见解析」，题干里不该留空的 `\\paren[]`／`\\fillin[]`"
+          "——留着渲染器就以为答案能内联，反而不写「答案：见解析」，答案就丢了")
+def drop_blank_slot_in_detailed(q: Question) -> bool:
+    r"""解答题题干里去掉**空**的作答位（`\paren[]`、`\fillin[]`、`\fillin{}`）；填了内容的不动。
+
+    实测 4 道解答题的题干尾部残留 `\paren[]`（早年题型改造留下的），
+    导致 `q.answer` 写进去却在 `render → parse` 往返里丢掉。
+    """
+    if q.type != "detailed_answer":
+        return False
+    out = re.sub(r"\\paren\s*\[\s*\]", "", q.stem)
+    out = re.sub(r"\\fillin\s*\[\s*\]|\\fillin\s*\{\s*\}", "", out)
+    out = re.sub(r"[ \t]+(?=[\n。，．,])", "", out)
+    if out == q.stem:
+        return False
+    q.stem = out
+    return True
+
+
 @rule(name="答案进填空位", scope=ENTRY, why="规范 §2.2 填空")
 def answer_into_fillin(q: Question) -> bool:
     if q.type != "fill_in_blank" or not q.answer.strip():
@@ -865,6 +902,9 @@ def answer_into_fillin(q: Question) -> bool:
     out.append(q.stem[pos:])
     q.stem = "".join(out)
     return True
+
+
+_FILLIN_SLOT = re.compile(r"\\fillin\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]")
 
 
 @rule(name="多空答案分隔符统一", scope=ENTRY, why="规范 §2.2：多空用 `；` 分隔")
@@ -1401,6 +1441,19 @@ def _selftest() -> int:
     ensure_fillin(_q)
     check("补填空位：空位在数学模式里要就地收尾（不许嵌套 $）",
           _q.stem.count("$") % 2 == 0 and r"$ \fillin[]" in _q.stem, repr(_q.stem))
+    _dq = Question(key="t/det3", type="detailed_answer",
+                    stem="求 $x$ 的最小值\\paren[]。", answer="", solution="……")
+    normalize(_dq, ENTRY)
+    check("解答题不留空作答位", "\\paren" not in _dq.stem and _dq.answer == "见解析", repr(_dq.stem))
+    # 解答题答案栏：空 → 「见解析」（用户要求：保证每道题都有答案）
+    _dt = Question(key="t/det", type="detailed_answer", stem="求 $x+\\frac1x$ 的最小值。",
+                   answer="", solution="由均值不等式得最小值为 $2$。")
+    normalize(_dt, ENTRY)
+    check("解答题答案栏空 → 见解析", _dt.answer == "见解析", repr(_dt.answer))
+    _dt2 = Question(key="t/det2", type="detailed_answer", stem="求 $x$。",
+                    answer="12", solution="……")
+    normalize(_dt2, ENTRY)
+    check("解答题已有答案不动", _dt2.answer == "12", repr(_dt2.answer))
     # ⚠️ 空括号的三条回归（实测 224 道补答案"成功"却没落进正文，根因就在这两行正则）：
     #   `_FILLIN_FILLED` 曾把 `\fillin[]` 当"已填" → 规则永不生效；
     #   `_BLANK_FILLIN` 又不吃 `[]` → 修了前者就会留下 `\fillin[2][]`。
