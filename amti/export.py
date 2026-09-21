@@ -67,7 +67,9 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
 def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple[bool, str]:
     """xelatex 编译。跑两遍（第二遍才能定页码/交叉引用）。"""
     if not shutil.which("xelatex"):
-        return False, "找不到 xelatex"
+        return False, ("找不到 xelatex —— 导出 PDF 需要 LaTeX 引擎。\n"
+                      "安装方法见项目根目录的《TeXLive安装.md》（含国内镜像与常见报错处理）。\n"
+                      "不装不影响浏览、编辑、组卷与预览。")
     log = ""
     for _ in range(passes):
         r = subprocess.run(
