@@ -330,6 +330,29 @@ def dup_fingerprint(q: Question) -> str:
     return "\x00".join(parts)
 
 
+def _incomplete_errors(qs) -> list[dict]:
+    r"""**规矩（用户 2026-09-21 定）：没有答案或没有解析的题，一律不许入库。**
+
+    缺了就是半成品——进了库，统计、界面、导出全都不完整（库里曾因此攒出
+    4,598 道解答题答案栏空着、15 道没有解析）。列进 `errors`（硬错误），
+    `preview` 与 `commit` 都会因此**拒绝整批**。
+
+    ⚠️ 必须在**规范化之后**调用：解答题答案栏由 ENTRY 规则补成「见解析」，
+    先判会把本该能入库的题误拦下。
+    """
+    out: list[dict] = []
+    for q in qs:
+        miss = []
+        if not (q.answer or "").strip():
+            miss.append("答案")
+        if not (q.solution or "").strip():
+            miss.append("解析")
+        if miss:
+            out.append({"seq": 0, "key": q.key,
+                        "reason": "缺%s——本库规矩：没有答案或没有解析的题目不许入库"
+                                  % "与".join(miss)})
+    return out
+
 def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str = "",
             region: str = "", year: int | None = None, source_no: str = "",
             points: list[str] | None = None, difficulty: str = "",
@@ -371,6 +394,7 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
     for q in qs:
         for name in norm.normalize(q, norm.ENTRY):
             rule_log.setdefault(name, []).append(q.key)
+    errors.extend(_incomplete_errors(qs))     # 缺答案/解析 → 硬错误（新规矩）
 
     # ── ③ 图片入库（复制到 图片/ + 引用改成内容寻址名）──
     # **这一步必须在复核之前**：复核要检查最终的引用形态。
@@ -564,6 +588,11 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     for q in qs:
         for name in norm.normalize(q, norm.ENTRY):
             rule_log[name] = rule_log.get(name, 0) + 1
+    bad_qs = _incomplete_errors(qs)          # 缺答案/解析 → 整批不入库（新规矩）
+    if bad_qs:
+        head = "；".join("%s（%s）" % (b["key"], b["reason"].split("——")[0]) for b in bad_qs[:3])
+        return {"ok": False, "added": [], "rules_applied": {},
+                "error": "有 %d 道缺答案或解析，整批未入库：%s" % (len(bad_qs), head)}
 
     # ③ 图片入库（**真的复制**到 图片/ + 改写引用）
     img_rep = im.ingest_all(qs, src_dirs=src_dirs, dry_run=False,
