@@ -96,9 +96,16 @@ AmTiKu/                     项目根
 已知 $A=\{x\mid -\sqrt[3]{5}<x<\sqrt[3]{5}\}$，$B=\{-3,-1,0,2,3\}$，则 $A\cap B=$\paren[A]
 \begin{choices}
   \item $\{-1,0\}$
+  \item $\{2,3\}$
+  \item $\{-3,-1,0\}$
+  \item $\{-1,0,2\}$
 \end{choices}
 \begin{solution}
-因为 $1<\sqrt[3]{5}<2$ …… 故选 A。
+因为 $1<\sqrt[3]{5}<2$，所以
+\[
+-\sqrt[3]{5}<-1<0<\sqrt[3]{5},
+\]
+而 $-3$、$2$、$3$ 都不在该区间内，故 $A\cap B=\{-1,0\}$。故选 A。
 \end{solution}
 \end{question}
 ```
