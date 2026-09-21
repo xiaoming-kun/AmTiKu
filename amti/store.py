@@ -214,26 +214,59 @@ def restore_backup(stamp: str = "") -> dict:
 LOCK_FILE = TOPIC_DIR / ".写锁"
 
 
+def _lock_try(f) -> bool:
+    r"""试拿一次锁，成不成都不等。**跨平台**：POSIX 用 `fcntl.flock`，Windows 用 `msvcrt.locking`。
+
+    Windows 没有 `fcntl` —— 不加这条分支，Windows 上一写库就 `ModuleNotFoundError`。
+    """
+    if os.name == "nt":
+        import msvcrt
+        try:
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    import fcntl
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def _lock_release(f) -> None:
+    r"""放锁。与 `_lock_try` 配对。"""
+    if os.name == "nt":
+        import msvcrt
+        try:
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        return
+    import fcntl
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
 @contextmanager
 def lib_lock(timeout: float = 120.0):
-    r"""独占写锁。**所有会改库的操作都必须先拿它。**"""
-    import fcntl
+    r"""独占写锁。**所有会改库的操作都必须先拿它。**（macOS/Linux/Windows 通用）"""
     TOPIC_DIR.mkdir(parents=True, exist_ok=True)
     f = open(LOCK_FILE, "w")
     t0 = time.time()
     try:
-        while True:
-            try:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError:
-                if time.time() - t0 > timeout:
-                    raise TimeoutError("等写锁超过 %.0f 秒（另一个进程在改库？）" % timeout)
-                time.sleep(0.1)
+        while not _lock_try(f):
+            if time.time() - t0 > timeout:
+                raise TimeoutError("等写锁超过 %.0f 秒（另一个进程在改库？）" % timeout)
+            time.sleep(0.1)
         yield
     finally:
         try:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            _lock_release(f)
         finally:
             f.close()
 

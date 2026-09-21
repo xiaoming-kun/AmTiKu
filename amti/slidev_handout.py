@@ -646,7 +646,10 @@ def _run_slidev_export(md: Path, pdf: Path, env: dict) -> tuple[bool, str]:
         log.error("Slidev 导出超时（>%ss），强杀进程组 %s",
                   EXPORT_TIMEOUT_SEC, proc.pid)
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            if os.name == "nt":
+                proc.kill()          # Windows 没有进程组概念，直接杀子进程
+            else:
+                os.killpg(os.getpgid(proc.pid), getattr(signal, "SIGKILL", signal.SIGTERM))
         except (ProcessLookupError, PermissionError):
             proc.kill()
         try:
