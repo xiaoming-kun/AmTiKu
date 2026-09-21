@@ -46,6 +46,12 @@ def commit_board(msg):
     def err(out):
         return (out.stderr or out.stdout).strip().splitlines()[-1:] or ["无输出"]
 
+    # 2026-09-21 20:56 起 数据/ 整个进了 .gitignore（git 只管代码/配置/文档）。
+    # 这段自提交是那天凌晨写的，比规矩改动早，现在每次都会失败 —— 别报错，安静跳过。
+    if git("check-ignore", "-q", "--", rel).returncode == 0:
+        print("看板不提交：%s 已被 .gitignore 排除（数据/ 不进 git，成品防丢靠磁盘与 backup）"
+              % rel)
+        return
     add = git("add", "--", rel)
     if add.returncode:
         print("看板未提交（git add 失败）：%s" % "；".join(err(add)), file=sys.stderr)
