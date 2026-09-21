@@ -767,6 +767,27 @@ def _fill_prompt(q: Question, kind: str) -> str:
     return "\n".join(parts)
 
 
+def _bump_fill(q: Question, raw: str = "") -> None:
+    r"""补缺失败留痕：把 `fill_attempts` 加一。
+
+    ⚠️ **不能复用 `_bump_attempts`**（那记的是 `solve_attempts`）：
+    `fill_todo` 的"连败 3 次就跳过"看的是 `fill_attempts`，而失败时却去加
+    `solve_attempts` → 这个上限**永远触发不了**，同一道难题每次重跑都白试一遍。
+    """
+    qs = store.load_all()
+    t = next((x for x in qs if x.key == q.key), None)
+    if t is None:
+        return
+    t.meta["fill_attempts"] = int(t.meta.get("fill_attempts") or 0) + 1
+    t.meta["fill_error"] = time.strftime("%Y-%m-%d %H:%M")
+    if raw:
+        t.meta["fill_raw_tail"] = raw[-2000:]
+    try:
+        store.rewrite_all(qs)
+    except Exception:
+        log.error("补缺失败留痕写库失败", exc_info=True)
+
+
 def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     r"""补一道题的那一栏并**立刻写盘**。"""
     system = FILL_ANS_SYSTEM if kind == "ans" else FILL_SOL_SYSTEM
@@ -777,7 +798,7 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     except urllib.error.URLError as e:
         return False, "模型连不上：%s" % e
     except Exception as e:
-        _bump_attempts(q)
+        _bump_fill(q)
         return False, "调用失败：%s: %s" % (type(e).__name__, e)
 
     # **重新读一遍库**：别覆盖别的进程刚写的内容
@@ -789,7 +810,7 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     if kind == "ans":
         ans = clean_answer(tgt, _block(raw, "答案"))
         if not ans:
-            _bump_attempts(tgt, raw=raw)
+            _bump_fill(tgt, raw=raw)
             return False, "没读到答案（正文 %d 字，finish=%s）" % (
                 len(raw), LAST_CALL.get("finish_reason") or "?")
         if (tgt.answer or "").strip():
@@ -801,7 +822,7 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     else:
         sol = _block(raw, "解析")
         if not sol:
-            _bump_attempts(tgt, raw=raw)
+            _bump_fill(tgt, raw=raw)
             return False, "没取到解析（正文 %d 字，finish=%s）" % (
                 len(raw), LAST_CALL.get("finish_reason") or "?")
         if (tgt.solution or "").strip():

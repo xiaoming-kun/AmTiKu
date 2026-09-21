@@ -197,8 +197,14 @@ _ANY_PAREN = re.compile(r"[（(]\s*\$?\s*(?:\\quad|\\qquad)?\s*\$?\s*[）)]")
 _TAIL_PAREN = re.compile(r"[（(]\s*(?:\\quad|\\qquad)?\s*[）)]\s*$")
 _PAREN_FILLED = re.compile(r"\\paren\s*\[")
 _BARE_PAREN_TAIL = re.compile(r"\\paren\s*$")
-_BLANK_FILLIN = re.compile(r"\\fillin(?![a-zA-Z])\s*(?:\{\})?")
-_FILLIN_FILLED = re.compile(r"\\fillin\s*\[")
+# 空位写法有三种：裸 `\fillin`、`\fillin{}`、`\fillin[]`。**三种都要吃干净**——
+# 老正则不吃 `[]`，于是「答案进填空位」替换完会留下一个空括号：`\fillin[2][]`（实测）。
+_BLANK_FILLIN = re.compile(r"\\fillin(?![a-zA-Z])\s*(?:\{\}|\[\s*\])?")
+# ⚠️ **空括号 `\fillin[]` 不算"填过"**——老正则 `\\fillin\s*\[` 把空括号也认成已填，
+# 于是「答案进填空位」永远 return False：答案只写进 JSON 字段、正文里还是 `\fillin[]`，
+# 而**正文才是真相**（`iter_questions` 从 `\fillin[…]` 推 answer）→ 表现就是
+# "补答案显示成功、库里却永远没答案"（实测 224 道全中，接口/统计都跟着错）。
+_FILLIN_FILLED = re.compile(r"\\fillin\s*\[\s*[^\]\s]")
 from .schema import OPTION_LABELS   # noqa: E402
 
 _FILLIN_CMD = re.compile(r"\\fillin(?![a-zA-Z])")
@@ -1395,6 +1401,23 @@ def _selftest() -> int:
     ensure_fillin(_q)
     check("补填空位：空位在数学模式里要就地收尾（不许嵌套 $）",
           _q.stem.count("$") % 2 == 0 and r"$ \fillin[]" in _q.stem, repr(_q.stem))
+    # ⚠️ 空括号的三条回归（实测 224 道补答案"成功"却没落进正文，根因就在这两行正则）：
+    #   `_FILLIN_FILLED` 曾把 `\fillin[]` 当"已填" → 规则永不生效；
+    #   `_BLANK_FILLIN` 又不吃 `[]` → 修了前者就会留下 `\fillin[2][]`。
+    for _stem, _tag in ((r"最小值为 \fillin[]。", "空方括号"),
+                        (r"最小值为 \fillin{}。", "空花括号"),
+                        (r"最小值为 \fillin。", "裸命令")):
+        _x = Question(key="t/fillhole", type="fill_in_blank", stem=_stem,
+                      answer="2", solution="解析无")
+        normalize_one = None
+        normalize(_x, ENTRY)
+        check("答案进填空位：%s 要就地填成 `\\fillin[2]`（不留空括号）" % _tag,
+              _x.stem.endswith(r"\fillin[2]。"), repr(_x.stem))
+    _y = Question(key="t/fillfilled", type="fill_in_blank",
+                  stem=r"最小值为 \fillin[7]。", answer="7", solution="解析无")
+    normalize(_y, ENTRY)
+    check("答案进填空位：已填的括号不许被重复插入",
+          _y.stem.count(r"\fillin") == 1, repr(_y.stem))
     _q = Question(key="t/fill3", type="fill_in_blank", stem="求 $b$。", answer="")
     check("补填空位：没答案就不补（免得造出永远填不上的空位）",
           not ensure_fillin(_q), repr(_q.stem))
