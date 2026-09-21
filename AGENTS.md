@@ -1,257 +1,65 @@
-# AGENTS.md — AmTiKu 项目 AI 协作指令
+# AGENTS.md — 给 AI 助手 / 贡献者的项目说明
 
-> 本文件供 AI 编码助手（DSH / Claude Code / Codex 等）阅读。
-> 目标：让 AI 一次理解项目规矩，**减少反复返工**。
+> 目标：一次看懂结构与规矩，少返工。用户视角见 `README.md`。
 
-## 一、项目是什么
+## 一、这是什么
 
-本地**高中数学题库 + 组卷系统**。数据全部在项目目录内，不依赖任何外部路径。
+本地**高中数学题库 + 组卷系统**。全部数据在项目目录内，只监听 `127.0.0.1`，不联任何外部服务。
 
-| | 数量（实时数字用 `python3 amti.py status`） |
-|---|---|
-| 题目 | 20,936 道 |
-| 答案 | **20,936 道（100%）** |
-| 解析 | 20,923 道（99.94%）；待补 13 道见 `待解/仍需解析.md` |
+* 后端：Python 3，自研 HTTP 服务（`amti/`，端口 8899）
+* 前端：React 18 + TypeScript + Tailwind（`web/src/`，构建产物 `web/dist/`，由后端一起发）
+* 题目：**LaTeX**（界面用 KaTeX 渲染）
 
-## 二、技术栈
-
-| 层 | 技术 |
-|---|---|
-| 后端 | Python 3，**自研 HTTP server**（无 FastAPI/Flask），`amti/` 25 个模块 ≈11,700 行 |
-| 前端 | React 18 + Vite + Tailwind + TypeScript，`web/src/` |
-| 文档格式 | **LaTeX**（前端用 KaTeX 渲染） |
-| 求解 | 本地 LM Studio（Qwen3.8-27B，端口 1234） |
-
-## 三、常用命令
-
-### 启动/停止（全局命令，任何目录可用）
+## 二、改完必须验收
 
 ```bash
-AmTiKu          # 启动（题库 8899 + 本地模型 1234 + 求解）
-AmTiKu 状态      # 看跑着什么、解了多少题
-AmTiKu 停止      # 停止（不动 LM Studio）
-AmTiKu 网页      # 起题库并打开浏览器
-AmTiKu 验收      # 跑四层验收
+python3 amti.py accept          # 四层：单元自检 / 规范审查 / 端到端渲染 / 快照——必须全绿
+python3 测试/接口测试.py         # 接口回归 14 项
+python3 测试/讲义测试.py         # 讲义导出与出处标签 18 项
+cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run build
 ```
 
-支持拼音：`AmTiKu qidong / zhuangtai / tingzhi / wangye / qiujie / yanshou`
+层③ 需要服务在跑，它会自己起；动了界面/导出还要在浏览器里真跑一遍。
 
-### ⭐ 改完代码或数据**必须**验收
+## 三、唯一入口（不要绕过，也不要重复实现）
 
-```bash
-python3 amti.py accept          # 四层全绿才算过（权威门槛；层③ 要服务，它会自己起）
-python3 测试/接口测试.py         # 接口回归 14 项（不起服务）
-python3 测试/讲义测试.py         # 讲义/出处标签 6 项 + 前后端一致性
-```
-
-四层全绿才算过：
-
-```
-① 单元自检   8 个模块 + 解析回归 + 检查器自证
-② 规范审查   12 项，全库
-③ 端到端渲染 前端同一条渲染路径跑全库（KaTeX / LaTeX 泄漏 / 图片）
-④ 快照       内容变化必须是 0
-```
-
-### 诊断命令
-
-```bash
-python3 amti.py status     # 库有多大
-python3 amti.py diff       # 跟基线比（存量内容变化必须为 0）
-python3 amti.py conform    # 规范审查（只报不改）
-python3 amti.py changes    # 变更记录列表
-```
-
-其他子命令：`snapshot verify audit backup export-unsolved collect render-tikz compilecheck trash dedup rules show images ingest`
-
-## 四、目录结构（关键项）
-
-```
-AmTiKu/
-├── amti.py              命令行入口（CLI 子命令都在这里定义）
-├── amti/                Python 核心（25 模块，≈11,700 行）
-│   ├── store.py         分卷存储：唯一真相是 题目/001.tex…（每卷 ≤5000 题）
-│   ├── normalize.py     规范化器：**全库唯一**改题目形态的地方
-│   ├── latex_blocks.py  正文 → 块级 IR：**全项目唯一**的正文解析器
-│   ├── latex_ir.py      LaTeX → 结构化字段：**全项目只有这里懂 LaTeX**
-│   ├── fixups.py        逐题订正（normalize 的补充：成片规则之外的单点修补）
-│   ├── ingest.py        录入（核心承诺：**存量题目一个字都不变**）
-│   ├── images.py        图片入库（内容寻址）：**全项目唯一**处理图片的地方
-│   ├── paper.py         组卷（高考卷等卷型）
-│   ├── papers.py        试卷存档（出了什么卷、用了哪些题）
-│   ├── render_tex.py    Question → exam-zh LaTeX
-│   ├── export.py        组卷导出（渲染 + 编译 PDF）
-│   ├── generate.py      随机组卷（按高考真题的结构与排布惯例）
-│   ├── slidev_handout.py Slidev 讲义导出
-│   ├── solve.py         模拟题求解（本地大模型，**一题一写**）
-│   ├── conform.py       规范化验证（全库题目是否同构）
-│   ├── dedup.py         查重（录入前先问"库里是不是已有"）
-│   ├── audit.py         影响面审计（MIGRATE 强制流程）
-│   ├── exchange.py      待解题目的导出 / 回收
-│   ├── schema.py        数据模型与校验
-│   ├── knowledge.py     知识点库（难度/考点从这里派生）
-│   ├── tikzfig.py       TikZ 预渲染成矢量图
-│   ├── trash.py         回收站（删除可恢复）
-│   ├── compilecheck.py  全库编译体检
-│   ├── sample.py        抽取测试集（100 道）
-│   ├── migrate.py       旧题库迁移（一次性工具，**已废弃**）
-│   ├── record.py        ⭐ 试卷录题：PDF→页图→本地大模型识别→exam-zh LaTeX
-│   └── web/server.py    Web 服务（自研 HTTP server，1681 行）
-│       web/record_server.py  ⭐ 录题台（独立端口 8901，拖 PDF 即录）
-├── web/                 前端（React + Vite + Tailwind）
-│   └── src/             **重构中，见下节**
-├── 题目/                **题库主文件** 001.tex … 004.tex（超大，最大 12M）
-├── 图片/                配图 + TikZ 预渲染矢量图（3758 个，内容寻址命名）
-├── 知识点.json          152 个考点大纲
-├── 归档快照.json         基线指纹（"存量有没有被改"）
-├── 设计/题目规范.md      **唯一的格式定义** ← 改数据前必读
-├── 变更记录/            每次批量改数据的报告
-├── 回收站/回收站.json    删掉的题（可恢复）
-└── 测试/删题安全自检.py   危险操作的专项验收
-```
-
-**题目长什么样**：一道题 = 一个 `question` 环境，前面一行元数据（JSON）
-
-```latex
-%% @q {"key": "高考真题汇编/2024/新高考I卷#1", "type": "single_choice", ...}
-\begin{question}
-...
-```
-
-### ⭐ 核心设计原则（改动时必须遵守）
-
-本项目刻意保持**单一职责**——每个领域只有**一个入口**。改动时**不要绕过，也不要重复实现**：
-
-| 唯一入口 | 管什么 | 违反了会怎样 |
+| 唯一入口 | 管什么 | 绕过的后果 |
 |---|---|---|
-| `store.py` | 分卷存储 | 题库唯一真相是 `题目/*.tex`；另建存储 → 数据不一致 |
-| `latex_ir.py` + `latex_blocks.py` | LaTeX 解析 | **全项目只有这里懂 LaTeX**；在别处写解析 → 必然与它分叉 |
-| `normalize.py` | 规范化 | 全库唯一改题目形态的地方；绕过 → `conform` 审查失败 |
-| `images.py` | 图片入库 | 唯一处理图片处（内容寻址命名）；手工改图 → 引用断裂 |
-| `ingest.py` | 录入 | 承诺**存量题目一个字不变**；不要拿它做批量修改 |
+| `amti/store.py` | 分卷存储 | 题库唯一真相是 `题目/*.tex`；另建存储 → 数据不一致 |
+| `amti/latex_ir.py` + `latex_blocks.py` | LaTeX 解析 | 全项目只有这里懂 LaTeX；别处再写解析 → 必然分叉 |
+| `amti/normalize.py` | 规范化 | 全库唯一改题目形态的地方；绕过 → 规范审查失败 |
+| `amti/images.py` | 图片入库 | 唯一处理图片处（内容寻址命名） |
+| `amti/ingest.py` | 录入 | 承诺**存量题目一个字不变**；不要拿它做批量修改 |
 
-> **新增功能前先问**：这件事是不是已经有唯一入口了？
-> 有 → 改那个模块；没有 → 才新建。
+> 新增功能前先问：这件事是不是已经有唯一入口了？有 → 改那个模块；没有 → 才新建。
 
-## 五、✅ 前端结构（重构已完成，2026-09-15）
+## 四、改数据的规矩
 
-`App.tsx` 从 **4741 行降到 1014 行**（−79%）。当前结构：
+1. **先读格式规范**（`设计/题目规范.md`，本地保留），再动数据。
+2. **批量改动**走 `normalize.py`（成片规则）/ `fixups.py`（逐题订正）/ `exchange.collect`（补答案与解析），
+   不要直接编辑 `题目/*.tex`。
+3. **答案与解析**：没有答案或解析的题**一律不许入库**（`ingest` 会整批拒绝）；
+   解答题答案栏写「见解析」；LaTeX 写法与质量要求见 `设计/答案与解析规范.md`（本地保留）。
+   **宁缺勿错**：没把握的解析不要写。
+4. 一题一写、写完立刻落盘。
 
-| 目录 | 文件 | 职责 |
-|---|---|---|
-| `web/src/` | `App.tsx`（1014） | 页面级状态 + 三栏布局组装 |
-| `web/src/editor/` | `CanvasEditor` 87 / `useCanvas` 253 / `CanvasStage` 180 / `Inspector` 243 / `PointDrawer` 117 / `useDrawer` 74 / `useHandoutIo` 91 / `shared` 370 | 讲义编辑器：一整块独立模块，新功能加在这里 |
-| `web/src/app/` | `Detail` / `ExportPage` / `IngestDrawer` / `Stats` / `Trash` / `QuestionCard` / `ui` | 页面级组件 |
-| `web/src/lib/` | `api`（统一请求+错误上报）/ `types` / `qlatex` / `render` / `paper` / `display` / `useQuestionList` | 与后端打交道、共享类型与转换 |
+## 五、禁止
 
-**动前端代码时的约定**：
+* 整体重写 `题目/*.tex`（单卷上万题，必须精准定位改动）
+* 用 `.bak` 文件做备份（已启用 git，用 `git commit` 代替）
+* 重命名 `图片/` 下的文件（内容寻址命名，改名即断引用）
+* 把题库数据、真题文本、真实公司/学校名提交进仓库
 
-- ❗**不要往 `App.tsx` 里加新组件** —— 页面组件放 `app/`，编辑器相关放 `editor/`
-- 请求一律走 `lib/api.ts` 的 `request()`（它统一处理 `r.ok` + 错误提示），
-  不要裸 `fetch(...).then(r => r.json())`
-- 类型放 `lib/types.ts`（`Q` / `Facets` / `Base` / `ExportResult`）
-- 转换规则改动 → 见第九节「预览与导出不一致」
-
-### 文档在哪（先读这三份）
-
-| 文档 | 什么时候读 |
-|---|---|
-| `README.md` | 全局：项目有什么、日常怎么用、下一步能做什么 |
-| `设计/讲义系统.md` | **改讲义/画布相关代码前必读**（含「预览与导出必须一致」的规矩和踩过的坑） |
-| `CHANGELOG.md` | 想知道「这版做了什么、怎么验证的」 |
-| `设计/讲义系统.md` | 讲义/画布（含 `AmTiKu/slidev/` 工程说明） |
-| `设计/审查报告/` | 前后端审查报告（改代码后自查用） |
-| `设计/题目规范.md` | **改数据前必读**（唯一格式定义） |
-| `设计/答案与解析规范.md` | **写/补答案与解析前必读**（LaTeX 标准 + 质量要求 + 硬门槛） |
-
-## 六、协作约定（减少返工的 5 条）
-
-1. **改数据前**：先读 `设计/题目规范.md`（唯一格式定义）
-2. **改代码前**：说明方案；复杂改动先出计划（plan mode），不要直接动手
-3. **改完必须**：跑 `python3 amti.py accept` 四层验收
-4. **禁止**：
-   - 整体重写 `题目/*.tex`（最大 12M，必须精准定位改动）
-   - 用 `.bak` 文件做备份（已启用 git，用 `git commit` 代替）
-   - 重命名 `图片/` 下的文件（内容寻址命名）
-   - **录入缺答案或缺解析的题**（`ingest` 会整批拒绝，见第 6 条）
-5. **求解任务在跑时**：`amti.py diff` 报"内容变化"是**正常的**；要检查存量是否被误改，先停求解再 diff
-6. ⭐ **答案与解析的规矩（用户 2026-09-21 定，硬要求）**：
-   - **没有答案或没有解析的题，一律不许入库**。`amti/ingest.py` 的
-     `_incomplete_errors()` 把它列进 `errors`：`preview` 报 `ok=False`、
-     `commit` **整批拒绝**（判定放在 `normalize(ENTRY)` 之后，解答题的空答案栏
-     会先被补成「见解析」再判）。
-   - **写答案/解析前先读 `设计/答案与解析规范.md`**，LaTeX 写法（`$…$`、`\[…\]`、
-     `$` 成对、`\left[` 必须配 `\right]`、数学里不写裸中文、不用 `\begin{enumerate}`、
-     不带页眉页脚/分值、不许半截公式）与答案栏规则（单选 1 字母 / 多选 2–4 字母 /
-     填空段数=空位数、多空用 `；` / 解答题写「见解析」）**照它执行**。
-   - **质量第一、宁缺勿错**：没把握的解析**不要写**，进人工清单
-     （格式见 `待解/仍需解析.md`），而不是猜一个。
-   - **一题一写、写完立刻落盘**；补缺走 `exchange.collect`，录入走 `ingest`。
-
-## 七、已知坑
-
-- 网页关掉 **25 秒后服务自动退出**（这是设计行为，不是故障）
-- `题目/*.tex` 是超大文件，读取时**不要整体读**，用 key 定位
-- 日志位置：`/tmp/amti_web.log`（题库）、`/tmp/amti_solve.log`（求解进度）
-- 停 LM Studio：`lms server stop`（`AmTiKu 停止` 不碰它，因为别的程序也在用）
-
-## 八、版本管理
-
-本项目已启用 git（2026-09-15 初始化）。改动流程：
-
-```bash
-git add -A && git commit -m "说明改了什么"    # 每完成一小步就提交
-git checkout -- <文件>                       # 改坏了，回滚单个文件
-git log --oneline                            # 看历史
-```
-
-> 数据文件的版本管理仍由项目自有机制负责（`amti.py snapshot` + `归档快照.json`），
-> git 主要管理**代码、配置和文档**。
-
-## 九、⭐ 代码审查约定（用户长期要求）
-
-> 用户的原话：**「后续的代码你做好审查」**。
-> 不是一次性任务，而是**每次改代码都要走的流程**。
-
-### 改动的固定流程
-
-```bash
-# 1. 改之前：说明方案（复杂改动先出计划），不要闷头写
-# 2. 改的过程中：一步一提交，别攒一大批
-git add -A && git commit -m "说明改了什么"
-
-# 3. 改完必须全绿（缺一不可）
-python3 amti.py accept                 # 项目自己的四层验收（权威门槛）
-python3 测试/接口测试.py                # 接口回归 14 项
-python3 测试/讲义测试.py                # 讲义/出处标签 6 项
-cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters   # 0 问题
-cd web && npm run build                # 构建通过
-# 4. 动了界面/导出 → 还要在浏览器里真跑一遍（改题库 → 加讲义 → 导出 PDF）
-```
-
-### 审查清单（两份报告就是清单本体）
-
-- 前端：`设计/审查报告/前端代码审查报告.md`（依据 [front-review skill](https://github.com/Effeilo/claude-code-frontend-skills)）
-- 后端：`设计/审查报告/后端代码审查报告.md`（依据 [fastapi-best-practices 18k★](https://github.com/zhanymkanov/fastapi-best-practices) + [wshobson/agents 39.7k★](https://github.com/wshobson/agents)）
-
-改完代码后**对着这两份清单自查**：新代码有没有踩同类问题
-（未使用的导入/声明、无 timeout 的子进程、无上界的 limit、静默吞异常、
-硬编码的魔法数字、巨型函数、`any`）。
-
-### 本项目的「反复踩过的坑」（新代码优先防这些）
+## 六、反复踩过的坑（新代码优先防这些）
 
 | 坑 | 表现 | 防法 |
 |---|---|---|
 | **预览与导出不一致** | 编辑器看着对，PDF 不一样 | 前后端成对的转换函数**必须同步改**（`web/src/lib/qlatex.ts` ↔ `amti/slidev_handout.py`），并有测试逐题比对 |
-| **HTML/markdown 的换行** | 公式不渲染、解答题挤成一段 | `<div>` 与内容之间**必须空行**；单换行要转硬换行 |
-| **构建成功 ≠ 渲染正确** | Slidev 静默失败，出空 PDF / 源码泄漏 | 必须看 PDF 文本层（`amti.py accept` 层③ 就是干这个的） |
-| **改完没重新构建前端** | 界面还是旧行为 | 改 `web/src` 后必须 `npm run build` 并重启服务 |
-| **一处漏 catch 就静默失败** | 界面表现成"没数据" | 统一走 `lib/api.ts` 的 `request()`；错误有全局提示条 |
-| **脚本/客户端的隐含前提** | 改了后端限制，把验收脚本打挂 | 改接口约束时**全仓搜调用点**（`grep -rn "limit="`） |
+| **构建成功 ≠ 渲染正确** | 静默失败、出空 PDF / 源码泄漏 | 必须看产物的文本层（`accept` 层③ 就是干这个的） |
+| **改完没重新构建前端** | 界面还是旧行为 | 改 `web/src` 后必须 `npm run build` |
+| **一处漏 catch 就静默失败** | 界面表现成"没数据" | 请求统一走 `lib/api.ts` 的 `request()`，错误有全局提示 |
+| **改了接口约束把验收脚本打挂** | `测试/` 报错 | 改约束时全仓搜调用点（`grep -rn "limit="`） |
 
-### 提交信息要求
+## 七、提交信息
 
-- 说清**改了什么、为什么**，并在涉及功能时写明**验证方式**
-- 修 bug 时把**根因**写进去（例：「原来 Promise.all 3491 个 fetch 打满线程池」）
-- 一次提交一件事，便于 `git checkout` 回滚
-
+说清**改了什么、为什么**，并写明**验证方式**；修 bug 把**根因**写进去；一次提交一件事，便于回滚。
