@@ -7,7 +7,6 @@ import { useQuestionList } from '@/lib/useQuestionList'
 import { Flags, FLAG_KEYS, Chip, FacetMenu, Grip, useWidth, BaseRow } from '@/app/ui'
 import QuestionCard from '@/app/QuestionCard'
 import { Trash, DeleteModal } from '@/app/Trash'
-import PrintView from '@/app/PrintView'
 import { Detail, TexSource } from '@/app/Detail'
 import { Stats, Changes, groupTree } from '@/app/Stats'
 import CanvasEditor from '@/editor/CanvasEditor'
@@ -125,7 +124,6 @@ export default function App() {
     .catch(() => {}) }, [tab])
   const [showExport, setShowExport] = useState(false)
   const [showIngest, setShowIngest] = useState(false)
-  const [printOpen, setPrintOpen] = useState(false)   // 打印视图（浏览器存 PDF）
 
   // 三栏宽度可拖。默认收窄了列表栏——原来 336px 挤掉了主区（详情/预览）。
   // 左栏是**考点树**——名字看不全就没法用（「一、集合与逻辑」被截成
@@ -282,14 +280,6 @@ export default function App() {
    *  为什么要这个：复习是**按章**走的——「导数这一章给我拉出来」。
    *  只有单个考点可点的话，一章十几个考点得点十几下。
    *  再点一次＝取消这一章（只取消本章的，不动别的章已选的）。 */
-
-  // 打印视图：整页只渲染它。状态留在这个组件里，返回后勾选/筛选都还在。
-  if (printOpen) {
-    // 与「加入卷子」同样的取法：按当前列表顺序取已勾选的题
-    const printList = items.filter((q) => checked.has(q.key))
-    return <PrintView list={printList} title=""
-                      onClose={() => setPrintOpen(false)} />
-  }
 
   return (
     <div className="flex h-full flex-col">
@@ -773,12 +763,6 @@ export default function App() {
                 className="ml-auto rounded border border-warn/40 bg-surface px-2.5 py-[3px]
                            text-warn hover:bg-warn-soft disabled:opacity-40">
                 删除选中 {checked.size || ''}
-              </button>
-              <button onClick={() => setPrintOpen(true)} disabled={!checked.size}
-                title="把选中的题排成 A4 卷面，用浏览器「存储为 PDF」导出（不需要装 LaTeX）"
-                className="rounded border border-border bg-surface px-2.5 py-[3px]
-                           hover:bg-muted disabled:opacity-40">
-                打印/存PDF
               </button>
               <button onClick={addChecked} disabled={!checked.size}
                 className="rounded border border-brand/40 bg-surface px-2.5 py-[3px]
