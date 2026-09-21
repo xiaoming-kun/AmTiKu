@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+import os
 from pathlib import Path
 
 # 旧项目的库。**只用于「从旧库抽样」这个一次性用途**，
 # 主流程（录入/组卷/导出）都不碰它。文件不在了就自己报错，不会静默出错。
-OLD_DB = Path("/Users/ximing/Documents/deepseek/习题/题库/题库.db")
+OLD_DB = Path(os.environ.get("AMTIKU_OLD_DB", "旧题库.db"))      # 旧版 v1 数据库（已废弃的工具）
 
 # (类别名, SQL 条件, 配额)
 # 所有类别都**必须有解析**——没有解析的题测不出渲染和导出的完整链路

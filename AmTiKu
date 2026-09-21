@@ -15,7 +15,7 @@
 # 拼音也认（qidong / tingzhi / zhuangtai / wangye / qiu jie / yanshou / qu），
 # 省得切输入法。
 
-ROOT="/Users/ximing/Documents/AmTiKu"
+ROOT="$(cd "$(dirname "$0")" && pwd)"   # 脚本所在目录（不再写死个人路径）
 PORT=8899
 
 cd "$ROOT" 2>/dev/null || { echo "题库目录不见了：$ROOT"; exit 1; }

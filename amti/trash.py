@@ -47,7 +47,23 @@ TRASH = TRASH_DIR / "回收站.json"
 # 这个服务只监听 127.0.0.1、没有登录体系，真要防人得先有账号体系。
 # 加口令的实际价值是——删题是个需要"停一下"的动作，多一步输入就少一次误删。
 # 想换口令：`export AMTIKU_DELETE_PASSWORD=xxxx`（不改代码）。
-DELETE_PASSWORD = os.environ.get("AMTIKU_DELETE_PASSWORD", "0808")
+def _local_password() -> str:
+    r"""删题口令：**先环境变量，再本地文件**（`数据/删题口令.txt`，在数据目录里、不进 git）。
+
+    公开仓库里**不留任何字面口令**——口令只保护本机的删题操作，
+    泄露与否不影响题库数据安全，但没必要把默认值写进开源代码。
+    """
+    env = os.environ.get("AMTIKU_DELETE_PASSWORD")
+    if env:
+        return env
+    f = Path(__file__).resolve().parent.parent / "数据" / "删题口令.txt"
+    try:
+        return f.read_text(encoding="utf-8").strip() if f.exists() else ""
+    except OSError:
+        return ""
+
+
+DELETE_PASSWORD = _local_password()   # 没有就为空串：check_password 一律不通过（更安全）
 
 # **删题原因：做成固定选项，不要自由文本。**
 #
@@ -67,6 +83,10 @@ DEFAULT_REASON = DELETE_REASONS[0]
 
 
 def check_password(given: str) -> bool:
+    """比对口令。现读现比，改完环境变量/本地文件立即生效。"""
+    want = _local_password()
+    if not want:
+        return False
     r"""口令校验。
 
     用 `hmac.compare_digest` 而不是 `==`：字符串比较会在首个不同字符处短路，

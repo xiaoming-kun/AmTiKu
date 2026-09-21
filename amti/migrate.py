@@ -21,14 +21,15 @@ import json
 import re
 import sqlite3
 import sys
+import os
 from pathlib import Path
 
 from .latex_ir import derive_figures
 from .schema import Option, Question
 from . import store
 
-OLD_DB = Path("/Users/ximing/Documents/deepseek/习题/题库/题库.db")
-OLD_IMG = Path("/Users/ximing/Documents/deepseek/习题/题库/图片")
+OLD_DB = Path(os.environ.get("AMTIKU_OLD_DB", "旧题库.db"))      # 旧版 v1 数据库（已废弃的工具）
+OLD_IMG = Path(os.environ.get("AMTIKU_OLD_IMG", "旧题库图片"))
 
 IMG_RE = re.compile(r"\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}")
 
