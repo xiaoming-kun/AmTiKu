@@ -15,6 +15,7 @@ r"""AmTiKu · 影响面审计
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import datetime as _dt
 import json
 from pathlib import Path
@@ -22,7 +23,7 @@ from pathlib import Path
 from . import normalize as R
 from . import store
 
-PKG = Path(__file__).resolve().parent.parent
+PKG = ROOT
 CHANGE_DIR = PKG / "变更记录"
 
 

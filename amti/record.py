@@ -24,6 +24,7 @@ exam-zh LaTeX。链路：
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import base64
 import json
 import os
@@ -35,7 +36,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parents[1]
+PKG = ROOT
 WORK = PKG / "数据" / "录题"
 API = "http://127.0.0.1:1234/v1/chat/completions"
 MODEL = "qwen/qwen3.8-27b"

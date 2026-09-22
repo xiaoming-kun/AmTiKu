@@ -21,6 +21,7 @@
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import json
 import os
 import time
@@ -35,7 +36,7 @@ from amti.logutil import get_logger
 
 log = get_logger(__name__)
 
-PKG = Path(__file__).resolve().parent.parent
+PKG = ROOT
 TOPIC_DIR = PKG / "题目"
 PER_VOLUME = 5000
 

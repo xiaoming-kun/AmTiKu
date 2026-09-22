@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import datetime as _dt
 import re
 import shutil
@@ -26,7 +27,7 @@ from .render_tex import question_to_tex
 from . import paper as _paper
 from . import store
 
-PKG = Path(__file__).resolve().parent.parent
+PKG = ROOT
 IMG_DIR = PKG / "图片"
 OUT_DIR = PKG / "试卷"
 

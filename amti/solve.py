@@ -12,6 +12,7 @@ r"""AmTiKu · 模拟题求解（本地大模型）
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import argparse
 import json
 import re
@@ -440,7 +441,7 @@ AUDIT_SYSTEM = (
     "- 解析要能让人看懂，但别啰嗦。"
 )
 
-AUDIT_DIR = Path(__file__).resolve().parent.parent / "数据" / "录题"
+AUDIT_DIR = ROOT / "数据" / "录题"
 AUDIT_CURSOR = AUDIT_DIR / "大模型审题进度.json"
 AUDIT_JSONL = AUDIT_DIR / "大模型审题.jsonl"
 _NONE_WORDS = {"无", "无。", "なし", "-", "—", "none", "None", "（无）", "(无)"}

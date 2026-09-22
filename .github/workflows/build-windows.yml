@@ -1,0 +1,46 @@
+name: build-windows
+
+# 免安装版（PyInstaller）：在云端 Windows 上编译，产物是可直接双击的 AmTiKu.exe。
+# 为什么放 Actions：PyInstaller 不能跨平台编译，本机是 macOS 编不出 Windows exe。
+on:
+  workflow_dispatch:          # 手动触发（网页按钮或 gh workflow run）
+  push:
+    tags: ['v*']              # 打标签时自动出包
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: PyInstaller 打包
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --console --name AmTiKu `
+            --add-data "web/dist;web/dist" `
+            --add-data "demo数据;demo数据" `
+            --collect-all fitz --collect-all PIL --collect-all numpy `
+            packaging/amti_frozen.py
+
+      - name: 冒烟测试（验证能导入、能读数据、规范检查能跑）
+        shell: pwsh
+        run: |
+          cd dist\AmTiKu
+          .\AmTiKu.exe --selftest
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmTiKu-Windows-exe
+          path: dist/AmTiKu/**
+          if-no-files-found: error

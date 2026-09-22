@@ -10,12 +10,13 @@
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import json
 import re
 from functools import lru_cache
 from pathlib import Path
 
-KB_PATH = Path(__file__).resolve().parent.parent / "知识点.json"
+KB_PATH = ROOT / "知识点.json"
 
 # 星级 → 难度（考点库里两个字段都有，但偶尔缺一个，互相兜底）
 STARS_DIFFICULTY = {1: "简单题", 2: "中档题", 3: "难题", 4: "难题"}
