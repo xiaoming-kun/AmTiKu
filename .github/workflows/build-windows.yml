@@ -48,14 +48,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: tex
-          key: texlive-windows-2026-v1
-
-      - name: 保存 TeX 缓存（无论成败）
-        if: always() && steps.texcache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: tex
-          key: texlive-windows-2026-v1
+          key: texlive-windows-2026-v2
 
       - name: 安装内置 LaTeX（最小 TeX Live）
         if: steps.texcache.outputs.cache-hit != 'true'
@@ -109,11 +102,19 @@ jobs:
           if (!(Test-Path 图片)) { New-Item -ItemType Directory 图片 | Out-Null }
           Copy-Item demo数据\图片\* 图片\ -Force
 
-      - name: 补全 TeX 宏包（编参考卷自检）
-        if: steps.texcache.outputs.cache-hit != 'true'
+      - name: 补全 TeX 宏包（编参考卷自检，缓存命中也会跑一遍兜底）
         run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex packaging/test-handout.tex
         # 两篇都要编：试卷走 exam-zh、A4 讲义走 elegantnote，
         # 只编一种就会出现"另一种卷型从没被验证过"（elegantnote.cls 就是这么漏的）
+
+      # 保存必须在 TeX 装完之后（放前面会存进一个空/残缺的树，还会让后续轮次
+      # 误命中缓存而跳过安装 —— 我第一次就把它放前面了，结果缓存形同虚设）
+      - name: 保存 TeX 缓存（无论成败）
+        if: always() && steps.texcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: tex
+          key: texlive-windows-2026-v2
 
       - name: PyInstaller 打包
         shell: pwsh
