@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
 import { SCORE, SECTION_LABEL } from '@/lib/paper'
-import CompileOverlay, { LATEX_STAGES, SLIDEV_STAGES } from '@/app/CompileOverlay'
+import CompileOverlay, { LATEX_STAGES } from '@/app/CompileOverlay'
 
 export default function ExportPage({ init, pool, from, filters, onClose }: {
   init: Q[]; pool: Q[]; from: string
@@ -482,11 +482,8 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
           {busy && (
             <CompileOverlay since={busySince}
               label="正在编译 PDF"
-              // 幻灯片讲义走 Slidev（起 Chromium）：阶段与耗时都和 xelatex 不同
-              stages={mode === 'slidev' ? SLIDEV_STAGES : LATEX_STAGES}
-              hint={mode === 'slidev'
-                ? '第一次要冷启动浏览器内核；页数越多越慢。中途不用重复点。'
-                : '两遍 xelatex，题越多越慢；中途不用重复点，编译完会自动出预览'} />
+              stages={LATEX_STAGES}
+              hint={'两遍 xelatex，题越多越慢；中途不用重复点，编译完会自动出预览'} />
           )}
           {res?.pdf_abs ? (
             <iframe key={res.pdf_abs}
