@@ -205,6 +205,16 @@ def star_tex(n: int) -> str:
     return ("$" + r"\star" * n + "$") if n else ""
 
 
+def _texpath(p: str) -> str:
+    r"""把路径转成 LaTeX 能吃的写法。
+
+    Windows 上 `Path.resolve()` 给的是 `D:\a\AmTiKu\...`——**反斜杠在 TeX 里是命令前缀**，
+    直接塞进 `\graphicspath{{...}}` 会报 "Undefined control sequence"（Windows 上一导出
+    带图的卷子就必然失败，macOS 因为路径本来就是 / 所以一直没暴露）。统一成正斜杠。
+    """
+    return str(p).replace("\\", "/")
+
+
 def _cjk_fontset_opt(comma: bool = False) -> str:
     r"""中文字体集选项。默认 `fontset=fandol`（TeX 自带、跨平台），
     `AMTIKU_CJK_FONTSET=system` 时返回空串（交给 ctex 按平台自动挑）。
@@ -374,7 +384,7 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
     """
     if mode == "handout":
         return _render_handout(questions, title=title, columns=columns,
-                               graphicspath=graphicspath, font=handout_font)
+                               graphicspath=_texpath(graphicspath), font=handout_font)
     if mode not in ("gaokao", "test"):
         raise ValueError(f"未知卷型 {mode!r}")
 
@@ -385,13 +395,13 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
 
     # 导言区走**共用的一份**（`_preamble`）——讲义模式当初另抄一份，
     # 漏了自定义 pgfplots 样式，一编译就死。两份导言就是两份真相。
-    doc: list[str] = _preamble(title=title, graphicspath=graphicspath,
+    doc: list[str] = _preamble(title=title, graphicspath=_texpath(graphicspath),
                                show_answers=show_answers, bottom_sep=bottom_sep,
                                columns=columns)
     doc.append(r"\begin{document}")
     return _paper_body(doc, questions, mode=mode, subject=subject,
                        show_answers=show_answers, answers_at_end=answers_at_end,
-                       columns=columns, graphicspath=graphicspath,
+                       columns=columns, graphicspath=_texpath(graphicspath),
                        bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
                        total_score=total_score, show_source=show_source)
 def _preamble(*, title: str = "", graphicspath: str = "",
