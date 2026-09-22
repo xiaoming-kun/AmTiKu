@@ -19,11 +19,11 @@ r"""AmTiKu · 试卷存档
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import datetime as _dt
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
 PAPER_DIR = ROOT / "试卷"
 ARCHIVE = PAPER_DIR / "存档.json"
 

@@ -27,6 +27,7 @@ r"""AmTiKu · 逐题订正 —— **题目有问题就直接改题目**
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import argparse
 import copy
 import datetime as _dt
@@ -37,7 +38,7 @@ from pathlib import Path
 from . import store
 from .schema import Option, Question
 
-PKG = Path(__file__).resolve().parent.parent
+PKG = ROOT
 CHANGE_DIR = PKG / "变更记录"
 
 
@@ -86,7 +87,7 @@ def _load_patches() -> list[dict]:
         return []
 
 
-LEDGER = Path(__file__).resolve().parent.parent / "数据" / "订正台账.json"
+LEDGER = ROOT / "数据" / "订正台账.json"
 PATCHES: list[dict] = _load_patches()
 
 

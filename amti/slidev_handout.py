@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import os
 import re
 import shutil
@@ -25,10 +26,10 @@ from pathlib import Path
 #    讲义导出就整体不可用（报「Slidev 工程不可用」）。现在工程**搬进本仓库**：
 #        AmTiKu/slidev/{package.json, node_modules, styles/, public/img/}
 #    路径从**本文件的位置**推导，不再依赖用户主目录下的任何外部项目。
-SLIDEV_PROJ = Path(__file__).resolve().parent.parent / "slidev"
+SLIDEV_PROJ = ROOT / "slidev"
 SLIDEV_STYLES = SLIDEV_PROJ / "styles" / "index.css"
 NODE_BIN = Path.home() / ".local" / "node24" / "bin"
-AMTIKU = Path(__file__).resolve().parent.parent
+AMTIKU = ROOT
 OUT_DIR = AMTIKU / "试卷"
 PUBLIC_IMG = SLIDEV_PROJ / "public" / "img"
 

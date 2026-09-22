@@ -23,13 +23,14 @@
 
 from __future__ import annotations
 
+from .paths import ROOT
 import hashlib
 import json
 import re
 import shutil
 from pathlib import Path
 
-PKG = Path(__file__).resolve().parent.parent
+PKG = ROOT
 IMG_DIR = PKG / "图片"
 MANIFEST = IMG_DIR / "来源清单.json"
 
