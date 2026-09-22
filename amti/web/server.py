@@ -1324,6 +1324,11 @@ def export(body: ExportBody) -> dict:
     只说一句"已生成"，用户还得自己去翻文件夹找。
     """
     from amti import export as _ex
+    from amti import paper as _paper          # 这个函数里必须自己导入：
+    # 原来只在 1580 行的另一个函数里 `from amti import paper as _paper`，
+    # 这里用 _paper.HANDOUT_FONT_DEFAULT 却是未定义名。平时不炸是因为下一行
+    # 用 `or` 短路（前端总会传 handout_font）；只有不传该字段的 API 调用才会
+    # NameError（导出直接 500）。
     r = _ex.export(body.keys, title=body.title, out=body.out,
                    show_answers=body.show_answers, answers_at_end=body.answers_at_end,
         handout_font=body.handout_font or _paper.HANDOUT_FONT_DEFAULT,
