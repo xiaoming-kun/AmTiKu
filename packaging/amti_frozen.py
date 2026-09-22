@@ -31,7 +31,23 @@ def _ensure_data(root: Path) -> None:
         shutil.copy2(demo / "知识点.json", root / "知识点.json")
 
 
+def _safe_console() -> None:
+    r"""把标准输出/错误改成容错编码。
+
+    坑（CI 上第一次就炸）：Windows 控制台默认 cp1252/cp936，
+    程序里任何一句中文 print 都可能抛 UnicodeEncodeError 把程序打崩
+    （英文版 Windows、或输出被重定向时必然发生）。改成 UTF-8 + replace，
+    编码不下的字符退化成 "?"，而不是让整个程序挂掉。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main() -> int:
+    _safe_console()
     root = _root()
     os.environ.setdefault("AMTIKU_ROOT", str(root))
     try:
