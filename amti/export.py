@@ -20,6 +20,7 @@ import datetime as _dt
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .schema import QTYPE_LABEL, Question
@@ -65,35 +66,78 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
 
 # ── 编译 ──────────────────────────────────────────────────────────────
 
+# `paper.py` 出的这两行：`\graphicspath{{<图目录>/}}` 与题干里的
+# `\includegraphics[width=...]{<图名>}`。编译前要把图目录改写到 ASCII 临时目录。
+_GPATH_RE = re.compile(r"\\graphicspath\{\{([^}]*)\}\}")
+_IMGRE_RE = re.compile(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}")
+
+
+def _prepare_ascii_build(tex_path: Path) -> Path:
+    r"""把 .tex 和它**引用到的**图片拷进一个纯 ASCII 路径的临时目录，返回临时 .tex。
+
+    为什么非要在 ASCII 路径下编译：
+    Windows 上 kpathsea 遇到非 ASCII 的目录会直接 fatal —— 实测报的就是
+
+        (null): fatal: Can't get long name for D:\?? ??\AmTiKu.
+
+    （英文区域设置的 Windows，ANSI 代码页表示不了中文，`GetLongPathName` 拿回来是
+    `??`；中文 Windows 上恰好能过，所以这个问题只在部分机器上露头）。用户把程序
+    解压到「桌面\高中数学题库」是常态，所以不能要求安装路径必须是英文——
+    编译搬到 %TEMP% 下做，编完再把 PDF 搬回原目录。
+
+    同一趟还顺手解决了"中文文件名喂给 xelatex"的问题（见下面的注释）。
+    只拷**题里真的引用的**图：整个图片库有三千多张、190 MB，全拷一遍不现实。
+    """
+    text = tex_path.read_text(encoding="utf-8")
+    build = Path(tempfile.mkdtemp(prefix="amti_build_"))   # mkdtemp 在 %TEMP%，纯 ASCII
+    m = _GPATH_RE.search(text)
+    if m:
+        src_img = Path(m.group(1).rstrip("/\\"))
+        names = {n.strip() for n in _IMGRE_RE.findall(text) if n.strip()}
+        if names:
+            (build / "images").mkdir(exist_ok=True)
+            for n in names:
+                s = src_img / n
+                if s.is_file():
+                    shutil.copy2(s, build / "images" / Path(n).name)
+        # 用 paper._texpath 转正斜杠：Windows 上反斜杠在 TeX 里是命令前缀
+        text = text.replace(m.group(0),
+                            r"\graphicspath{{" + _paper._texpath(str(build / "images")) + "/}}")
+    build_tex = build / "main.tex"
+    build_tex.write_text(text, encoding="utf-8")
+    return build_tex
+
+
 def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple[bool, str]:
     r"""xelatex 编译。跑两遍（第二遍才能定页码/交叉引用）。
 
-    **喂给 xelatex 的文件名必须是纯 ASCII。** 卷子标题就是文件名，而标题必然是中文
-    （"高三数学模拟卷"）：Windows 上 xelatex.exe 的 `main()` 拿到的是 **ANSI 代码页**
-    的 argv，中文名会被转成乱码，xelatex 立刻"找不到文件"退出——英文 Windows 上
-    必然发生（CI 上就是这么挂的），中文 Windows 上要看 TeX Live 版本，
-    而 macOS/Linux 用 UTF-8 文件名，一直没事，所以这个坑只在 Windows 露头。
+    **编译在 ASCII 临时目录里做**（见 `_prepare_ascii_build`），原因有两个，
+    都是只在 Windows 上才露头的坑：
 
-    做法：编译时在**同目录**用固定的 ASCII 名（`_amti_build.tex`），编完把 PDF
-    改回中文名。留给用户的 .tex 仍然是中文名，用户看不出区别。
+    1. 安装路径里有中文 → kpathsea fatal（`Can't get long name for ...`）；
+    2. 文件名是中文（卷子标题就是文件名）→ xelatex.exe 的 `main()` 拿到的是
+       **ANSI 代码页**的 argv，中文名变乱码，立刻"找不到文件"。
+
+    编完把 `main.pdf` 搬回 `tex_path` 同名的 .pdf，用户看不出区别；
+    留给用户的 .tex 仍是中文名、仍指向原来的图片目录。
     """
     if not shutil.which("xelatex"):
         return False, ("找不到 xelatex —— 导出 PDF 需要 LaTeX 引擎。\n"
                       "安装方法见项目根目录的《TeXLive安装.md》（含国内镜像与常见报错处理）。\n"
                       "不装不影响浏览、编辑、组卷与预览。")
-    build = tex_path.with_name("_amti_build.tex")
     try:
-        shutil.copyfile(tex_path, build)
-    except OSError as e:                       # 同目录写不进去就直说，别装作编译失败
-        return False, f"无法在 {tex_path.parent} 写临时文件：{e}"
+        build_tex = _prepare_ascii_build(tex_path)
+    except OSError as e:
+        return False, f"准备编译目录失败：{e}"
 
+    build_dir = build_tex.parent
     log = ""
     try:
         for _ in range(passes):
             r = subprocess.run(
                 ["xelatex", "-interaction=nonstopmode", "-halt-on-error",
-                 build.name],
-                cwd=build.parent, capture_output=True, text=True,
+                 build_tex.name],
+                cwd=build_dir, capture_output=True, text=True,
                 # 显式指定 UTF-8：默认按系统 locale 解码（英文 Windows 是 cp1252），
                 # 而 xelatex 的输出里有中文（标题、路径、题目），strict 解码直接抛
                 # UnicodeDecodeError，把"导出失败"变成一段看不懂的异常。
@@ -101,20 +145,13 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
             log = r.stdout + r.stderr
             if r.returncode != 0:
                 return False, log
-        produced = build.with_suffix(".pdf")
+        produced = build_dir / "main.pdf"
         if not produced.exists():
             return False, log
         shutil.move(str(produced), str(tex_path.with_suffix(".pdf")))
         return True, log
     finally:
-        # 临时产物一律清掉（`.tex` 是副本，`.pdf` 已改名搬走）
-        for ext in (".tex", ".aux", ".log", ".out", ".toc", ".pdf"):
-            p = build.with_suffix(ext)
-            try:
-                if p.exists():
-                    p.unlink()
-            except OSError:
-                pass
+        shutil.rmtree(build_dir, ignore_errors=True)   # 临时目录整个删掉
 
 
 def first_errors(log: str, n: int = 5) -> list[str]:
