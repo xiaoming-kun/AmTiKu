@@ -71,6 +71,7 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
 
     installed: set[str] = set()
+    last_names: list[str] = []
     for paper in a.papers:
         src = Path(paper).resolve()
         (work / "t.tex").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
@@ -89,15 +90,26 @@ def main() -> int:
             pkgs: set[str] = set()
             for name in names:
                 q = run([str(tlmgr), "search", "--global", "--file", name], work, env, timeout=300)
+                # tlmgr 的**信息行都以 `tlmgr.pl:` 开头**（例如 "tlmgr.pl: searching..."），
+                # 按 "含冒号" 取包名会把它们也当成包 → 于是无限"补 tlmgr.pl"（CI 上空转 30 轮）。
+                # 只认「整行以冒号结尾」的包名行，并排掉 tlmgr 自身。
                 for line in q.stdout.split("\n"):
-                    if ":" in line and not line.startswith(" "):
-                        p = line.split(":")[0].strip()
-                        if p and " " not in p:
-                            pkgs.add(p)
+                    if not line.endswith(":"):
+                        continue
+                    p = line[:-1].strip()
+                    if not p or " " in p or p.lower().startswith("tlmgr"):
+                        continue
+                    pkgs.add(p)
             if not pkgs:
                 errs = [l for l in log.split("\n") if l.startswith("!")][:3]
                 print(f"  ✗ {src.name}：第 {i} 轮卡在非缺文件错误 {errs}")
                 return 1
+            if names == last_names:      # 同一批缺文件又来了 → 补包没用，别再空转
+                errs = [l for l in log.split("\n") if l.startswith("!")][:3]
+                print(f"  ✗ {src.name}：第 {i} 轮仍缺同样的文件 {names[:3]}，停止。"
+                      f"真正的错误：{errs}\n----- 日志尾部 -----\n{log[-800:]}")
+                return 1
+            last_names = names
             print(f"  · {src.name} 第 {i} 轮：补 {', '.join(sorted(pkgs)[:5])}")
             run([str(tlmgr), "install"] + sorted(pkgs), work, env, timeout=1800)
             installed |= pkgs
