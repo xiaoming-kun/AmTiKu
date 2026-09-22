@@ -23,4 +23,27 @@ def resolve_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def resolve_resources() -> Path:
+    r"""**随包只读资源**所在目录（前端 `web/dist`、demo 题库）。
+
+    必须与 `ROOT`（数据目录）分开——这是两种东西：
+
+    * `ROOT`：用户的**数据**（题目/ 图片/ 知识点.json），放在 exe 旁边，
+      要能读也要能写，用户换电脑时拷的就是它。
+    * 资源：打包进去的**只读**文件，PyInstaller 把它们解在 `sys._MEIPASS`
+      （onedir 模式实际就是 exe 旁边的 `_internal/`）。
+
+    混为一谈的后果实测过：免安装版打开 <http://127.0.0.1:8899> **是 404**——
+    前端在 `_internal/web/dist`，而代码去 exe 旁边找 `web/dist`，找不到就
+    静默跳过了整个界面挂载，于是"接口都能用、界面打不开"。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent.parent
+
+
 ROOT = resolve_root()
+RESOURCES = resolve_resources()
+# 前端构建产物（`npm run build` 的 outDir）。开发机上没构建时可能不存在，
+# 所以用之前要判存在——但**打包后必须存在**，见 packaging/amti_frozen.py 的自检。
+UI_DIST = RESOURCES / "web" / "dist"
