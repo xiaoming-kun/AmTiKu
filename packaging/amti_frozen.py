@@ -72,6 +72,44 @@ def _setup_tex(root: Path) -> None:
             return
 
 
+_TEX_SMOKE = r"""\documentclass{exam-zh}
+\title{TeX 自检}
+\begin{document}
+\begin{question}
+已知 $a>0$，求 $a+\dfrac{1}{a}$ 的最小值。
+\end{question}
+\begin{solution}
+由均值不等式，$a+\dfrac{1}{a}\geqslant 2$，当且仅当 $a=1$ 时取等。
+\end{solution}
+\end{document}
+"""
+
+
+def _tex_smoke() -> bool:
+    r"""真编一份最小 exam-zh 卷子，确认「导出 PDF」这条路是通的。
+
+    只看 xelatex 在不在 PATH 里是不够的——宏包缺一个就编不出来（本机第一次就漏在
+    l3draw.sty 上）。这里实际编两遍（第二遍定页码），出 PDF 才算过。
+    """
+    import shutil
+    import subprocess
+    import tempfile
+    if not shutil.which("xelatex"):
+        print("TeX 自检：跳过（没有 xelatex）")
+        return False
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "t.tex"
+        src.write_text(_TEX_SMOKE, encoding="utf-8")
+        for _ in range(2):
+            r = subprocess.run(["xelatex", "-interaction=nonstopmode", "-halt-on-error", "t.tex"],
+                               cwd=d, capture_output=True, text=True, timeout=300)
+        pdf = Path(d) / "t.pdf"
+        ok = pdf.exists()
+        print("TeX 自检：%s%s" % ("通过，PDF %d 字节" % pdf.stat().st_size if ok else "失败",
+                                 "" if ok else "  ← 最后几行：" + (r.stdout or "")[-300:]))
+        return ok
+
+
 def main() -> int:
     _safe_console()
     root = _root()
@@ -89,6 +127,7 @@ def main() -> int:
         qs = store.load_all()
         print("SELFTEST OK  root=%s  questions=%d  points=%d  conform_problems=%d"
               % (root, len(qs), len(knowledge.all_points()), len(conform.run())))
+        _tex_smoke()
         return 0
 
     from amti.web import server
