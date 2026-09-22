@@ -215,6 +215,19 @@ def _texpath(p: str) -> str:
     return str(p).replace("\\", "/")
 
 
+# 标题是**用户输入的纯文本**（"高三_第一次月考"、"100%模拟"），直接塞进
+# `\title{}` 里，`_` `%` `&` 这些字符会让编译停在 "! Missing $ inserted."——
+# 用户看到的就是"导出失败"+一段看不懂的日志，实际只是标题里有个下划线。
+_TEX_SPECIAL = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
+                "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
+                "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
+
+
+def _esc_text(s: str) -> str:
+    r"""转义标题里的 LaTeX 特殊字符（一次扫一遍，避免 `\` 被二次转义）。"""
+    return "".join(_TEX_SPECIAL.get(ch, ch) for ch in s)
+
+
 def _cjk_fontset_opt(comma: bool = False) -> str:
     r"""中文字体集选项。默认 `fontset=fandol`（TeX 自带、跨平台），
     `AMTIKU_CJK_FONTSET=system` 时返回空串（交给 ctex 按平台自动挑）。
@@ -499,7 +512,7 @@ def _preamble(*, title: str = "", graphicspath: str = "",
     if big_font:
         out += [r"\zihao{4}", ""]     # iPad 上看得清
     if title:
-        out += [r"\title{" + title + "}", r"\subject{数学}"]
+        out += [r"\title{" + _esc_text(title) + "}", r"\subject{数学}"]
     return out
 
 
@@ -694,7 +707,7 @@ def _render_handout(questions: list[Question], *, title: str = "",
         r"\begin{document}",
     ]
     if title:
-        doc += [r"\begin{center}{\LARGE\bfseries\color{ecolor} " + title
+        doc += [r"\begin{center}{\LARGE\bfseries\color{ecolor} " + _esc_text(title)
                 + r"}\end{center}", r"\vspace{1em}"]
 
     for i, q in enumerate(questions, 1):
