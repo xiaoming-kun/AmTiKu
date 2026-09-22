@@ -921,6 +921,39 @@ def unify_sep(q: Question) -> bool:
     return True
 
 
+@rule(name="填空位跟随答案", scope=ENTRY,
+      why="规范 §2.2：改了 `answer` 就得改卷面上的填空位——"
+          "「答案进填空位」只管空位，已填过的旧值它直接跳过，"
+          "于是改答案只改了字段、卷面印的还是旧答案"
+          "（与「作答括号跟随答案」同一类坑，选择题当年修了、填空题漏了；"
+          "实测 2020新高考I#16 改答案后 `\\fillin` 里还是旧值）")
+def fillin_follows_answer(q: Question) -> bool:
+    r"""已填的填空位内容与答案不一致时，改成答案。
+
+    正文才是答案的真相（读库时 `answer` 由 `\fillin[…]` 推出），字段与卷面
+    不一致＝下次写库就把错的那个固化下来。拆段规则与「答案进填空位」完全
+    一致（`split_answers`）：拆不出与空位数相同的段就**不猜**，原样不动。
+    """
+    if q.type != "fill_in_blank" or not q.answer.strip():
+        return False
+    holes = list(_FILLIN_SLOT.finditer(q.stem))
+    if not holes:
+        return False
+    parts = split_answers(q.answer, len(holes))
+    if len(parts) != len(holes):
+        return False
+    if all(h.group(1).strip() == p.strip() for h, p in zip(holes, parts)):
+        return False                      # 已经一致，不动
+    out, pos = [], 0
+    for h, p in zip(holes, parts):
+        out.append(q.stem[pos:h.start()])
+        out.append(r"\fillin[" + protect(p) + "]")
+        pos = h.end()
+    out.append(q.stem[pos:])
+    q.stem = "".join(out)
+    return True
+
+
 @rule(name="方括号参数保护", scope=ENTRY, why="规范 §2.3：不配平的 `[` 会让 TeX 扫到文件末尾")
 def protect_brackets(q: Question) -> bool:
     changed = False
