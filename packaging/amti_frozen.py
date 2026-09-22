@@ -110,6 +110,41 @@ def _tex_smoke() -> bool | None:
         return ok
 
 
+def _export_smoke() -> bool | None:
+    r"""走**程序自己的导出代码**编一份 PDF，而不只是看 xelatex 在不在。
+
+    被一个真 bug 逼出来的：server.py 的 export() 里用了 _paper 却没导入，
+    只在 handout_font 为空时触发 NameError——只测 xelatex 的自检完全发现不了。
+    返回 True 通过 / False 失败 / None 跳过（没有数据或没装 TeX）。
+    """
+    import tempfile
+    try:
+        from amti import export as ex
+        from amti import paper, store
+    except Exception as e:                       # noqa: BLE001
+        print("导出自检：跳过（%s）" % e)
+        return None
+    qs = [q for _f, q in store.iter_questions()][:4]
+    if not qs:
+        print("导出自检：跳过（库里没有题）")
+        return None
+    try:
+        tex = paper.render_paper(qs, mode="gaokao", title="导出自检（自动）",
+                                 show_answers=True, answers_at_end=True,
+                                 graphicspath=str(store.PKG / "图片"))
+        d = Path(tempfile.mkdtemp())
+        src = d / "t.tex"
+        src.write_text(tex, encoding="utf-8")
+        ok, log = ex.compile_tex(src)
+        print("导出自检：%s" % ("通过，PDF %d 字节" % (d / "t.pdf").stat().st_size if ok
+                              else "失败 ← " + (log or "")[-300:]))
+        return ok
+    except Exception:                            # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def main() -> int:
     _safe_console()
     root = _root()
@@ -127,9 +162,13 @@ def main() -> int:
         qs = store.load_all()
         print("SELFTEST OK  root=%s  questions=%d  points=%d  conform_problems=%d"
               % (root, len(qs), len(knowledge.all_points()), len(conform.run())))
-        # TeX 自检：None=没装（合法）→ 通过；False=装了却编不出来 → **必须让流程失败**，
-        # 否则残缺的 TeX（少宏包）会蒙混过关，用户拿到才发现导不出 PDF。
-        return 0 if _tex_smoke() is not False else 1
+        # 三态：None=跳过（合法）→ 通过；False=失败 → **必须让流程失败**，
+        # 否则残缺的 TeX 或导出代码里的 bug 会蒙混过关，用户拿到才发现导不出 PDF。
+        # 先走程序自己的导出路径（更强），没有数据/没装 TeX 时退回只测引擎。
+        r = _export_smoke()
+        if r is None:
+            r = _tex_smoke()
+        return 0 if r is not False else 1
 
     from amti.web import server
     argv = [a for a in sys.argv[1:] if a != "--selftest"]
