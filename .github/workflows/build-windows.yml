@@ -38,12 +38,28 @@ jobs:
       # ── 内置 LaTeX：最小 TeX Live + 本项目需要的宏包 ─────────────────
       # 为什么不用 Tectonic：它要另验 exam-zh/中文兼容性；TeX Live 与开发机同一套引擎，零风险。
       # 装到 dist\tex（ASCII 路径——install-tl 是 perl 脚本，中文路径会读成乱码，踩过）。
+      # ── 优先用"预装好的 TeX"（Release 附件）────────────────────────
+      # 从 CTAN 装一遍最小 TeX Live + 补 ~90 个宏包要 10~20 分钟，而这份 TeX
+      # 内容一样（包清单已比对过）、只要下载 ~271MB（约 1 分钟）。
+      # 下载失败才回退到"自己装"那三步（continue-on-error + outcome 判断）。
+      - name: 下载预装好的 TeX（快 10 倍）
+        id: pretex
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $url = "https://github.com/xiaoming-kun/AmTiKu/releases/download/v0.1.0/AmTiKu-Windows-tex.zip"
+          Invoke-WebRequest -Uri $url -OutFile tex.zip -TimeoutSec 900
+          Expand-Archive tex.zip -DestinationPath tex -Force
+          Remove-Item tex.zip
+          Write-Host "已使用预装 TeX（跳过从 CTAN 安装）"
+
       # TeX 装一次要 5 分钟、补宏包又要 5 分钟——而 GitHub 每轮都给全新的机器，
       # 所以缓存 tex/ 目录：第二轮起这两步直接跳过（10 分钟 → 秒级）。
       # 换了宏包清单要改 key（-v2、-v3…）以刷新缓存。
       # 拆成 restore/save 两步：save 用 if: always()，否则任务一失败就不保存，
       # 于是每轮都从零装 TeX（12 轮里有 12 次慢，就是这个原因）。
       - name: 恢复 TeX 缓存
+        if: steps.pretex.outcome != 'success'
         id: texcache
         uses: actions/cache/restore@v4
         with:
@@ -51,7 +67,7 @@ jobs:
           key: texlive-windows-2026-v2
 
       - name: 安装内置 LaTeX（最小 TeX Live）
-        if: steps.texcache.outputs.cache-hit != 'true'
+        if: steps.pretex.outcome != 'success' && steps.texcache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           # mirror.ctan.org 只是个重定向器，指向的镜像偶尔连不上（CI 上连挂两次）。
