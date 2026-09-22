@@ -41,9 +41,18 @@ jobs:
       # TeX 装一次要 5 分钟、补宏包又要 5 分钟——而 GitHub 每轮都给全新的机器，
       # 所以缓存 tex/ 目录：第二轮起这两步直接跳过（10 分钟 → 秒级）。
       # 换了宏包清单要改 key（-v2、-v3…）以刷新缓存。
-      - name: 缓存 TeX（少等 10 分钟）
+      # 拆成 restore/save 两步：save 用 if: always()，否则任务一失败就不保存，
+      # 于是每轮都从零装 TeX（12 轮里有 12 次慢，就是这个原因）。
+      - name: 恢复 TeX 缓存
         id: texcache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
+        with:
+          path: tex
+          key: texlive-windows-2026-v1
+
+      - name: 保存 TeX 缓存（无论成败）
+        if: always() && steps.texcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: tex
           key: texlive-windows-2026-v1
