@@ -26,6 +26,7 @@ r"""AmTiKu · 回收站 —— 删除**可恢复**
 """
 from __future__ import annotations
 
+from .paths import ROOT
 import datetime as _dt
 import json
 import os
@@ -37,7 +38,7 @@ from amti.logutil import get_logger
 
 log = get_logger(__name__)
 
-PKG = Path(__file__).resolve().parent.parent
+PKG = ROOT
 TRASH_DIR = PKG / "回收站"
 TRASH = TRASH_DIR / "回收站.json"
 
@@ -56,7 +57,7 @@ def _local_password() -> str:
     env = os.environ.get("AMTIKU_DELETE_PASSWORD")
     if env:
         return env
-    f = Path(__file__).resolve().parent.parent / "数据" / "删题口令.txt"
+    f = ROOT / "数据" / "删题口令.txt"
     try:
         return f.read_text(encoding="utf-8").strip() if f.exists() else ""
     except OSError:

@@ -102,7 +102,10 @@ def main() -> int:
                     pkgs.add(p)
             if not pkgs:
                 errs = [l for l in log.split("\n") if l.startswith("!")][:3]
-                print(f"  ✗ {src.name}：第 {i} 轮卡在非缺文件错误 {errs}")
+                # 一定要把日志尾部打出来：只用 "! Package fontspec Error:" 这种首行
+                # 根本判断不出缺哪个字体（CI 上就吃过这个亏，白跑一轮）
+                print(f"  ✗ {src.name}：第 {i} 轮卡在非缺文件错误 {errs}\n"
+                      f"----- 日志尾部 -----\n{log[-1200:]}")
                 return 1
             if names == last_names:      # 同一批缺文件又来了 → 补包没用，别再空转
                 errs = [l for l in log.split("\n") if l.startswith("!")][:3]

@@ -12,6 +12,7 @@ r"""AmTiKu · 录题台（独立界面）
 """
 from __future__ import annotations
 
+from amti.paths import ROOT
 import json
 import os
 import queue
@@ -26,7 +27,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-PKG = Path(__file__).resolve().parents[2]
+PKG = ROOT
 sys.path.insert(0, str(PKG))
 
 from amti import ingest as ig                             # noqa: E402
