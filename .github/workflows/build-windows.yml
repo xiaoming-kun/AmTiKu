@@ -65,6 +65,14 @@ jobs:
 
       # 宏包清单靠猜必然漏（本机就漏在 l3draw.sty 上），所以用项目自带的补包工具：
       # 反复编译参考卷 → 缺哪个包就 tlmgr 装哪个 → 直到编出 PDF。本机与 CI 共用同一逻辑。
+      - name: 铺好参考卷要用的图片
+        shell: pwsh
+        run: |
+          # 参考卷里那道题带图（demo 的抛物线图），CI 里没有 图片/ 目录，
+          # 缺图会让 -halt-on-error 直接判失败
+          if (!(Test-Path 图片)) { New-Item -ItemType Directory 图片 | Out-Null }
+          Copy-Item demo数据\图片\* 图片\ -Force
+
       - name: 补全 TeX 宏包（编参考卷自检）
         run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex
 
