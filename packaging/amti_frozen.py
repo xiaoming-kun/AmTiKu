@@ -160,8 +160,13 @@ def main() -> int:
     if "--selftest" in sys.argv:            # CI 冒烟测试用：不启服务
         from amti import conform, knowledge, store
         qs = store.load_all()
+        from amti import images
+        # 把关键目录一起打出来：打包后路径指错（例如图片目录指向包内部）时一眼可见
         print("SELFTEST OK  root=%s  questions=%d  points=%d  conform_problems=%d"
               % (root, len(qs), len(knowledge.all_points()), len(conform.run())))
+        print("  图片目录=%s（存在 %s，%d 张）｜ 知识点=%s"
+              % (images.IMG_DIR, images.IMG_DIR.is_dir(),
+                 len(list(images.IMG_DIR.glob("*.png"))), knowledge.KB_PATH))
         # 三态：None=跳过（合法）→ 通过；False=失败 → **必须让流程失败**，
         # 否则残缺的 TeX 或导出代码里的 bug 会蒙混过关，用户拿到才发现导不出 PDF。
         # 先走程序自己的导出路径（更强），没有数据/没装 TeX 时退回只测引擎。

@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+from amti.paths import ROOT
 import json
 from collections import Counter, OrderedDict
 import os
@@ -35,7 +36,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # 本文件在 amti/web/ 下，比 amti/store.py 深一级 → 项目根要退三层
-PKG = Path(__file__).resolve().parents[2]
+PKG = ROOT
 sys.path.insert(0, str(PKG))
 
 from amti.logutil import get_logger                       # noqa: E402
