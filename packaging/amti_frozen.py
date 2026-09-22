@@ -136,9 +136,18 @@ def _export_smoke() -> bool | None:
         src = d / "t.tex"
         src.write_text(tex, encoding="utf-8")
         ok, log = ex.compile_tex(src)
-        print("导出自检：%s" % ("通过，PDF %d 字节" % (d / "t.pdf").stat().st_size if ok
-                              else "失败 ← " + (log or "")[-300:]))
-        return ok
+        if ok:
+            print("导出自检：通过，PDF %d 字节" % (d / "t.pdf").stat().st_size)
+            return True
+        # 只打日志尾部会被 Warning 挤掉真正的 Error（Windows 上就吃过这个亏：
+        # 尾部是 "Reference LastPage undefined" 这种警告，真错误在前面看不到）。
+        errs = [l for l in (log or "").split("\n") if l.startswith("!")][:3]
+        print("导出自检：失败 ｜ PDF 存在=%s ｜ 错误行=%s" % ((d / "t.pdf").exists(), errs))
+        for l in (log or "").split("\n"):
+            if l.startswith("!") or "not found" in l or "Error" in l:
+                print("   ", l[:160])
+        print("   最后几行：", (log or "")[-200:].replace("\n", " ⏎ "))
+        return False
     except Exception:                            # noqa: BLE001
         import traceback
         traceback.print_exc()
