@@ -66,21 +66,55 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
 # ── 编译 ──────────────────────────────────────────────────────────────
 
 def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple[bool, str]:
-    """xelatex 编译。跑两遍（第二遍才能定页码/交叉引用）。"""
+    r"""xelatex 编译。跑两遍（第二遍才能定页码/交叉引用）。
+
+    **喂给 xelatex 的文件名必须是纯 ASCII。** 卷子标题就是文件名，而标题必然是中文
+    （"高三数学模拟卷"）：Windows 上 xelatex.exe 的 `main()` 拿到的是 **ANSI 代码页**
+    的 argv，中文名会被转成乱码，xelatex 立刻"找不到文件"退出——英文 Windows 上
+    必然发生（CI 上就是这么挂的），中文 Windows 上要看 TeX Live 版本，
+    而 macOS/Linux 用 UTF-8 文件名，一直没事，所以这个坑只在 Windows 露头。
+
+    做法：编译时在**同目录**用固定的 ASCII 名（`_amti_build.tex`），编完把 PDF
+    改回中文名。留给用户的 .tex 仍然是中文名，用户看不出区别。
+    """
     if not shutil.which("xelatex"):
         return False, ("找不到 xelatex —— 导出 PDF 需要 LaTeX 引擎。\n"
                       "安装方法见项目根目录的《TeXLive安装.md》（含国内镜像与常见报错处理）。\n"
                       "不装不影响浏览、编辑、组卷与预览。")
+    build = tex_path.with_name("_amti_build.tex")
+    try:
+        shutil.copyfile(tex_path, build)
+    except OSError as e:                       # 同目录写不进去就直说，别装作编译失败
+        return False, f"无法在 {tex_path.parent} 写临时文件：{e}"
+
     log = ""
-    for _ in range(passes):
-        r = subprocess.run(
-            ["xelatex", "-interaction=nonstopmode", "-halt-on-error",
-             tex_path.name],
-            cwd=tex_path.parent, capture_output=True, text=True, timeout=timeout)
-        log = r.stdout + r.stderr
-        if r.returncode != 0:
+    try:
+        for _ in range(passes):
+            r = subprocess.run(
+                ["xelatex", "-interaction=nonstopmode", "-halt-on-error",
+                 build.name],
+                cwd=build.parent, capture_output=True, text=True,
+                # 显式指定 UTF-8：默认按系统 locale 解码（英文 Windows 是 cp1252），
+                # 而 xelatex 的输出里有中文（标题、路径、题目），strict 解码直接抛
+                # UnicodeDecodeError，把"导出失败"变成一段看不懂的异常。
+                encoding="utf-8", errors="replace", timeout=timeout)
+            log = r.stdout + r.stderr
+            if r.returncode != 0:
+                return False, log
+        produced = build.with_suffix(".pdf")
+        if not produced.exists():
             return False, log
-    return (tex_path.with_suffix(".pdf").exists()), log
+        shutil.move(str(produced), str(tex_path.with_suffix(".pdf")))
+        return True, log
+    finally:
+        # 临时产物一律清掉（`.tex` 是副本，`.pdf` 已改名搬走）
+        for ext in (".tex", ".aux", ".log", ".out", ".toc", ".pdf"):
+            p = build.with_suffix(ext)
+            try:
+                if p.exists():
+                    p.unlink()
+            except OSError:
+                pass
 
 
 def first_errors(log: str, n: int = 5) -> list[str]:
