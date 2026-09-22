@@ -22,22 +22,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 FAILED: list[str] = []
 
-# 录入用的一小段源材料：模仿 demo 里的填空题（同一种宏，只是换了数字），
-# 免得失败时说不清是「我的材料不合规」还是「Windows 上写库坏了」。
-INGEST = r"""\begin{question}
-自检题：已知函数 $f(x)=x^{2}-4x$，则 $f(x)$ 在 $[0,5]$ 上的最小值为\fillin[-4]
-\begin{solution}
-$f(x)=(x-2)^{2}-4$，其图象开口向上、对称轴为 $x=2$，而 $2\in[0,5]$，故最小值为 $f(2)=-4$。
-\end{solution}
-\end{question}
+# 录入用的一小段源材料：模仿 demo 里的填空题（同一种宏），只是**每次换数字**——
+# 不换的话第二次跑就会被查重挡下（"入库后题数没涨"），看起来像写库坏了。
+# 答案：$f(x)=x^2-2kx$ 在 $[0,2k]$ 上的最小值是 $f(k)=-k^2$。
+_K = random.randint(50, 99)
+INGEST = rf"""\begin{{question}}
+自检题（第 {_K} 号）：已知函数 $f(x)=x^{{2}}-{2 * _K}x$，则 $f(x)$ 在 $[0,{2 * _K}]$ 上的最小值为\fillin[-{_K * _K}]
+\begin{{solution}}
+$f(x)=(x-{_K})^{{2}}-{_K * _K}$，其图象开口向上、对称轴为 $x={_K}$，而 ${_K}\in[0,{2 * _K}]$，故最小值为 $f({_K})=-{_K * _K}$。
+\end{{solution}}
+\end{{question}}
 """
 
 
@@ -168,7 +172,8 @@ def main() -> int:
 
     def pdf_download():
         for key, label in (("paper", "试卷"), ("handout", "讲义")):
-            name = st[key]["name"] + ".pdf"
+            # 文件名是中文，必须 URL 编码（不编码 urllib 直接抛 UnicodeEncodeError）
+            name = urllib.parse.quote(st[key]["name"] + ".pdf")
             stt, body, _ = req(base, f"/api/pdf?path={name}")
             assert stt == 200 and body[:4] == b"%PDF", f"{label} PDF 取回来不对"
         return "试卷 + 讲义都能下载，PDF 头正确"
