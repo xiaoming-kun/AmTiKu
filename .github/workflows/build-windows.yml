@@ -159,24 +159,50 @@ jobs:
       # 前端被 PyInstaller 放进 `_internal/web/dist`，代码却去 exe 旁边找
       # `web/dist`，找不到就静默跳过整个界面挂载。用户第一步就是打开首页，
       # 于是只看到一个 404（这个 bug 就是这么抓出来的）。这条测试专门盯它。
-      # 顺带放在**中文 + 空格的目录**里跑：用户解压到「桌面/高中数学题库」是常态。
-      - name: 接口冒烟（真起服务 · 中文+空格路径）
+      #
+      # 跑**两遍**：先在原位（ASCII 路径）跑，再拷到「中文 + 空格」目录里跑。
+      # 两遍结果一对比就能分清"是路径问题"还是"代码问题"——只跑一遍时
+      # 分不清（上一轮就这么卡住的）。
+      - name: 接口冒烟（原位 + 中文空格路径各一遍）
         shell: pwsh
         run: |
+          $o = Join-Path $env:TEMP "amti_out.log"; $e = Join-Path $env:TEMP "amti_err.log"
+
+          function Invoke-Smoke([string]$dir, [string]$tag, [int]$port) {
+            Write-Host "════ 接口冒烟：$tag（$dir）════"
+            # TeX 到底在不在、跑不跑得起来——先说清楚，省得再猜一轮
+            $xe = Join-Path $dir "tex\bin\windows\xelatex.exe"
+            Write-Host "  xelatex：存在=$(Test-Path $xe)"
+            if (Test-Path $xe) {
+              try { & $xe --version 2>&1 | Select-Object -First 2 | Write-Host }
+              catch { Write-Host "  跑不起来：$($_.Exception.Message)" }
+            }
+            $p = Start-Process -FilePath (Join-Path $dir "AmTiKu.exe") `
+                  -ArgumentList "--port",$port -PassThru `
+                  -RedirectStandardOutput $o -RedirectStandardError $e
+            try {
+              python packaging/win_smoke_api.py --port $port
+              $code = $LASTEXITCODE
+            } finally {
+              # 先停进程再读日志：stdout 重定向到文件是**块缓冲**的，
+              # 不停掉就读等于什么都读不到（上一轮服务输出一片空白就是这个原因）
+              Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+              Start-Sleep -Milliseconds 500
+              Write-Host "──── $tag 的服务输出 ────"
+              Get-Content $o -Tail 25 -ErrorAction SilentlyContinue
+              Get-Content $e -Tail 25 -ErrorAction SilentlyContinue
+            }
+            return $code
+          }
+
+          $c1 = Invoke-Smoke "dist\AmTiKu" "原位（ASCII 路径）" 8951
           $dir = "D:\冒烟 测试\AmTiKu"
           New-Item -ItemType Directory -Force -Path (Split-Path $dir) | Out-Null
           Copy-Item dist\AmTiKu $dir -Recurse -Force
-          $o = Join-Path $env:TEMP "amti_out.log"; $e = Join-Path $env:TEMP "amti_err.log"
-          $p = Start-Process -FilePath "$dir\AmTiKu.exe" -ArgumentList "--port","8951" `
-                -PassThru -RedirectStandardOutput $o -RedirectStandardError $e
-          try {
-            python packaging/win_smoke_api.py --port 8951
-            if ($LASTEXITCODE -ne 0) { throw "接口冒烟失败（上面有具体哪一项）" }
-          } finally {
-            Write-Host "──── 服务输出 ────"; Get-Content $o -Tail 30 -ErrorAction SilentlyContinue
-            Get-Content $e -Tail 30 -ErrorAction SilentlyContinue
-            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-          }
+          $c2 = Invoke-Smoke $dir "中文+空格路径" 8952
+
+          Write-Host "结果：原位 exit=$c1 ｜ 中文空格 exit=$c2"
+          if ($c1 -ne 0 -or $c2 -ne 0) { throw "接口冒烟失败（上面有具体哪一项）" }
 
       # if: always() 很关键：以前任何一步失败就什么都取不回来（白等一轮）。
       # 现在无论成败都上传，至少能拿到 exe 与已装好的 TeX。

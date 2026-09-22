@@ -181,7 +181,12 @@ def export(keys: list[str], *, title: str = "", out: str = "",
         if ok:
             res["pdf_abs"] = str(tex_path.with_suffix(".pdf"))
         else:
-            res["log"] = "\n".join(first_errors(log, 6))
+            # 挑出日志里的报错行；**一行都没挑到就把原文尾巴带上**——
+            # 否则界面上只显示"导出失败："后面空着，连"找不到 xelatex"这种
+            # 一眼能看懂的提示都被过滤掉了（CI 上就吃过这个闷亏）。
+            res["log"] = ("\n".join(first_errors(log, 6))
+                          or (log[-800:].strip()
+                              or "编译失败，但 LaTeX 没有任何输出（引擎可能没跑起来）"))
 
     # **存档**：出了什么卷、用了哪些题、什么参数。
     # 不记的话「上次那套卷呢」只能去 试卷/ 翻文件名。
