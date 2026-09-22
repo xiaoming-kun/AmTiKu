@@ -16,15 +16,12 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   const poolN = pool.length
   const [title, setTitle] = useState('')
   const [out, setOut] = useState('')
-  const [mode, setMode] = useState<'gaokao' | 'test' | 'coverage' | 'handout' | 'slidev'>('gaokao')
-  // ── Slidev 讲义的参数（幻灯片式，与 handout 的 LaTeX 讲义并存）──
-  const [sRatio, setSRatio] = useState<'16:9' | 'a4' | '4:3'>('16:9')
-  const [sDensity, setSDensity] = useState<'tight' | 'normal' | 'loose'>('normal')
-  const [sAnswers, setSAnswers] = useState(false)
-  const [showAns, setShowAns] = useState(false)
+  const [mode, setMode] = useState<'gaokao' | 'test' | 'coverage' | 'handout'>('gaokao')
   // **答案与解析放不放卷末**。真高考卷是"卷面只有题，答案另附"，
   // 所以留空版（学生做）时默认勾上，讲义版（要看解析）时自动取消。
   const [ansAtEnd, setAnsAtEnd] = useState(true)
+  // 讲义是否印答案（A4 讲义用；上一轮我用正则删 Slidev 参数时误删过它）
+  const [showAns, setShowAns] = useState(false)
   // 讲义字号。exam-zh 题干默认五号 10.5pt，iPad 上偏小，默认给小四 12pt。
   const [handoutFont, setHandoutFont] = useState('-4')
   const [sep, setSep] = useState('0.6em')
@@ -72,13 +69,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
     const keys = list.map((q) => q.key)
 
     // 幻灯片讲义走独立端点（Slidev 渲染），其余三种走 LaTeX 导出
-    const call = mode === 'slidev'
-      ? api.exportSlidev({
-          title, out, keys,
-          ratio: sRatio, density: sDensity,
-          with_answers: sAnswers, compile: true,
-        })
-      : api.export({
+    const call = api.export({
           title, out, mode, show_answers: showAns, bottom_sep: sep,
           problem_blank_cm: Number(blank) || 0, compile: true,
           keys, answers_at_end: ansAtEnd, handout_font: handoutFont,
@@ -181,7 +172,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
             <div className="mb-1 text-[11px] font-semibold text-ink-faint">卷型</div>
             <div className="flex gap-1">
               {([['gaokao', '高考卷'], ['test', '纯测试题'], ['coverage', '考点覆盖卷'],
-                 ['handout', '讲义'], ['slidev', '幻灯片讲义']] as const).map(([v, label]) => (
+                 ['handout', '讲义']] as const).map(([v, label]) => (
                 <button key={v} onClick={() => setMode(v)}
                   className={`flex-1 rounded-lg border px-1.5 py-1.5 text-[11.5px] transition-colors ${
                     mode === v ? 'border-brand/40 bg-brand-soft font-medium text-brand-ink'
@@ -195,8 +186,6 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
                 ? '与高考真题一致：信息行 + 注意事项 + 四大题分节，卷面不标难度'
                 : mode === 'test'
                 ? '考点专练：小字列出考点，每题标出难度等级，带上出处'
-                : mode === 'slidev'
-                ? '幻灯片讲义：一页一题、低密度、大片留白，支持手写批注。可选 16:9 / A4 / 4:3'
                 : '按考点覆盖率挑题：用尽量少的题把考点铺满，挑完易→难排好'}
             </div>
           </div>
@@ -256,44 +245,6 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
                          outline-none focus:border-brand/40 focus:bg-surface" />
           </div>
           <div className="space-y-1.5">
-            {mode === 'slidev' && (
-            <div className="space-y-2.5 rounded-lg border border-brand/30 bg-brand-soft/40
-                            px-2.5 py-2.5 text-[11.5px] leading-relaxed text-brand-ink">
-              <div><b>幻灯片讲义</b>：一页一题 · 低密度 · 大片留白，支持手写批注</div>
-              <div>
-                <div className="mb-1 text-[10.5px] opacity-70">页面比例</div>
-                <div className="flex gap-1">
-                  {([['16:9', '16:9 讲课'], ['a4', 'A4 打印'], ['4:3', '4:3 投影']] as const).map(([v, label]) => (
-                    <button key={v} onClick={() => setSRatio(v)}
-                      className={`flex-1 rounded border px-1.5 py-[3px] text-[10.5px] ${
-                        sRatio === v ? 'border-brand bg-brand text-white'
-                                     : 'border-brand/30 bg-surface text-brand-ink'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="mb-1 text-[10.5px] opacity-70">留白</div>
-                <div className="flex gap-1">
-                  {([['tight', '紧凑'], ['normal', '标准'], ['loose', '宽松']] as const).map(([v, label]) => (
-                    <button key={v} onClick={() => setSDensity(v)}
-                      className={`flex-1 rounded border px-1.5 py-[3px] text-[10.5px] ${
-                        sDensity === v ? 'border-brand bg-brand text-white'
-                                       : 'border-brand/30 bg-surface text-brand-ink'}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label className="flex items-center gap-2 text-[11.5px]">
-                <input type="checkbox" checked={sAnswers}
-                  onChange={(e) => setSAnswers(e.target.checked)}
-                  className="accent-[var(--color-brand)]" />
-                显示答案（教师版）
-              </label>
-            </div>
-          )}
           {mode === 'handout' && (
             <div className="rounded-lg border border-brand/30 bg-brand-soft/40 px-2.5 py-2
                             text-[11.5px] leading-relaxed text-brand-ink">
@@ -530,7 +481,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
               还分阶段说清楚到哪一步了。 */}
           {busy && (
             <CompileOverlay since={busySince}
-              label={mode === 'slidev' ? '正在生成幻灯片讲义' : '正在编译 PDF'}
+              label="正在编译 PDF"
               // 幻灯片讲义走 Slidev（起 Chromium）：阶段与耗时都和 xelatex 不同
               stages={mode === 'slidev' ? SLIDEV_STAGES : LATEX_STAGES}
               hint={mode === 'slidev'

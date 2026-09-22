@@ -73,7 +73,6 @@ export const api = {
   changeText: (name: string) => request('/api/changes/' + enc(name)),
   statsDetail: () => request('/api/stats/detail'),
   export: (body: any) => send('/api/export', 'POST', body),
-  exportSlidev: (body: any) => send('/api/export/slidev', 'POST', body),
   exportBlocks: (body: any) => send('/api/export/slidev-blocks', 'POST', body),
   handouts: () => request('/api/handouts'),
   handout: (name: string) => request(`/api/handouts/${enc(name)}`),

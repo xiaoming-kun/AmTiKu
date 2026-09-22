@@ -1343,29 +1343,6 @@ def export(body: ExportBody) -> dict:
     return r
 
 
-@app.post("/api/export/slidev")
-@_serialized_export
-def export_slidev(body: SlidevHandoutBody) -> dict:
-    r"""导出 Slidev 讲义（幻灯片式）。
-
-    与 `/api/export` 的 `handout` 模式并存，互不影响：
-      前者 → LaTeX/elegantbook A4 印刷讲义
-      本接口 → Slidev 16:9 / A4 / 4:3 幻灯片讲义
-
-    返回结构对齐 `amti/export.py`：pdf_abs / dir_abs / saved_hint。
-    """
-    from amti import slidev_handout as sh
-    r = sh.export(body.keys, title=body.title, out=body.out,
-                  ratio=body.ratio, density=body.density,
-                  with_answers=body.with_answers,
-                  page_numbers=body.page_numbers,
-                  do_compile=body.compile)
-    if not r.get("ok") and r.get("error"):
-        raise HTTPException(400, r["error"])
-    _usage_bump(body.keys)                      # ← 讲义导出计入频次
-    return r
-
-
 @app.post("/api/export/slidev-blocks")
 @_serialized_export
 def export_slidev_blocks(body: BlocksBody) -> dict:

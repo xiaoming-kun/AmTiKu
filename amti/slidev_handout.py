@@ -28,7 +28,17 @@ from pathlib import Path
 #    路径从**本文件的位置**推导，不再依赖用户主目录下的任何外部项目。
 SLIDEV_PROJ = ROOT / "slidev"
 SLIDEV_STYLES = SLIDEV_PROJ / "styles" / "index.css"
-NODE_BIN = Path.home() / ".local" / "node24" / "bin"
+# 便携 Node 优先：随包放在 <根>/node/bin（打包版必须是这个——
+# 写死 ~/.local/node24 只在开发机有效，别人机器上必然找不到，踩过）。
+# 找不到就返回 None，交给系统 PATH 里的 node/npx。
+def _node_bin() -> Path:
+    cand = ROOT / "node" / "bin"
+    if (cand / "node").exists():
+        return cand
+    return Path.home() / ".local" / "node24" / "bin"      # 开发机兜底；不存在就交给系统 PATH
+
+
+NODE_BIN = _node_bin()
 AMTIKU = ROOT
 OUT_DIR = AMTIKU / "试卷"
 PUBLIC_IMG = SLIDEV_PROJ / "public" / "img"
@@ -638,7 +648,8 @@ def _run_slidev_export(md: Path, pdf: Path, env: dict) -> tuple[bool, str]:
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             start_new_session=True)
     except FileNotFoundError:
-        return True, "找不到 npx（检查 NODE_BIN / PATH）"
+        return True, ("找不到 npx —— 讲义（画布/幻灯片）导出需要 Node.js。\n"
+                      "免安装版不含 Node；装了 Node 之后重启程序即可（macOS 可 brew install node）。")
 
     try:
         out, _ = proc.communicate(timeout=EXPORT_TIMEOUT_SEC)
