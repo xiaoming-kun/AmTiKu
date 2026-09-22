@@ -15,6 +15,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+def _safe_console() -> None:
+    r"""把 stdout/stderr 改成容错编码。
+
+    坑（CI 上炸过两次）：Windows 控制台默认 cp1252——脚本里任何一句中文 print
+    都会抛 UnicodeEncodeError 把流程打挂（英文版 Windows 亦然）。
+    改成 UTF-8 + errors=replace，编不下的字符退化成 "?"，而不是让流程失败。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_safe_console()
+
 MISSING_FILE = re.compile(r"[`'\"]([^`'\"]+?\.(?:sty|cls|def|cfg|ldf|fd|clo|tex))['\"]")
 MISSING_FONT = re.compile(r'The font "([^"]+)" cannot be found')
 
