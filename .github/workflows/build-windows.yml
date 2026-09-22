@@ -117,6 +117,13 @@ jobs:
             --collect-all fitz --collect-all PIL --collect-all numpy `
             packaging/amti_frozen.py
 
+      - name: 把内置 TeX 放到 exe 旁边
+        shell: pwsh
+        run: |
+          # 冒烟测试会真跑一次导出，而导出靠 **exe 同目录**的 tex/ —— 不拷过去必然报
+          # "找不到 xelatex"（上一轮就是这么失败的：那是 CI 少一步，不是产品问题）。
+          Copy-Item tex dist\AmTiKu\tex -Recurse -Force
+
       - name: 冒烟测试（验证能导入、能读数据、规范检查能跑）
         shell: pwsh
         run: |
