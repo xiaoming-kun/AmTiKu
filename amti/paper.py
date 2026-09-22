@@ -416,6 +416,9 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         # 这样**同一份 .tex 在任何机器上编出来的 PDF 都一样**。
         # 想让本机系统字体生效（好看些但不保证别处能编）：设 AMTIKU_CJK_FONTSET=system
         r"\documentclass%s{exam-zh}" % _cjk_fontset_opt(),
+        # 题库里有用 \diaghead（斜线分栏表头）的题，它是 makecell 提供的宏。
+        # 只装包不 \usepackage 依然报 Undefined control sequence（全库体检抓到过一道）。
+        r"\usepackage{makecell}",
         r"\usepackage{siunitx}",
         r"\usepackage{multicol}",
         # 答案标红要用 `\color`（exam-zh 自己多半也装过 xcolor，
