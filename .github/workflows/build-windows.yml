@@ -38,7 +38,9 @@ jobs:
       - name: PyInstaller 打包
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --console --name AmTiKu `
+          # --paths . 必须加：入口在 packaging/ 下，不加的话分析时 sys.path 只有该目录，
+          # amti 包不在搜索路径上，打出来的 exe 会 ModuleNotFoundError（踩过）
+          pyinstaller --noconfirm --console --name AmTiKu --paths . `
             --add-data "web/dist;web/dist" `
             --add-data "demo数据;demo数据" `
             --collect-all fitz --collect-all PIL --collect-all numpy `
