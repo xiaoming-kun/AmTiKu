@@ -52,7 +52,22 @@ jobs:
         if: steps.texcache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://mirror.ctan.org/systems/texlive/tlnet/install-tl.zip" -OutFile install-tl.zip
+          # mirror.ctan.org 只是个重定向器，指向的镜像偶尔连不上（CI 上连挂两次）。
+          # 多个镜像逐个试，并给足超时与重试。
+          $mirrors = @(
+            'https://mirrors.tuna.tsinghua.edu.cn/CTAN',
+            'https://mirror.ctan.org',
+            'https://mirror-hk.koddos.net/CTAN'
+          )
+          $ok = $false
+          foreach ($m in $mirrors) {
+            try {
+              Write-Host "尝试镜像 $m"
+              Invoke-WebRequest -Uri "$m/systems/texlive/tlnet/install-tl.zip" -OutFile install-tl.zip -TimeoutSec 600
+              $ok = $true; break
+            } catch { Write-Host "  失败：$($_.Exception.Message)" }
+          }
+          if (-not $ok) { throw "所有 CTAN 镜像都下载失败" }
           Expand-Archive install-tl.zip -DestinationPath tlinst -Force
           $d = (Get-ChildItem tlinst -Directory | Select-Object -First 1).FullName
           $tex = Join-Path $PWD "tex"
@@ -72,6 +87,7 @@ jobs:
           tlpdbopt_install_srcfiles 0
           "@ | Out-File -Encoding ascii tl.profile
           & "$d\install-tl-windows.bat" -profile tl.profile -no-interaction
+          & "$tex\bin\windows\tlmgr.bat" option repository https://mirrors.tuna.tsinghua.edu.cn/CTAN/systems/texlive/tlnet
           & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math fandol tex-gyre elegantnote elegantbook makecell pgfplots siunitx varwidth tikzpagenodes environ trimspaces
 
       # 宏包清单靠猜必然漏（本机就漏在 l3draw.sty 上），所以用项目自带的补包工具：
@@ -107,9 +123,20 @@ jobs:
           cd dist\AmTiKu
           .\AmTiKu.exe --selftest
 
-      - name: 上传产物
+      # if: always() 很关键：以前任何一步失败就什么都取不回来（白等一轮）。
+      # 现在无论成败都上传，至少能拿到 exe 与已装好的 TeX。
+      - name: 上传产物（exe）
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: AmTiKu-Windows-exe
           path: dist/AmTiKu/**
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      - name: 上传产物（内置 TeX）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmTiKu-Windows-tex
+          path: tex/**
+          if-no-files-found: warn
