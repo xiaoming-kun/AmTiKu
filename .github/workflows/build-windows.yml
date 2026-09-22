@@ -35,6 +35,34 @@ jobs:
           npm ci
           npm run build
 
+      # ── 内置 LaTeX：最小 TeX Live + 本项目需要的宏包 ─────────────────
+      # 为什么不用 Tectonic：它要另验 exam-zh/中文兼容性；TeX Live 与开发机同一套引擎，零风险。
+      # 装到 dist\tex（ASCII 路径——install-tl 是 perl 脚本，中文路径会读成乱码，踩过）。
+      - name: 安装内置 LaTeX（最小 TeX Live）
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://mirror.ctan.org/systems/texlive/tlnet/install-tl.zip" -OutFile install-tl.zip
+          Expand-Archive install-tl.zip -DestinationPath tlinst -Force
+          $d = (Get-ChildItem tlinst -Directory | Select-Object -First 1).FullName
+          $tex = Join-Path $PWD "tex"
+          @"
+          selected_scheme scheme-minimal
+          TEXDIR $tex
+          TEXMFLOCAL $tex\texmf-local
+          TEXMFSYSVAR $tex\texmf-var
+          TEXMFSYSCONFIG $tex\texmf-config
+          TEXMFVAR $tex\texmf-var
+          TEXMFCONFIG $tex\texmf-config
+          TEXMFHOME $tex\texmf-home
+          instopt_portable 1
+          instopt_adjustpath 0
+          instopt_adjustrepo 0
+          tlpdbopt_install_docfiles 0
+          tlpdbopt_install_srcfiles 0
+          "@ | Out-File -Encoding ascii tl.profile
+          & "$d\install-tl-windows.bat" -profile tl.profile -no-interaction
+          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf pgfplots siunitx varwidth tikzpagenodes environ trimspaces
+
       - name: PyInstaller 打包
         shell: pwsh
         run: |

@@ -46,15 +46,43 @@ def _safe_console() -> None:
             pass
 
 
+def _setup_tex(root: Path) -> None:
+    r"""把随包的 LaTeX 加进 PATH 与环境变量，让「导出 PDF」开箱可用。
+
+    随包目录布局：
+        tex/bin/<arch>/{xelatex,xelatex.exe}   ← 引擎（windows / universal-darwin / x86_64-linux）
+        tex/texmf-dist/  texmf-var/            ← 宏包与格式文件
+    TeX Live 自己会用 $SELFAUTOPARENT 定位这些树，所以理论上只需把 bin 放进 PATH；
+    这里把 TEXMF* 也显式设上，避免用户机器上装了别的 TeX 时被抢走。
+    """
+    binroot = root / "tex" / "bin"
+    if not binroot.is_dir():
+        return
+    exe = "xelatex.exe" if os.name == "nt" else "xelatex"
+    for d in sorted(binroot.iterdir()):
+        if (d / exe).exists():
+            os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+            tex = root / "tex"
+            os.environ.setdefault("TEXMFCNF", str(tex / "texmf-dist" / "web2c"))
+            os.environ.setdefault("TEXMFROOT", str(tex))
+            os.environ.setdefault("TEXMFDIST", str(tex / "texmf-dist"))
+            os.environ.setdefault("TEXMFVAR", str(tex / "texmf-var"))
+            os.environ.setdefault("TEXMFSYSVAR", str(tex / "texmf-var"))
+            print("已加载内置 LaTeX:", d.name)
+            return
+
+
 def main() -> int:
     _safe_console()
     root = _root()
+
     os.environ.setdefault("AMTIKU_ROOT", str(root))
     try:
         os.chdir(root)                     # 打包后工作目录可能是别处
     except OSError:
         pass
     _ensure_data(root)
+    _setup_tex(root)
 
     if "--selftest" in sys.argv:            # CI 冒烟测试用：不启服务
         from amti import conform, knowledge, store
