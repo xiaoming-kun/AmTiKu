@@ -85,7 +85,7 @@ _TEX_SMOKE = r"""\documentclass{exam-zh}
 """
 
 
-def _tex_smoke() -> bool:
+def _tex_smoke() -> bool | None:
     r"""真编一份最小 exam-zh 卷子，确认「导出 PDF」这条路是通的。
 
     只看 xelatex 在不在 PATH 里是不够的——宏包缺一个就编不出来（本机第一次就漏在
@@ -95,8 +95,8 @@ def _tex_smoke() -> bool:
     import subprocess
     import tempfile
     if not shutil.which("xelatex"):
-        print("TeX 自检：跳过（没有 xelatex）")
-        return False
+        print("TeX 自检：跳过（这个包没有内置 LaTeX）")
+        return None
     with tempfile.TemporaryDirectory() as d:
         src = Path(d) / "t.tex"
         src.write_text(_TEX_SMOKE, encoding="utf-8")
@@ -127,8 +127,9 @@ def main() -> int:
         qs = store.load_all()
         print("SELFTEST OK  root=%s  questions=%d  points=%d  conform_problems=%d"
               % (root, len(qs), len(knowledge.all_points()), len(conform.run())))
-        _tex_smoke()
-        return 0
+        # TeX 自检：None=没装（合法）→ 通过；False=装了却编不出来 → **必须让流程失败**，
+        # 否则残缺的 TeX（少宏包）会蒙混过关，用户拿到才发现导不出 PDF。
+        return 0 if _tex_smoke() is not False else 1
 
     from amti.web import server
     argv = [a for a in sys.argv[1:] if a != "--selftest"]
