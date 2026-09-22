@@ -23,6 +23,18 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # web/dist 是构建产物、不在仓库里（已 gitignore），必须现场构建，
+      # 否则 PyInstaller 会报 Unable to find '...\web\dist' 而失败（第一次就踩了）
+      - name: 构建前端
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
       - name: PyInstaller 打包
         shell: pwsh
         run: |
