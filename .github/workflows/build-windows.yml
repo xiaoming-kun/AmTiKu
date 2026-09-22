@@ -126,18 +126,15 @@ jobs:
             --collect-all fitz --collect-all PIL --collect-all numpy `
             packaging/amti_frozen.py
 
-      - name: 把内置 TeX 放到 exe 旁边
+      - name: 冒烟测试（验证能导入、能读数据、真编一份 PDF）
         shell: pwsh
         run: |
-          # 冒烟测试会真跑一次导出，而导出靠 **exe 同目录**的 tex/ —— 不拷过去必然报
-          # "找不到 xelatex"（上一轮就是这么失败的：那是 CI 少一步，不是产品问题）。
-          Copy-Item tex dist\AmTiKu\tex -Recurse -Force
-
-      - name: 冒烟测试（验证能导入、能读数据、规范检查能跑）
-        shell: pwsh
-        run: |
-          cd dist\AmTiKu
-          .\AmTiKu.exe --selftest
+          # 用 AMTIKU_ROOT 指向仓库根，自检就会用根目录这份**原始** tex/，不必拷贝。
+          # 之前用 Copy-Item -Recurse 把 tex/ 拷到 exe 旁边，而 TeX 树里有符号链接
+          # （xelatex -> xetex、字体映射等），PowerShell 的拷贝对符号链接处理不可靠，
+          # 很可能就是它让"导出自检"在 Windows 上失败（包清单已比对过，两边一致）。
+          $env:AMTIKU_ROOT = (Get-Location).Path
+          .\dist\AmTiKu\AmTiKu.exe --selftest
 
       # if: always() 很关键：以前任何一步失败就什么都取不回来（白等一轮）。
       # 现在无论成败都上传，至少能拿到 exe 与已装好的 TeX。
