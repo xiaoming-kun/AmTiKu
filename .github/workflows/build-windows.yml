@@ -50,7 +50,7 @@ jobs:
           $url = "https://github.com/xiaoming-kun/AmTiKu/releases/download/v0.1.0/AmTiKu-Windows-tex.zip"
           Invoke-WebRequest -Uri $url -OutFile tex.zip -TimeoutSec 900
           Expand-Archive tex.zip -DestinationPath tex -Force
-          Remove-Item tex.zip
+          Move-Item tex.zip AmTiKu-Windows-tex.zip -Force
           Write-Host "已使用预装 TeX（跳过从 CTAN 安装）"
 
       # TeX 装一次要 5 分钟、补宏包又要 5 分钟——而 GitHub 每轮都给全新的机器，
@@ -143,15 +143,16 @@ jobs:
             --collect-all fitz --collect-all PIL --collect-all numpy `
             packaging/amti_frozen.py
 
-      - name: 冒烟测试（验证能导入、能读数据、真编一份 PDF）
+      - name: 冒烟测试（用包内 demo 题真编一份 PDF）
         shell: pwsh
         run: |
-          # 用 AMTIKU_ROOT 指向仓库根，自检就会用根目录这份**原始** tex/，不必拷贝。
-          # 之前用 Copy-Item -Recurse 把 tex/ 拷到 exe 旁边，而 TeX 树里有符号链接
-          # （xelatex -> xetex、字体映射等），PowerShell 的拷贝对符号链接处理不可靠，
-          # 很可能就是它让"导出自检"在 Windows 上失败（包清单已比对过，两边一致）。
-          $env:AMTIKU_ROOT = (Get-Location).Path
-          .\dist\AmTiKu\AmTiKu.exe --selftest
+          # 要点：**在 exe 所在目录里跑**，这样 ROOT=exe 目录 → 用包内 demo 题库
+          # （仓库里没有题库，指向仓库根会让自检"跳过导出"，等于没验 —— 上一轮就是这样）
+          # TeX 直接**解压**到 exe 旁边；不要用 Copy-Item：TeX 树里有符号链接，
+          # PowerShell 的递归拷贝对符号链接处理不可靠。
+          Expand-Archive AmTiKu-Windows-tex.zip -DestinationPath dist\AmTiKu\tex -Force
+          cd dist\AmTiKu
+          .\AmTiKu.exe --selftest
 
       # if: always() 很关键：以前任何一步失败就什么都取不回来（白等一轮）。
       # 现在无论成败都上传，至少能拿到 exe 与已装好的 TeX。
