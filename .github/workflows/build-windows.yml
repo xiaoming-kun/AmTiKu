@@ -38,7 +38,18 @@ jobs:
       # ── 内置 LaTeX：最小 TeX Live + 本项目需要的宏包 ─────────────────
       # 为什么不用 Tectonic：它要另验 exam-zh/中文兼容性；TeX Live 与开发机同一套引擎，零风险。
       # 装到 dist\tex（ASCII 路径——install-tl 是 perl 脚本，中文路径会读成乱码，踩过）。
+      # TeX 装一次要 5 分钟、补宏包又要 5 分钟——而 GitHub 每轮都给全新的机器，
+      # 所以缓存 tex/ 目录：第二轮起这两步直接跳过（10 分钟 → 秒级）。
+      # 换了宏包清单要改 key（-v2、-v3…）以刷新缓存。
+      - name: 缓存 TeX（少等 10 分钟）
+        id: texcache
+        uses: actions/cache@v4
+        with:
+          path: tex
+          key: texlive-windows-2026-v1
+
       - name: 安装内置 LaTeX（最小 TeX Live）
+        if: steps.texcache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://mirror.ctan.org/systems/texlive/tlnet/install-tl.zip" -OutFile install-tl.zip
@@ -74,6 +85,7 @@ jobs:
           Copy-Item demo数据\图片\* 图片\ -Force
 
       - name: 补全 TeX 宏包（编参考卷自检）
+        if: steps.texcache.outputs.cache-hit != 'true'
         run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex packaging/test-handout.tex
         # 两篇都要编：试卷走 exam-zh、A4 讲义走 elegantnote，
         # 只编一种就会出现"另一种卷型从没被验证过"（elegantnote.cls 就是这么漏的）
