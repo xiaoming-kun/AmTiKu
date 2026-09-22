@@ -144,6 +144,15 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
                 encoding="utf-8", errors="replace", timeout=timeout)
             log = r.stdout + r.stderr
             if r.returncode != 0:
+                # **失败时把完整日志留一份**到用户的 试卷/ 目录：界面上只显示前几条错，
+                # 临时目录又要删掉，不留原文的话远端排查只能靠猜（今天卡了好几轮就是
+                # 因为日志被自己过滤没了）。
+                try:
+                    src_log = build_dir / "main.log"
+                    if src_log.exists():
+                        shutil.copy2(src_log, tex_path.with_suffix(".log"))
+                except OSError:
+                    pass
                 return False, log
         produced = build_dir / "main.pdf"
         if not produced.exists():
@@ -224,6 +233,9 @@ def export(keys: list[str], *, title: str = "", out: str = "",
             res["log"] = ("\n".join(first_errors(log, 6))
                           or (log[-800:].strip()
                               or "编译失败，但 LaTeX 没有任何输出（引擎可能没跑起来）"))
+            full_log = tex_path.with_suffix(".log")
+            if full_log.exists():          # 完整日志（含被过滤掉的那些行）
+                res["log"] += f"\n\n完整日志：{full_log}"
 
     # **存档**：出了什么卷、用了哪些题、什么参数。
     # 不记的话「上次那套卷呢」只能去 试卷/ 翻文件名。
