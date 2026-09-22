@@ -125,10 +125,29 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
         return False, ("找不到 xelatex —— 导出 PDF 需要 LaTeX 引擎。\n"
                       "安装方法见项目根目录的《TeXLive安装.md》（含国内镜像与常见报错处理）。\n"
                       "不装不影响浏览、编辑、组卷与预览。")
+    # **内置 LaTeX 自己不能待在中文路径里**：kpathsea 启动时就要按自身位置推
+    # `SELFAUTOPARENT`，路径里有非 ASCII 字符时直接 fatal
+    # （`(null): fatal: Can't get long name for D:\?? ??\AmTiKu.`，30 毫秒就退出，
+    # 报错里连个 `!` 都没有）。这不是"把 .tex 放到英文目录"能解决的——
+    # 引擎本体在中文路径下根本起不来。所以这里直接把话说明白，
+    # 而不是丢一句用户看不懂的 fatal。
+    xe_hint = ""
+    try:
+        xe = shutil.which("xelatex") or ""
+        if any(ord(c) > 127 for c in xe):
+            xe_hint = ("检测到内置 LaTeX 位于含中文/非 ASCII 字符的路径：\n"
+                       f"    {xe}\n"
+                       "这个引擎（kpathsea）在这种路径下**无法启动**，导出必定失败。\n"
+                       "两个办法，任选其一：\n"
+                       "  1) 把整个程序文件夹移到**纯英文路径**，例如 D:\\AmTiKu，再导出；\n"
+                       "  2) 自己装一份 TeX Live（见项目里的《TeXLive安装.md》）——它会装在\n"
+                       "     英文路径下，程序检测到就优先用它，这样程序放哪儿都能导出。\n")
+    except Exception:                          # noqa: BLE001
+        pass
     try:
         build_tex = _prepare_ascii_build(tex_path)
     except OSError as e:
-        return False, f"准备编译目录失败：{e}"
+        return False, xe_hint + f"准备编译目录失败：{e}"
 
     build_dir = build_tex.parent
     log = ""
@@ -153,10 +172,10 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
                         shutil.copy2(src_log, tex_path.with_suffix(".log"))
                 except OSError:
                     pass
-                return False, log
+                return False, xe_hint + log
         produced = build_dir / "main.pdf"
         if not produced.exists():
-            return False, log
+            return False, xe_hint + log
         shutil.move(str(produced), str(tex_path.with_suffix(".pdf")))
         return True, log
     finally:

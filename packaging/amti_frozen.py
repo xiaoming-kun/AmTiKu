@@ -46,6 +46,22 @@ def _safe_console() -> None:
             pass
 
 
+def _tex_runs(xelatex: Path) -> bool:
+    r"""探一下这个 xelatex 在**当前路径下**能不能启动（`--version` 真跑一次）。
+
+    为什么不直接看"路径里有没有中文"：能不能跑取决于系统区域设置——中文 Windows
+    的 ANSI 代码页是 GBK，中文路径照跑；英文 Windows 才必挂。macOS/Linux 用 UTF-8
+    文件名也没事。与其按平台猜，不如花 200 毫秒试一次。
+    """
+    import subprocess
+    try:
+        r = subprocess.run([str(xelatex), "--version"], capture_output=True,
+                           encoding="utf-8", errors="replace", timeout=20)
+        return r.returncode == 0 and "TeX" in (r.stdout or "")
+    except Exception:                          # noqa: BLE001
+        return False
+
+
 def _setup_tex(root: Path) -> None:
     r"""把随包的 LaTeX 加进 PATH 与环境变量，让「导出 PDF」开箱可用。
 
@@ -61,6 +77,23 @@ def _setup_tex(root: Path) -> None:
     exe = "xelatex.exe" if os.name == "nt" else "xelatex"
     for d in sorted(binroot.iterdir()):
         if (d / exe).exists():
+            # **内置引擎可能起不来**：kpathsea 启动时要按自身位置推 SELFAUTOPARENT，
+            # 路径含非 ASCII 字符时，英文区域设置的 Windows 上直接
+            # `(null): fatal: Can't get long name for D:\?? ??\AmTiKu.`
+            # ——30 毫秒退出、日志里连 `!` 都没有（CI 上定位了好几轮）。
+            # 但中文 Windows 的 ANSI 代码页是 GBK，同样路径反而能跑，
+            # 所以**不猜，花 200 毫秒真跑一次 `--version`**。
+            if any(ord(c) > 127 for c in str(root)) and not _tex_runs(d / exe):
+                print("⚠ 内置 LaTeX 在这个路径下起不来：", root)
+                print("  原因：路径含中文/非 ASCII 字符，kpathsea 无法启动"
+                      "（报 Can't get long name）。")
+                sys_xe = shutil.which(exe)
+                if sys_xe:
+                    print("  已改用系统里的 LaTeX：", sys_xe)
+                    return
+                print("  系统里也没有别的 LaTeX。请二选一：")
+                print("    1) 把整个文件夹移到纯英文路径，例如 D:\\AmTiKu；")
+                print("    2) 自行安装 TeX Live（见《TeXLive安装.md》），它会装在英文路径下。")
             os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
             tex = root / "tex"
             os.environ.setdefault("TEXMFCNF", str(tex / "texmf-dist" / "web2c"))
