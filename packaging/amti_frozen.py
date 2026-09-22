@@ -145,6 +145,21 @@ def _export_smoke() -> bool | None:
         return False
 
 
+def _setup_node(root: Path) -> None:
+    r"""把随包的 Node 与 Chromium 接上（幻灯片式讲义导出要用 npx slidev export）。
+
+    slidev 会 fork node + 自带 chromium 出 PDF，所以三样都得随包：
+    node/bin（便携 Node）、slidev/（工程 + node_modules）、playwright/（浏览器缓存）。
+    """
+    nb = root / "node" / "bin"
+    if nb.is_dir():
+        os.environ["PATH"] = str(nb) + os.pathsep + os.environ.get("PATH", "")
+        print("已加载内置 Node:", nb.parent.name)
+    pw = root / "playwright"
+    if pw.is_dir():
+        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(pw))
+
+
 def main() -> int:
     _safe_console()
     root = _root()
@@ -156,6 +171,7 @@ def main() -> int:
         pass
     _ensure_data(root)
     _setup_tex(root)
+    _setup_node(root)
 
     if "--selftest" in sys.argv:            # CI 冒烟测试用：不启服务
         from amti import conform, knowledge, store

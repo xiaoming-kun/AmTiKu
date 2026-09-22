@@ -61,7 +61,7 @@ jobs:
           tlpdbopt_install_srcfiles 0
           "@ | Out-File -Encoding ascii tl.profile
           & "$d\install-tl-windows.bat" -profile tl.profile -no-interaction
-          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math fandol pgfplots siunitx varwidth tikzpagenodes environ trimspaces
+          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math fandol tex-gyre elegantnote elegantbook pgfplots siunitx varwidth tikzpagenodes environ trimspaces
 
       # 宏包清单靠猜必然漏（本机就漏在 l3draw.sty 上），所以用项目自带的补包工具：
       # 反复编译参考卷 → 缺哪个包就 tlmgr 装哪个 → 直到编出 PDF。本机与 CI 共用同一逻辑。
@@ -74,7 +74,9 @@ jobs:
           Copy-Item demo数据\图片\* 图片\ -Force
 
       - name: 补全 TeX 宏包（编参考卷自检）
-        run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex
+        run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex packaging/test-handout.tex
+        # 两篇都要编：试卷走 exam-zh、A4 讲义走 elegantnote，
+        # 只编一种就会出现"另一种卷型从没被验证过"（elegantnote.cls 就是这么漏的）
 
       - name: PyInstaller 打包
         shell: pwsh
