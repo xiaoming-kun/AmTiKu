@@ -50,7 +50,7 @@
 \begin{document}
 \secret
 \maketitle
-本试卷共 \pageref{LastPage} 页，0 题。全卷满分 0 分。考试用时 120 分钟。
+本试卷共 \pageref{LastPage} 页，4 题。全卷满分 93 分。考试用时 120 分钟。
 
 \begin{notice}
   \item 答卷前，考生务必将自己的姓名、考生号、考场号和座位号填写答题卡上，用 2B 铅笔将试卷类型（B）填涂在答题卡相应位置上，将条形码横贴在答题卡右上角“条形码粘贴处”。
@@ -58,5 +58,69 @@
   \item 非选择题必须用黑色字迹的钢笔或签字笔作答，答案必须写在答题卡各题目指定区域内相应位置上；如需改动，先划掉原来的答案，然后再写上新答案；不准使用铅笔和涂改液。不按以上要求作答无效。
   \item 考生必须保持答题卡的整洁。考试结束后，将试卷和答题卡一并交回。
 \end{notice}
+
+\section{选择题：本题共 1 小题，每小题 5 分，共 5 分。在每小题给出的四个选项中，只有一项是符合题目要求的。}
+
+\needspace{6\baselineskip}
+\begin{question}
+已知集合 $A=\{1,2\}$，$B=\{2,3\}$，则 $A\cap B=${\color{amtiAnsRed}\paren[B]}
+\begin{choices}[columns = 4]
+  \item $\{1\}$
+  \item $\{2\}$
+  \item $\{3\}$
+  \item $\{1,2,3\}$
+\end{choices}
+\begin{solution}
+两个集合的公共元素只有 $2$，故 $A\cap B=\{2\}$。故选 B。
+\end{solution}
+\end{question}
+
+\section{多选题：本题共 1 小题，每小题 6 分，共 6 分。在每小题给出的选项中，有多项符合题目要求。全部选对的得 6 分，部分选对的得部分分，有选错的得 0 分。}
+
+\needspace{6\baselineskip}
+\begin{question}
+已知 $a>0$，$b>0$，且 $a+b=2$，则下列结论正确的是{\color{amtiAnsRed}\paren[ABC]}
+\begin{choices}[columns = 4]
+  \item $ab\leqslant 1$
+  \item $a^{2}+b^{2}\geqslant 2$
+  \item $\dfrac{1}{a}+\dfrac{1}{b}\geqslant 2$
+  \item $a^{3}+b^{3}\leqslant 2$
+\end{choices}
+\begin{solution}
+由 $a+b=2$ 与均值不等式：$ab\leqslant\left(\dfrac{a+b}{2}\right)^{2}=1$，A 正确；$a^{2}+b^{2}\geqslant\dfrac{(a+b)^{2}}{2}=2$，B 正确；$\dfrac{1}{a}+\dfrac{1}{b}=\dfrac{a+b}{ab}=\dfrac{2}{ab}\geqslant 2$，C 正确；取 $a=2$、$b\to 0^{+}$ 时 $a^{3}+b^{3}\to 8>2$，D 错误。故选 ABC。
+\end{solution}
+\end{question}
+
+\section{填空题：本题共 1 小题，每小题 5 分，共 5 分。}
+
+\needspace{6\baselineskip}
+\begin{question}
+已知函数 $f(x)=x^{2}-2x$，则 $f(x)$ 在 $[0,3]$ 上的最小值为{\color{amtiAnsRed}\fillin[-1]}
+\begin{solution}
+$f(x)=(x-1)^{2}-1$，其图象开口向上、对称轴为 $x=1$，而 $1\in[0,3]$，故最小值为 $f(1)=-1$。
+\end{solution}
+\end{question}
+
+\section{解答题：本题共 1 小题，共 77 分。解答应写出文字说明、证明过程或演算步骤。}
+
+\needspace{6\baselineskip}
+\begin{problem}
+如图，抛物线 $y=x^{2}-2x-3$ 与 $x$ 轴交于 $A$、$B$ 两点（$A$ 在 $B$ 的左侧），与 $y$ 轴交于点 $C$。
+
+(1) 求 $A$、$B$ 两点的坐标；
+
+(2) 求 $\triangle ABC$ 的面积。
+
+\includegraphics[width=0.5\linewidth]{7e044a2c74964f15.png}
+\begin{solution}
+\textbf{答案：}见解析
+(1) 令 $y=0$，得 $x^{2}-2x-3=0$，解得 $x=-1$ 或 $x=3$，故 $A(-1,0)$、$B(3,0)$。
+
+(2) 令 $x=0$，得 $y=-3$，故 $C(0,-3)$。于是
+\[
+S_{\triangle ABC}=\dfrac{1}{2}|AB|\cdot|OC|=\dfrac{1}{2}\times 4\times 3=6 .
+\]
+\end{solution}
+\end{problem}
 
 \end{document}
