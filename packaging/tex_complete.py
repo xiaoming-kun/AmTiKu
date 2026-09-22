@@ -61,7 +61,10 @@ def main() -> int:
         for i in range(1, a.rounds + 1):
             for f in ("t.aux", "t.log", "t.pdf"):
                 (work / f).unlink(missing_ok=True)
-            r = run([str(xelatex), "-interaction=nonstopmode", "t.tex"], work, env, timeout=300)
+            # 必须带 -halt-on-error：nonstopmode 下字体缺失/宏包报错也照样产出 PDF，
+            # 会把残缺的 TeX 判成"通过"（本机就漏了 Asana-Math 字体，自检才暴露）
+            r = run([str(xelatex), "-interaction=nonstopmode", "-halt-on-error", "t.tex"],
+                    work, env, timeout=300)
             log = r.stdout + r.stderr
             if (work / "t.pdf").exists():
                 print(f"  ✓ {src.name}：第 {i} 轮编出 PDF")

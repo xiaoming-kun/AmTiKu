@@ -61,7 +61,7 @@ jobs:
           tlpdbopt_install_srcfiles 0
           "@ | Out-File -Encoding ascii tl.profile
           & "$d\install-tl-windows.bat" -profile tl.profile -no-interaction
-          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf pgfplots siunitx varwidth tikzpagenodes environ trimspaces
+          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math pgfplots siunitx varwidth tikzpagenodes environ trimspaces
 
       # 宏包清单靠猜必然漏（本机就漏在 l3draw.sty 上），所以用项目自带的补包工具：
       # 反复编译参考卷 → 缺哪个包就 tlmgr 装哪个 → 直到编出 PDF。本机与 CI 共用同一逻辑。
