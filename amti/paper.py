@@ -205,6 +205,20 @@ def star_tex(n: int) -> str:
     return ("$" + r"\star" * n + "$") if n else ""
 
 
+def _cjk_fontset_opt(comma: bool = False) -> str:
+    r"""中文字体集选项。默认 `fontset=fandol`（TeX 自带、跨平台），
+    `AMTIKU_CJK_FONTSET=system` 时返回空串（交给 ctex 按平台自动挑）。
+
+    为什么默认 Fandol：ctex 在 Windows 上默认要 SimSun/SimHei，
+    而英文版 Windows / 精简系统 / Windows Server 没有这些字体，
+    导出会以 "The font SimHei cannot be found" 失败（CI 上就是这么挂的）。
+    """
+    import os
+    if os.environ.get("AMTIKU_CJK_FONTSET", "").lower() == "system":
+        return ""
+    return (", fontset=fandol" if comma else "[fontset=fandol]")
+
+
 # 讲义可选的几种字号（ctex 的 `\zihao` 编号 → 实际磅值）。
 #
 #   `-4` 小四 12pt    `4` 四号 14pt    `3` 三号 16pt    `2` 二号 22pt
@@ -395,7 +409,13 @@ def _preamble(*, title: str = "", graphicspath: str = "",
     """
     out = [
         first_line or "% 由 AmTiKu 生成，请勿手改；改题目请改 题目/*.tex 后重新导出。",
-        r"\documentclass{exam-zh}",
+        # 中文字体：**默认用 TeX 自带的 Fandol**，不依赖系统字体。
+        # 坑（CI 上暴露的）：ctex 在 Windows 上会自动挑 SimSun/SimHei，英文版 Windows、
+        # 精简系统、Windows Server 上根本没这些字体 → 导出直接报
+        # "The font SimHei cannot be found" 而失败。Fandol 随 TeX 分发、跨平台一致，
+        # 这样**同一份 .tex 在任何机器上编出来的 PDF 都一样**。
+        # 想让本机系统字体生效（好看些但不保证别处能编）：设 AMTIKU_CJK_FONTSET=system
+        r"\documentclass%s{exam-zh}" % _cjk_fontset_opt(),
         r"\usepackage{siunitx}",
         r"\usepackage{multicol}",
         # 答案标红要用 `\color`（exam-zh 自己多半也装过 xcolor，
@@ -594,7 +614,7 @@ def _render_handout(questions: list[Question], *, title: str = "",
     pt = {"-4": "12pt", "4": "14pt", "3": "16pt", "2": "22pt"}.get(font, "12pt")
     doc: list[str] = [
         "% 由 AmTiKu 生成（讲义模式：一题一页 · A4 横版 · 无答案）",
-        r"\documentclass[cn, device=normal, 11pt]{elegantnote}",
+        r"\documentclass[cn, device=normal, 11pt%s]{elegantnote}" % _cjk_fontset_opt(True),
         r"\usepackage{amsmath,amssymb}",
         r"\usepackage{enumitem}",
         r"\usepackage{graphicx}",
