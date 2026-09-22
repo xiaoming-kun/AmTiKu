@@ -18,7 +18,7 @@
 """
 from __future__ import annotations
 
-from amti.paths import ROOT, UI_DIST as UI_RES
+from amti.paths import ROOT, UI_DIST
 import json
 from collections import Counter, OrderedDict
 import os
@@ -89,10 +89,10 @@ def _usage_bump(keys) -> None:
         except Exception:
             log.warning("使用频次写盘失败（本次计数丢失）", exc_info=True)
             pass
-# 前端是**随包只读资源**，不是用户数据：必须按 RESOURCES 找（打包后在 _internal/ 下）。
-# 原来用 PKG（=数据目录）找，免安装版里指向 exe 旁边的 web/dist —— 那里没有，
-# `if UI_DIST.exists()` 就整段跳过，于是**首页 404、界面打不开**（接口却都正常）。
-UI_DIST = UI_RES / "web" / "dist"
+# 前端是**随包只读资源**，不是用户数据：UI_DIST 一律来自 `amti.paths`
+# （打包后是 `_internal/web/dist`）。
+# 原来写的是 `PKG / "web" / "dist"`，而 PKG 是**数据目录**（exe 旁边）——
+# 那里没有前端，于是 `if UI_DIST.exists()` 整段跳过：接口全通、首页 404。
 OUT_DIR = PKG / "试卷"
 
 log = get_logger(__name__)
