@@ -154,6 +154,30 @@ jobs:
           cd dist\AmTiKu
           .\AmTiKu.exe --selftest
 
+      # ── 接口冒烟：把包当服务真跑起来，走一遍用户真会走的路 ─────────────
+      # 只测 `--selftest` 不够：免安装版曾经「接口全通、首页 404」——
+      # 前端被 PyInstaller 放进 `_internal/web/dist`，代码却去 exe 旁边找
+      # `web/dist`，找不到就静默跳过整个界面挂载。用户第一步就是打开首页，
+      # 于是只看到一个 404（这个 bug 就是这么抓出来的）。这条测试专门盯它。
+      # 顺带放在**中文 + 空格的目录**里跑：用户解压到「桌面/高中数学题库」是常态。
+      - name: 接口冒烟（真起服务 · 中文+空格路径）
+        shell: pwsh
+        run: |
+          $dir = "D:\冒烟 测试\AmTiKu"
+          New-Item -ItemType Directory -Force -Path (Split-Path $dir) | Out-Null
+          Copy-Item dist\AmTiKu $dir -Recurse -Force
+          $o = Join-Path $env:TEMP "amti_out.log"; $e = Join-Path $env:TEMP "amti_err.log"
+          $p = Start-Process -FilePath "$dir\AmTiKu.exe" -ArgumentList "--port","8951" `
+                -PassThru -RedirectStandardOutput $o -RedirectStandardError $e
+          try {
+            python packaging/win_smoke_api.py --port 8951
+            if ($LASTEXITCODE -ne 0) { throw "接口冒烟失败（上面有具体哪一项）" }
+          } finally {
+            Write-Host "──── 服务输出 ────"; Get-Content $o -Tail 30 -ErrorAction SilentlyContinue
+            Get-Content $e -Tail 30 -ErrorAction SilentlyContinue
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+
       # if: always() 很关键：以前任何一步失败就什么都取不回来（白等一轮）。
       # 现在无论成败都上传，至少能拿到 exe 与已装好的 TeX。
       - name: 上传产物（exe）

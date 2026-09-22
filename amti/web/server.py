@@ -18,7 +18,7 @@
 """
 from __future__ import annotations
 
-from amti.paths import ROOT
+from amti.paths import ROOT, UI_DIST as UI_RES
 import json
 from collections import Counter, OrderedDict
 import os
@@ -89,7 +89,10 @@ def _usage_bump(keys) -> None:
         except Exception:
             log.warning("使用频次写盘失败（本次计数丢失）", exc_info=True)
             pass
-UI_DIST = PKG / "web" / "dist"
+# 前端是**随包只读资源**，不是用户数据：必须按 RESOURCES 找（打包后在 _internal/ 下）。
+# 原来用 PKG（=数据目录）找，免安装版里指向 exe 旁边的 web/dist —— 那里没有，
+# `if UI_DIST.exists()` 就整段跳过，于是**首页 404、界面打不开**（接口却都正常）。
+UI_DIST = UI_RES / "web" / "dist"
 OUT_DIR = PKG / "试卷"
 
 log = get_logger(__name__)
@@ -1745,6 +1748,11 @@ if UI_DIST.exists():
         # index.html 没缓存头 → 改了前端要 Cmd+Shift+R 才看得到）
         return FileResponse(UI_DIST / "index.html",
                             headers={"Cache-Control": "no-cache, must-revalidate"})
+else:
+    # 别静默跳过：以前这里什么都不说，免安装版就成了"接口都能用、首页 404"，
+    # 排查时只能靠猜。源码运行时没构建前端也会走到这里。
+    log.warning("找不到前端 %s —— 只提供 API，界面打不开"
+                "（源码运行请先 cd web && npm run build）", UI_DIST)
 
 
 def main() -> int:

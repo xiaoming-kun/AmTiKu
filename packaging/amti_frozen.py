@@ -184,6 +184,7 @@ def main() -> int:
 
     if "--selftest" in sys.argv:            # CI 冒烟测试用：不启服务
         from amti import conform, knowledge, store
+        from amti import paths
         qs = store.load_all()
         from amti import images
         # 把关键目录一起打出来：打包后路径指错（例如图片目录指向包内部）时一眼可见
@@ -192,6 +193,14 @@ def main() -> int:
         print("  图片目录=%s（存在 %s，%d 张）｜ 知识点=%s"
               % (images.IMG_DIR, images.IMG_DIR.is_dir(),
                  len(list(images.IMG_DIR.glob("*.png"))), knowledge.KB_PATH))
+        # **前端必须在包里**。少了它，`server.py` 那句 `if UI_DIST.exists()`
+        # 会静默跳过整个界面挂载：接口全都能用、首页却 404，用户以为程序坏了。
+        # （免安装版曾经就是这样——只测接口的冒烟测试发现不了。）
+        print("  前端目录=%s（存在 %s）" % (paths.UI_DIST, paths.UI_DIST.is_dir()))
+        if not (paths.UI_DIST / "index.html").is_file():
+            print("自检失败：包内找不到前端 %s —— 免安装版会打不开界面"
+                  % (paths.UI_DIST / "index.html"))
+            return 1
         # 三态：None=跳过（合法）→ 通过；False=失败 → **必须让流程失败**，
         # 否则残缺的 TeX 或导出代码里的 bug 会蒙混过关，用户拿到才发现导不出 PDF。
         # 先走程序自己的导出路径（更强），没有数据/没装 TeX 时退回只测引擎。
