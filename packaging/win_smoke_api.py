@@ -167,7 +167,9 @@ def main() -> int:
             "keys": st["keys"], "title": "接口冒烟_试卷", "out": "接口冒烟_试卷",
             "mode": "gaokao", "show_answers": True, "answers_at_end": True,
             "compile": True})
-        assert d.get("ok"), f"导出失败：{d.get('error') or d.get('log')}"
+        # 失败时把整个响应打出来：只打 error/log 的话，两者都空就成了"导出失败："，
+        # CI 上完全看不出哪儿不对（第一次就是这样）
+        assert d.get("ok"), "导出失败：" + json.dumps(d, ensure_ascii=False)[:600]
         st["paper"] = d
         return f"{d['questions']} 题 → {d['pdf_abs']}"
 
@@ -175,7 +177,7 @@ def main() -> int:
         d = jget(base, "/api/export", method="POST", body={
             "keys": st["keys"], "title": "接口冒烟_讲义", "out": "接口冒烟_讲义",
             "mode": "handout", "compile": True})
-        assert d.get("ok"), f"讲义导出失败：{d.get('error') or d.get('log')}"
+        assert d.get("ok"), "讲义导出失败：" + json.dumps(d, ensure_ascii=False)[:600]
         st["handout"] = d
         return f"{d['questions']} 题 → {d['pdf_abs']}"
 
