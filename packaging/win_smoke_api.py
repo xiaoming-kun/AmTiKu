@@ -32,6 +32,15 @@ import urllib.request
 
 FAILED: list[str] = []
 
+# Windows 控制台默认 cp1252/cp936：脚本里第一句中文 print 就抛 UnicodeEncodeError
+# 把测试自己打挂（第一次在 CI 上就是这样，看起来像"冒烟失败"，其实产品没事）。
+# 和 packaging/amti_frozen.py 里的 _safe_console() 同一个坑、同一种防法。
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # 录入用的一小段源材料：模仿 demo 里的填空题（同一种宏），只是**每次换数字**——
 # 不换的话第二次跑就会被查重挡下（"入库后题数没涨"），看起来像写库坏了。
 # 答案：$f(x)=x^2-2kx$ 在 $[0,2k]$ 上的最小值是 $f(k)=-k^2$。
