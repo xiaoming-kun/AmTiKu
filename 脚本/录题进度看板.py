@@ -36,12 +36,21 @@ def completed_rows(prog):
     return list(by_book.values())
 
 
+def stamp_min(s):
+    """进度行的「时间」人手补记时也直接写，格式没有约束（现读已有 3 行写成「20:4x」）。
+    解不出来就当「不知道」，别让一行脏数据把整个看板停更。"""
+    try:
+        return time.mktime(time.strptime(s, "%Y-%m-%d %H:%M"))
+    except (TypeError, ValueError):
+        return None
+
+
 def rate_hours(n_todo, span_min):
     """按最近 span_min 分钟内做了多少场，估还剩多少小时。"""
     prog = [json.loads(l) for l in (SRC / "Qoder录题进度.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     cut = time.time() - span_min * 60
     done_recent = [p for p in completed_rows(prog)
-                   if time.mktime(time.strptime(p["时间"], "%Y-%m-%d %H:%M")) > cut]
+                   if (stamp_min(p.get("时间")) or 0) > cut]
     if not done_recent:
         return None, 0
     per_hour = len(done_recent) / (span_min / 60.0)
@@ -144,6 +153,10 @@ def main():
             L.append("- 最近 1 小时做了 %d 场%s" % (cnt_a, eta_text(left, est_a)))
         if cnt_b:
             L.append("- 最近 10 小时做了 %d 场%s" % (cnt_b, eta_text(left, est_b)))
+    bad_time = [p for p in completed_rows(prog) if stamp_min(p.get("时间")) is None]
+    if bad_time:
+        L.append("- ⚠️ %d 场的记账 `时间` 不是 `%Y-%m-%d %H:%M`（如 `%s`），已排除在上面的计数之外"
+                 % (len(bad_time), bad_time[0]["时间"]))
     L.append("")
 
     L.append("## 待复核都登记了什么\n")
