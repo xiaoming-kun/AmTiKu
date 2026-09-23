@@ -1,0 +1,392 @@
+[
+ {
+  "i": 320,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#7",
+  "type": "single_choice",
+  "stem": "定义在 $\\mathbf{R}$ 上的奇函数 $f(x)$ 满足：$\\forall x_1$，$x_2\\in(0,+\\infty)$，且 $x_1\\neq x_2$，$\\dfrac{f(x_1)-f(x_2)}{x_1-x_2}>1$，若 $f(2)=2$，则不等式 $f(x)>x$ 的解集为 \\paren[D]",
+  "options": [
+   "$(0,2)$",
+   "$(2,+\\infty)$",
+   "$(-\\infty,-2)\\cup(0,2)$",
+   "$(-2,0)\\cup(2,+\\infty)$"
+  ]
+ },
+ {
+  "i": 321,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#8",
+  "type": "single_choice",
+  "stem": "一个高为 $3\\sqrt{3}\\ \\mathrm{cm}$，上、下底面半径分别是 $1\\mathrm{cm}$ 和 $4\\mathrm{cm}$ 的封闭圆台容器（容器壁厚度忽略不计）内有一个铁球，则铁球表面积的最大值为 \\paren[C]",
+  "options": [
+   "$\\dfrac{16}{3}\\pi\\mathrm{cm}^2$",
+   "$16\\pi\\mathrm{cm}^2$",
+   "$\\dfrac{64}{3}\\pi\\mathrm{cm}^2$",
+   "$27\\pi\\mathrm{cm}^2$"
+  ]
+ },
+ {
+  "i": 322,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#10",
+  "type": "multi_choice",
+  "stem": "在正方体 $ABCD-A_1B_1C_1D_1$ 中，$E$，$F$ 分别为 $CC_1$ 和 $A_1D_1$ 的中点，下列说法正确的是 \\paren[BCD]",
+  "options": [
+   "平面 $AFB_1\\parallel$ 平面 $BDE$",
+   "$B_1E\\perp BF$",
+   "$EF$ 与平面 $ABCD$ 所成角的正切值为 $\\dfrac{\\sqrt{5}}{5}$",
+   "$V_{C-C_1DF}=V_{C-BDE}$"
+  ]
+ },
+ {
+  "i": 323,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#11",
+  "type": "multi_choice",
+  "stem": "若函数 $f(x)$ 的图象上存在四点共圆，则满足条件的 $f(x)$ 可以是 \\paren[ACD]",
+  "options": [
+   "$f(x)=x^2$",
+   "$f(x)=\\sqrt{x}$",
+   "$f(x)=\\sin x$",
+   "$f(x)=e^x$"
+  ]
+ },
+ {
+  "i": 324,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#12",
+  "type": "fill_in_blank",
+  "stem": "设函数 $f(x)=\\ln x+2x$，则曲线 $y=f(x)$ 在点 $(1,2)$ 处的切线方程为\\fillin[$3x-y-1=0$]。"
+ },
+ {
+  "i": 325,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#14",
+  "type": "fill_in_blank",
+  "stem": "在平面直角坐标系 $xOy$ 中，横坐标与纵坐标都是整数的点叫做整点，从整点 $(x,y)$ 到整点 $(x+1,y+1)$ 或 $(x+1,y-1)$ 的有向线段叫做一个 $T$ 步，从整点 $A$ 到整点 $B$ 的一条 $T$ 路是指由若干个 $T$ 步组成的起点为 $A$、终点为 $B$ 的有向折线。则整点 $M(1,2)$ 到整点 $N(7,4)$ 的 $T$ 路的条数为\\fillin[15].（结果用数字表示）"
+ },
+ {
+  "i": 326,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#16",
+  "type": "detailed_answer",
+  "stem": "设函数 $f(x)=\\sqrt{3}\\sin 2\\omega x+\\cos 2\\omega x+1$（$\\omega>0$），且 $f(x)$ 的图象相邻两条对称轴的距离为 $\\dfrac{\\pi}{2}$。\n(1) 求 $f(x)$ 的单调递增区间；\n(2) 将 $f(x)$ 所有的正零点按从小到大顺序排列得到数列 $\\{x_n\\}$，求数列的前 $30$ 项和。"
+ },
+ {
+  "i": 327,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#17",
+  "type": "detailed_answer",
+  "stem": "已知函数 $f(x)=2\\mathrm{e}^x-ax$（$a\\in\\mathbf{R}$）。\n(1) 当 $a\\geqslant 0$ 时，证明：$f(a)\\geqslant 2a+2$；\n(2) 若 $f(x)$ 存在两个零点，求 $a$ 的取值范围。"
+ },
+ {
+  "i": 328,
+  "key": "模拟题/2025年9月福建漳州市高三第一次质检#19",
+  "type": "detailed_answer",
+  "stem": "已知椭圆 $C:\\dfrac{x^2}{a^2}+\\dfrac{y^2}{b^2}=1$（$a>b>0$）的焦距为 $2$，且过点 $\\left(1,\\dfrac{3}{2}\\right)$。\n(1) 求 $C$ 的标准方程；\n(2) 过点 $N\\left(1,\\dfrac{\\sqrt{3}}{2}\\right)$ 作两条斜率存在且不为零的直线 $l_1$，$l_2$ 分别交 $C$ 于 $P$，$Q$ 和 $S$，$T$，满足 $|NP||NQ|=|NS||NT|$。\n(i) 证明：$l_1$，$l_2$ 的斜率之和为定值；\n(ii) 求四边形 $PSQT$ 面积的最大值。"
+ },
+ {
+  "i": 329,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#1",
+  "type": "single_choice",
+  "stem": "已知复数 $z=-\\mathrm{i}(2-\\mathrm{i})$，则 $z$ 的共轭复数 $\\overline{z}$ 在复平面内对应的点在第\\paren[B]象限",
+  "options": [
+   "一",
+   "二",
+   "三",
+   "四"
+  ]
+ },
+ {
+  "i": 330,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#2",
+  "type": "single_choice",
+  "stem": "已知集合 $A=\\{-4,-3,-2,-1,0,1,2,3,4\\}$，集合 $B=\\left\\{x\\middle|\\dfrac{2x-1}{4-x}\\geqslant 0\\right\\}$，则 $A\\cap B=$ \\paren[D]",
+  "options": [
+   "$\\{-4,-3,-2,-1,0\\}$",
+   "$\\{-4,-3,-2,-1,0,4\\}$",
+   "$\\{1,2,3,4\\}$",
+   "$\\{1,2,3\\}$"
+  ]
+ },
+ {
+  "i": 331,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#3",
+  "type": "single_choice",
+  "stem": "一个各项均为正数的等比数列，第三项等于第四项和第五项之和，则公比 $q$ 等于\\paren[C]",
+  "options": [
+   "$\\dfrac{\\sqrt{3}}{2}$",
+   "$2$",
+   "$\\dfrac{\\sqrt{5}-1}{2}$",
+   "$\\dfrac{\\sqrt{5}+1}{2}$"
+  ]
+ },
+ {
+  "i": 332,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#4",
+  "type": "single_choice",
+  "stem": "“关于 $x$，$y$ 的方程 $x^2+y^2+2mx+2y+5=0$ 的曲线表示圆”是“$m>2$”的\\paren[B]条件",
+  "options": [
+   "充分不必要",
+   "必要不充分",
+   "充分必要",
+   "既不充分也不必要"
+  ]
+ },
+ {
+  "i": 333,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#6",
+  "type": "single_choice",
+  "stem": "甲、乙两人进行乒乓球比赛，约定每局胜者得一分，负者得 $0$ 分，比赛进行到有一人比对方多 $2$ 分或打满 $4$ 局时停止，设甲在每局中获胜的概率为 $\\dfrac{3}{4}$，乙在每局中获胜的概率为 $\\dfrac{1}{4}$，且各局胜负互相独立，则比赛停止时已打局数 $X$ 的期望 $E(X)$ 为\\paren[C]",
+  "options": [
+   "$\\dfrac{9}{4}$",
+   "$\\dfrac{5}{2}$",
+   "$\\dfrac{11}{4}$",
+   "$3$"
+  ]
+ },
+ {
+  "i": 334,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#7",
+  "type": "single_choice",
+  "stem": "双曲线 $C$：$x^2-\\dfrac{y^2}{3}=1$，过点 $P(2,3)$ 作 $C$ 的两条渐近线的平行线，分别与渐近线相交于 $A$，$B$ 两点，则平行四边形 $OAPB$ 的面积是\\paren[A]",
+  "options": [
+   "$\\dfrac{\\sqrt{3}}{2}$",
+   "$1$",
+   "$\\sqrt{3}$",
+   "$2$"
+  ]
+ },
+ {
+  "i": 335,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#8",
+  "type": "single_choice",
+  "stem": "定义在 $\\mathbf{R}$ 上的函数 $f(x)$ 满足 $f(x)-f(-x)=\\sin x$，又当 $x\\leqslant 0$ 时，$f'(x)\\geqslant\\dfrac{1}{2}$ 恒成立，若 $f(\\theta)\\geqslant f\\left(\\dfrac{\\pi}{3}-\\theta\\right)+\\dfrac{\\sqrt{3}}{2}\\sin\\left(\\theta-\\dfrac{\\pi}{6}\\right)$，则实数 $\\theta$ 的取值范围为\\paren[B]",
+  "options": [
+   "$\\left(-\\infty,\\dfrac{\\pi}{6}\\right]$",
+   "$\\left[\\dfrac{\\pi}{6},+\\infty\\right)$",
+   "$\\left[0,\\dfrac{\\pi}{6}\\right]$",
+   "$\\left[\\dfrac{\\pi}{6},\\dfrac{\\pi}{3}\\right]$"
+  ]
+ },
+ {
+  "i": 336,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#10",
+  "type": "multi_choice",
+  "stem": "已知函数 $f(x)=a\\sin 2x+b\\cos 2x$（$a>0$，$b\\in\\mathbf{R}$）在 $x=\\dfrac{\\pi}{3}$ 处取得极大值 $2$，则\\paren[ACD]",
+  "options": [
+   "$f(x)$ 的最小正周期为 $\\pi$",
+   "$b=1$",
+   "$f(x)$ 的一个递增区间为 $\\left[\\dfrac{5\\pi}{6},\\dfrac{4\\pi}{3}\\right]$",
+   "将 $f(x)$ 的图象向左平移 $\\dfrac{5\\pi}{6}$ 个单位长度后得到函数 $g(x)$ 的图象，则 $g(x)$ 为偶函数"
+  ]
+ },
+ {
+  "i": 337,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#11",
+  "type": "multi_choice",
+  "stem": "已知 $O$ 为坐标原点，点 $M$ 的轨迹与 $y$ 轴的交点分别为 $P(0,1)$，$Q(0,-1)$，当点 $M$ 与 $P$，$Q$ 均不重合时，点 $M$ 到点 $P$ 和到定直线 $y+1=0$ 距离的平方和为 $4$，则下列说法正确的是\\paren[ABD]",
+  "options": [
+   "点 $M$ 的轨迹方程为 $\\dfrac{x^2}{2}+y^2=1$",
+   "$|OM|$ 的最大值为 $\\sqrt{2}$",
+   "当点 $M$ 与 $P$，$Q$ 均不重合时，直线 $MP$，$MQ$ 的斜率之积为定值 $-2$",
+   "$B$，$C$ 是点 $M$ 的轨迹上的两点，$A(1,\\dfrac{\\sqrt{2}}{2})$，若 $AB$，$AC$ 斜率互为相反数，则 $BC$ 的斜率为 $\\dfrac{\\sqrt{2}}{2}$"
+  ]
+ },
+ {
+  "i": 338,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#14",
+  "type": "fill_in_blank",
+  "stem": "已知函数 $f(x)=\\dfrac{2\\mathrm{e}^x-1}{\\mathrm{e}^x+1}$，对于任意 $x_1$，$x_2\\in\\mathbf{R}$，满足 $|x_1-x_2|\\leqslant 2\\ln 2$ 时，$|f(x_1)-f(x_2)|$ 的取值范围为 \\fillin[$[0,1]$]。"
+ },
+ {
+  "i": 339,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#16",
+  "type": "detailed_answer",
+  "stem": "记锐角 $\\triangle ABC$ 的内角 $A$，$B$，$C$ 的对边分别为 $a$，$b$，$c$，已知 $\\triangle ABC$ 的外接圆半径为 $1$，设 $\\triangle ABC$ 面积为 $S$，且 $2S=\\sqrt{3}\\left[\\cos(A-B)+\\cos C\\right]$\n(1) 求角 $C$；\n(2) 求 $a^2+b^2$ 的最大值。"
+ },
+ {
+  "i": 340,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#17",
+  "type": "detailed_answer",
+  "stem": "已知抛物线 $E$：$y^2=2px$（$p>0$）的焦点为 $F(1,0)$，过点 $Q(3,0)$ 的直线 $l$ 交抛物线 $E$ 于 $A$，$B$ 两点，点 $C(4,4)$，若直线 $AC$，$BC$ 分别与直线 $x=-3$ 交于 $M$，$N$ 两点，\n(1) 求抛物线 $E$ 的方程；\n(2) 求以 $MN$ 为直径的圆在 $x$ 轴上截得的弦长。"
+ },
+ {
+  "i": 341,
+  "key": "模拟题/2026届景德镇一检数学试题+答案#19",
+  "type": "detailed_answer",
+  "stem": "已知函数 $f(x)=x\\ln x$，$g(x)=\\dfrac{1}{2(1+a)}x^2-\\dfrac{1}{\\mathrm{e}^2}+\\dfrac{1}{2}$\n(1) 求函数 $f(x)$ 的单调区间；\n(2) 当 $a=0$ 时，求曲线 $f(x)$ 与曲线 $g(x)$ 的公切线方程；\n(3) 设函数 $h(x)=f(x)-g(x)$ 的存在两个极值点为 $x_1$，$x_2$，（$x_1<x_2$）求证：关于 $x$ 的方程 $4a^2-(x_1x_2+x_1+x_2-3)a+\\mathrm{e}^x=0$ 有唯一解"
+ },
+ {
+  "i": 342,
+  "key": "模拟题/武汉市2027届高中毕业生九月调研考试#2",
+  "type": "single_choice",
+  "stem": "平面向量 $\\vec a,\\vec b$ 的夹角为 $60^{\\circ}$，若 $|\\vec a|=2$，$|\\vec b|=1$，则 $\\vec b\\cdot(\\vec a-\\vec b)=$\\paren[B]",
+  "options": [
+   "$-1$",
+   "$0$",
+   "$1$",
+   "$2$"
+  ]
+ },
+ {
+  "i": 343,
+  "key": "模拟题/武汉市2027届高中毕业生九月调研考试#3",
+  "type": "single_choice",
+  "stem": "某光电子产业基地汇聚众多高科技企业，在多个领域打破国际垄断、领跑全球。已知该地某芯片企业近 9 个月的月产量构成等比数列，其中前 3 个月总产量为 50 万片，前 6 个月总产量为 110 万片，则该企业这 9 个月的总产量为\\paren[C]",
+  "options": [
+   "170 万片",
+   "178 万片",
+   "182 万片",
+   "188 万片"
+  ]
+ },
+ {
+  "i": 344,
+  "key": "模拟题/武汉市2027届高中毕业生九月调研考试#6",
+  "type": "single_choice",
+  "stem": "某单位有 5 名员工，需要在小长假三天安排人员值班，每天只需一人值班，不能出现同一人连续两天值班情况，则所有的安排方法种数为\\paren[C]",
+  "options": [
+   "60",
+   "70",
+   "80",
+   "100"
+  ]
+ },
+ {
+  "i": 345,
+  "key": "模拟题/武汉市2027届高中毕业生九月调研考试#10",
+  "type": "multi_choice",
+  "stem": "记双曲线 $E:\\frac{x^{2}}{4}-\\frac{y^{2}}{5}=1$ 的左右焦点分别为 $F_{1},F_{2}$，过 $F_{1}$ 的直线 $l$ 与双曲线 $E$ 交于 $A,B$ 两点，则下列说法中正确的有\\paren[ABD]",
+  "options": [
+   "双曲线 $E$ 的离心率是 $\\frac{3}{2}$",
+   "若 $|AF_{2}|=2|AF_{1}|$，则 $\\triangle AF_{1}F_{2}$ 的周长为 18",
+   "存在四条不同直线 $l$ 使得 $|AB|=5$",
+   "线段 $AB$ 的中点坐标可能是 $(1,\\sqrt{5})$"
+  ]
+ },
+ {
+  "i": 346,
+  "key": "模拟题/武汉市2027届高中毕业生九月调研考试#14",
+  "type": "fill_in_blank",
+  "stem": "记椭圆 $\\Gamma:\\frac{x^{2}}{a^{2}}+\\frac{y^{2}}{b^{2}}=1(a>b>0)$ 的左右焦点分别为 $F_{1},F_{2}$，已知椭圆 $\\Gamma$ 上的点 $P$ 满足 $\\cos\\angle F_{1}PF_{2}=\\frac{4}{5}$，记 $\\angle F_{1}PF_{2}$ 的平分线与椭圆 $\\Gamma$ 交于另外的点 $Q$，若 $\\angle F_{1}QF_{2}=90^{\\circ}$，则 $\\frac{|PF_{1}|}{|QF_{1}|}+\\frac{|PF_{2}|}{|QF_{2}|}=$\\fillin[$\\frac{10}{3}$]；椭圆 $\\Gamma$ 的离心率 $e=$\\fillin[$\\frac{\\sqrt{15}}{5}$]"
+ },
+ {
+  "i": 347,
+  "key": "模拟题/武汉市2027届高中毕业生九月调研考试#19",
+  "type": "detailed_answer",
+  "stem": "已知 $n$ 个正整数 $a_{1},a_{2},\\cdots,a_{n}$ 满足 $a_{1}<a_{2}<\\cdots<a_{n}$，这 $n$ 个数两两成对组成 $m=\\frac{1}{2}n(n-1)$ 对数，这 $m$ 对数中每对的两个数求和后形成一个数列：$S_{1}\\leqslant S_{2}\\leqslant\\cdots\\leqslant S_{m}$。例如 $1,2,4$ 求和后形成 $3,5,6$。\n\n(1) 当 $n=4$ 时，形成 6 对求和数列：$S_{1}=8$，$S_{2}=14$，$S_{3}=16$，$S_{4}=20$，$S_{5}=22$，$S_{6}=28$。试写出 $a_{1},a_{2},a_{3},a_{4}$ 可能的两组值。\n\n(2) 当 $n=5$ 时，对于形成的 $S_{1},S_{2},\\cdots,S_{10}$，证明：$a_{1},a_{2},a_{3},a_{4},a_{5}$ 的解是唯一的。\n\n(3) 当 $n=16$ 时，证明：存在两个不同的数列 $a_{1},a_{2},\\cdots,a_{16}$ 和 $b_{1},b_{2},\\cdots,b_{16}$ 对应同一个求和数列 $S_{1},S_{2},\\cdots,S_{120}$。"
+ },
+ {
+  "i": 348,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#1",
+  "type": "single_choice",
+  "stem": "$\\left|\\dfrac{1-\\mathrm{i}}{1-3\\mathrm{i}}\\right|=$ \\paren[A]",
+  "options": [
+   "$\\dfrac{\\sqrt{5}}{5}$",
+   "$\\dfrac{\\sqrt{2}}{2}$",
+   "$\\sqrt{2}$",
+   "$\\sqrt{5}$"
+  ]
+ },
+ {
+  "i": 349,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#2",
+  "type": "single_choice",
+  "stem": "已知集合 $A=\\left\\{x\\middle|\\dfrac{x-2}{x+2}\\leqslant 0\\right\\}$，$B=\\{x|x>1\\}$，则 $A\\cup B=$ \\paren[B]",
+  "options": [
+   "$[-2,+\\infty)$",
+   "$(-2,+\\infty)$",
+   "$(1,2]$",
+   "$(1,2)$"
+  ]
+ },
+ {
+  "i": 350,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#3",
+  "type": "single_choice",
+  "stem": "已知函数 $f(x)$ 是定义在 $\\mathbf{R}$ 上的奇函数，当 $x\\in(0,+\\infty)$ 时，$f(x)=\\dfrac{2}{x+1}-3$，则 $f(0)+f(-1)=$ \\paren[D]",
+  "options": [
+   "$-3$",
+   "$-1$",
+   "$1$",
+   "$2$"
+  ]
+ },
+ {
+  "i": 351,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#5",
+  "type": "single_choice",
+  "stem": "已知 $m$，$n$ 为两条不重合直线，$\\alpha$，$\\beta$ 为两个不重合平面，下列条件中，$\\alpha\\parallel\\beta$ 的充分条件是 \\paren[B]",
+  "options": [
+   "$m\\parallel n$，$m\\subset\\alpha$，$n\\subset\\beta$",
+   "$m\\parallel n$，$m\\perp\\alpha$，$n\\perp\\beta$",
+   "$m\\perp n$，$m\\perp\\alpha$，$n\\parallel\\beta$",
+   "$m\\perp n$，$m\\perp\\alpha$，$n\\perp\\beta$"
+  ]
+ },
+ {
+  "i": 352,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#6",
+  "type": "single_choice",
+  "stem": "设等差数列 $\\{a_n\\}$ 的公差为 $d$，若 $a_3^2+a_5^2\\geqslant 2$ 恒成立，则 $d$ 的取值范围为 \\paren[C]",
+  "options": [
+   "$[-1,1]$",
+   "$[-1,2]$",
+   "$(-\\infty,-1]\\cup[1,+\\infty)$",
+   "$(-\\infty,-1]\\cup[2,+\\infty)$"
+  ]
+ },
+ {
+  "i": 353,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#8",
+  "type": "single_choice",
+  "stem": "在底面边长为 $2$ 的正三棱柱 $ABC-A_1B_1C_1$ 中，$D$，$E$ 分别是 $BB_1$ 和 $CC_1$ 的中点，若 $\\cos\\langle\\overrightarrow{AD},\\overrightarrow{AE}\\rangle=\\dfrac{3}{4}$，则该三棱柱外接球的表面积为 \\paren[D]",
+  "options": [
+   "$\\dfrac{28\\pi}{3}$",
+   "$\\dfrac{52\\pi}{3}$",
+   "$16\\pi$",
+   "$\\dfrac{64\\pi}{3}$"
+  ]
+ },
+ {
+  "i": 354,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#10",
+  "type": "multi_choice",
+  "stem": "已知函数 $f(x)=\\cos\\left(\\omega x-\\dfrac{\\pi}{4}\\right)$（$\\omega\\in\\mathbf{R}$），则 \\paren[AC]",
+  "options": [
+   "当 $\\omega=-2$ 时，若 $x_1\\neq x_2$，且 $f(x_1)=f(x_2)=-1$，则 $\\left|x_1-x_2\\right|_{\\min}=\\pi$",
+   "当 $\\omega=-1$ 时，若 $f(\\theta)=\\dfrac{1}{3}$，则 $\\cos 2\\theta=\\dfrac{7}{9}$",
+   "当 $\\omega=2$ 时，对任意 $x\\in\\mathbf{R}$，恒有 $f\\left(\\dfrac{5\\pi}{8}+x\\right)=f\\left(\\dfrac{5\\pi}{8}-x\\right)$",
+   "当 $f(x)$ 在 $[0,\\pi]$ 上有且仅有两个单调区间，则正数 $\\omega$ 的取值范围为 $\\left(\\dfrac{1}{4},\\dfrac{5}{4}\\right)$"
+  ]
+ },
+ {
+  "i": 355,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#11",
+  "type": "multi_choice",
+  "stem": "已知数列 $\\left\\{\\dfrac{1}{a_n}\\right\\}$ 是等差数列，下列说法正确的是 \\paren[ACD]",
+  "options": [
+   "若 $a_1=1$，$a_5=\\dfrac{1}{9}$，则 $a_n=\\dfrac{1}{2n-1}$",
+   "若 $\\sum\\limits_{i=1}^{20}\\dfrac{1}{a_i}=40$，则 $a_{10}+a_{11}=2a_{10}a_{11}$",
+   "若 $a_n>0$，则 $a_{n+1}\\leqslant\\dfrac{a_n+a_{n+2}}{2}$",
+   "若 $a_1=1$，$a_2=\\dfrac{1}{2}$，则 $\\sum\\limits_{i=2}^{n+1}\\left[a_i\\cdot\\ln\\left(i-1\\right)\\right]\\leqslant\\dfrac{n^2-n}{4}$"
+  ]
+ },
+ {
+  "i": 356,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#12",
+  "type": "fill_in_blank",
+  "stem": "已知曲线 $f(x)=x+a\\cos 3x$ 在点 $x=\\dfrac{\\pi}{3}$ 处的切线为 $y=kx-\\dfrac{1}{3}$，则实数 $a$ 的值为\\fillin[$\\dfrac{1}{3}$]。"
+ },
+ {
+  "i": 357,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#13",
+  "type": "fill_in_blank",
+  "stem": "若 $\\mathrm{e}^x=\\mathrm{e}^{2y}+4$，且 $x-y\\geqslant m$ 恒成立，则 $m$ 的取值范围为\\fillin[{$(-\\infty,2\\ln 2]$}]。"
+ },
+ {
+  "i": 358,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#14",
+  "type": "fill_in_blank",
+  "stem": "在棱长为 $2$ 的正方体 $ABCD-A_1B_1C_1D_1$ 中，点 $P$ 为线段 $B_1C$ 上的一个动点，则 $PA+PC_1$ 的最小值为\\fillin[$\\sqrt{2}+\\sqrt{6}$]。"
+ },
+ {
+  "i": 359,
+  "key": "模拟题/2025年12月安徽A10联盟高三联考#16",
+  "type": "detailed_answer",
+  "stem": "已知正项数列 $\\{a_n\\}$ 满足：$a_1=6$，$(2n+1)a_{n+1}^2-2\\left(2n+3\\right)a_n^2=(2n+5)a_na_{n+1}$。\n(1) 求证：数列 $\\left\\{\\dfrac{a_n}{2n+1}\\right\\}$ 为等比数列；\n(2) 求数列 $\\{a_n\\}$ 的前 $n$ 项和 $S_n$。"
+ }
+]

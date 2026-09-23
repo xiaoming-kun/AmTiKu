@@ -1,0 +1,521 @@
+[
+ {
+  "key": "模拟题/长沙市一中2026届高三月考（五）#9",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'B'"
+  ],
+  "type": "multi_choice",
+  "stem": "设 O 为坐标原点, 已知对任意实数 $ a $, 直线 $ l $: $ ax - y + 2 - 2a = 0 $ 与圆 C:\n$(x-4)^2 + (y-1)^2 = r^2$ ($r > 0$) 都有两个交点 M, N, 则\\paren[B]",
+  "answer": "B",
+  "options": [
+   {
+    "label": "A",
+    "text": "直线 $ l $ 过定点 (2,1)"
+   },
+   {
+    "label": "B",
+    "text": "$ r \\in (\\sqrt{5}, +\\infty) $"
+   },
+   {
+    "label": "C",
+    "text": "当 $ r = 5 $ 时, $\\overrightarrow{CM} \\cdot \\overrightarrow{CN}$ 的最小值为 -25"
+   },
+   {
+    "label": "D",
+    "text": "当 $ r = 3 $ 时, $ |MN| \\in [5,6] $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "选项A,直线/可化为a(x-2)+(-y+2)=0，则直线/过定点P(2,2)，故A错误；\n选项B,因为直线/与圆C总有两个公共点，且定点P(2,2)在圆C内，\n故$(2-4)^2+(2-1)^2<7^2$，解得$r>\\sqrt{5}$，故B正确；\n选项C, 当 $ r = 5 $ 时, 圆 C: $ (x-4)^2 + (y-1)^2 = 25 $, 则 $\\overrightarrow{CM} \\cdot \\overrightarrow{CN} = |\\overrightarrow{CM}|\\left|\\overrightarrow{CN}\\right|\\cos\\angle MCN = 25\\cos\\angle MCN$。\n当直线 $ l $ 过点 C(4,1) 时, $\\cos\\angle MCN$ 取得最小值 -1, 所以 $ \\overrightarrow{CM} \\cdot \\overrightarrow{CN} $ 的最小值为 -25, 故 C 正确;\n选项D, 当 $ r = 3 $ 时, 圆 $ C: (x-4)^2 + (y-1)^2 = 9 $, 所以 C(4,1), 又 P(2,2), 则 |CP| = $\\sqrt{5}$,\n则 $ |MN| $ 的最小值为 $ 2\\sqrt{r^2-|CP|^2} = 4 $，最大值即为 $ 2r = 6 $，故 D 错误。故选 B。"
+ },
+ {
+  "key": "模拟题/2026年重庆市普通高中学业水平选择性考试高考模拟调研卷（一）#11",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知双曲线 $C: \\frac{x^2}{a^2} - \\frac{y^2}{b^2} = 1$ ($a > 0$, $b > 0$) 的其中一条渐近线方程为 $y = \\sqrt{3}x$，且过点 $(2, 3)$。点 $P$ 为该双曲线右支上一点，点 $A$，$B$ 分别为该双曲线左右顶点，点 $F_1$，$F_2$ 分别为该双曲线左右焦点，则下列说法正确的是\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "当 $\\angle F_1PF_2 = \\frac{2\\pi}{3}$ 时，$\\triangle PF_1F_2$ 的面积为 $3\\sqrt{3}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\triangle PF_1F_2$ 的内切圆与 $x$ 轴切于点 $G$，则 $|GF_1| - |GF_2| = 2$"
+   },
+   {
+    "label": "C",
+    "text": "记 $PA$，$PB$ 的斜率分别为 $k_1$，$k_2$，若点 $P$ 位于第一象限，则有 $k_1 + k_2 > 2\\sqrt{3}$"
+   },
+   {
+    "label": "D",
+    "text": "过点 $P$ 分别作两条渐近线的垂线，垂足为 $D$，$E$，则两垂足距离最短为 $\\frac{\\sqrt{3}}{2}$\n\n三、填空题：本题共3小题，每小题5分，共15分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "$m+n$ 的取值范围为 [3,7]。\n\n11——解析】渐近线方程为 $3x^2 - y^2 = 0$，设双曲线方程为 $3x^2 - y^2 = \\lambda (\\lambda \\neq 0)$，代入点 (2,3) 则有 $12 - 9 = \\lambda = 3$，\n\n12——解析】所以双曲线方程为 $x^2 - \\frac{y^2}{3} = 1$，则 $S_{a,PF_1F_2} = b^2 \\cot \\frac{\\theta}{2} = \\sqrt{3}$，故 A 错；\n\n13——设内切圆的圆心为 $O_1$，内切圆与 $\\triangle PF_1F_2$ 相切于点 $F$，$G$，$H$，\n\n14——如图所示，则 $OG \\perp F_1F_2$，且 $|PF| = |PH|$，$|F_1F| = |FG|$，\n\n15——由 $F_2GF = |F_2H|$，由于 $|PF_1| - |PF_2| = 2a$，所以 $|F_1F| - |F_2H| = 2a$，\n\n16——由 $F_1F + |F_2H| = |FG| + F_2GF| = 2c$，所以 $|F_2H| = |F_2G| = c - a$，\n\n17——所以 $x_G = a$，所以 $|GF_1| - |GF_2| = (c + a) - (c - a) = 2a = 2$，故 B 正确；\n\n18——设点 $P(x_0, y_0)$，则有 $x_0^2 - \\frac{y_0^2}{3} = 1$，则 $k_1 k_2 = \\frac{y_0}{x_0 + 1} \\cdot \\frac{y_0}{x_0 - 1} = \\frac{y_0^2}{x_0^2 - 1} = 3$，所以 $k_1 + k_2 > 2\\sqrt{k_1 k_2} = 2\\sqrt{3}$，\n\n19——由 C 正确；"
+ },
+ {
+  "key": "模拟题/2026年重庆市普通高中学业水平选择性考试高考模拟调研卷（一）#18",
+  "problems": [
+   "解答题不该有选项，实际 3 个"
+  ],
+  "type": "detailed_answer",
+  "stem": "2026年第23届男子足球世界杯赛，由美国、加拿大和墨西哥三国联合承办。赛制如下：\n\n第一阶段为小组赛，先将48支球队分为12个小组，每组4支球队。同一小组中，每两支球队均要踢一场球，根据赛制选出32支球队小组出线，参加第二阶段比赛。\n\n第二阶段为淘汰赛，根据赛制将出线的32支球队分成16组，每组2支球队踢一场球，胜者晋级；晋级的16支球队又分成8组，每组2支球队踢一场球，胜者晋级，依次类推，直至产生前四名。\n\n第三阶段为排位赛，进入前四名的球队分成两组，每组的2支球队踢一场球，胜者晋级决赛，再踢一场球，争夺冠军；而失败的2支球队也要踢一场球，争夺季军。\n\n（1）第23届男子足球世界杯总共进行多少场比赛？\n\n（2）一球队为了在比赛中变换阵型，将原本在左边锋、左前卫、左后腰和左后卫位置的4名球员交换位置，则这4名球员至少有3名不在自己对应位置上的概率为多少？\n\n（3）假定",
+  "answer": "见解析",
+  "options": [
+   {
+    "label": "A",
+    "text": ""
+   },
+   {
+    "label": "B",
+    "text": ""
+   },
+   {
+    "label": "C",
+    "text": "D四支球队被分至同一小组，依据过往比赛记录可得，A球队战胜B球队的概率为$\\frac{1}{2}$，踢成平局的概率为$\\frac{1}{4}$；A球队战胜C球队的概率为$\\frac{1}{3}$，踢成平局的概率为$\\frac{1}{3}$；A球队战胜D球队的概率为$\\frac{1}{4}$，踢成平局的概率为$\\frac{1}{2}$。按照积分规则，获胜可积3分，平局可积1分，失败则积0分，试求A球队在小组比赛结束后的积分X的分布列和数学期望。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "= S_n - S_{n-1} = 2n(n \\geq 2)$，当 $n=1$ 时，$a_1 = S_1 = 2$ 符合 $a_n$，所以 $a_n = 2n (n \\in \\mathbb{N}_+)$。\n\n设 $\\{b_n\\}$ 公比为 $q$，则有 $b_n = 2 \\cdot q^{n-1}$，即 $2q^{k-1} \\leq 2k \\leq 2q^k$ 恒成立，则 $q > 0$，\n\n即有 $\\frac{\\ln k}{k} \\leq \\ln q \\leq \\frac{\\ln k}{k-1}$ 恒成立。\n\n分别令 $h_1(x) = \\frac{\\ln x}{x}$，$h_2(x) = \\frac{\\ln x}{x-1}$，\n\n则 $h_1'(x) = \\frac{1-\\ln x}{x^2}$，所以 $h_1(x)$ 在 $(0,e)$ 上单调递增，在 $(e,+\\infty)$ 单调递减，\n\n$h_2'(x) = \\frac{x-1-x\\ln x}{x(x-1)^2}$，令 $s(x)=x-1-x\\ln x$，则 $s'(x)=-\\ln x$，所以 $s(x) \\leq s(1)=0$，故 $h_2'(x) \\leq 0$，\n\n所以 $h_2(x)$ 在 $(0,+\\infty)$ 上单调递减，\n\n①当 $k=5$ 时：$\\frac{\\ln 3}{3} \\leq \\ln q \\leq \\frac{\\ln 5}{4}$，解得 $\\sqrt[3]{3} \\leq q \\leq \\sqrt[5]{5}$，\n\n②当 $k \\geq 6$ 时：$\\frac{\\ln 3}{3} \\leq \\ln q \\leq \\frac{\\ln 6}{5}$，解得 $\\sqrt[3]{3} \\leq q \\leq \\sqrt[5]{6}$（不成立），\n\n所以 $m$ 的最大值为 5。……17分"
+ },
+ {
+  "key": "模拟题/2026届三重教育高三12月高考适应性考试#3",
+  "problems": [
+   "单选题必须有 2–6 个选项，实际 8 个",
+   "选项标号必须从 A 连续，实际 ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']"
+  ],
+  "type": "single_choice",
+  "stem": "考试结束后，将本试卷和答题卡一并交回。\n\n一、选择题：本大题共8小题，每小题5分，共40分。在每小题给出的四个选项中，只有一项是符合题目要求的。\n已知向量 $ \\mathbf{a} = (2, x) $，$ \\mathbf{b} = (x, 3) $，若 $ \\mathbf{a} $ 与 $ \\mathbf{b} $ 同向共线，则 $ x $ 为\\paren[A]",
+  "answer": "A",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ 3i $"
+   },
+   {
+    "label": "B",
+    "text": "$ -i $"
+   },
+   {
+    "label": "C",
+    "text": "3"
+   },
+   {
+    "label": "D",
+    "text": "-1\n\n2. 集合 $ A = \\{1, a^2, -3\\} $，集合 $ B = \\{0, 9\\} $，若 $ A \\cap B = \\{9\\} $，则 $ a = $"
+   },
+   {
+    "label": "E",
+    "text": "3"
+   },
+   {
+    "label": "F",
+    "text": "$ -3 $"
+   },
+   {
+    "label": "G",
+    "text": "$ \\pm 3 $"
+   },
+   {
+    "label": "H",
+    "text": "9"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "A $ \\because a $ 与 $ b $ 同向共线 $ \\therefore x^2 = 2 \\times 3, \\therefore x = \\pm \\sqrt{6} $。当 $ x = \\sqrt{6} $ 时，$ a = (2, \\sqrt{6}) $，$ b = (\\sqrt{6}, 3) $。$ \\therefore a $ 与 $ b $ 同向共线；当 $ x = -\\sqrt{6} $ 时，$ a = (2, -\\sqrt{6}) $，$ b = (-\\sqrt{6}, 3) $，$ \\therefore a $ 与 $ b $ 反向共线，$ \\therefore x = \\sqrt{6} $。故选 A。"
+ },
+ {
+  "key": "模拟题/数学试卷#10",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知函数 $f(x) = A \\sin(\\omega x + \\varphi)$ ($A > 0, \\omega > 0, 0 < \\varphi < \\pi$) 的部分图象如图，则\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\omega = 2$"
+   },
+   {
+    "label": "B",
+    "text": "$f\\left(x + \\frac{\\pi}{3}\\right)$ 为奇函数"
+   },
+   {
+    "label": "C",
+    "text": "$f(x)$ 在 $\\left(\\frac{\\pi}{3}, \\frac{5\\pi}{6}\\right)$ 上单调递增"
+   },
+   {
+    "label": "D",
+    "text": "当 $f(x)$ 在 $(0, m)$ 上恰有 3 个零点时，$m$ 的取值范围是 $\\left(\\frac{13\\pi}{12}, \\frac{19\\pi}{12}\\right)$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "i}{3}$，所以 $f(x)=2\\sin\\left(2x+\\frac{\\pi}{3}\\right)$，\n\n对于 A：$f(-\\frac{\\pi}{3})=2\\sin\\left(-\\frac{2\\pi}{3}+\\frac{\\pi}{3}\\right)=-\\sqrt{3}\\neq0$，故 A 错误；\n\n对于 B：$y=2\\cos\\left[2(x-\\frac{\\pi}{4})+\\frac{\\pi}{3}\\right]=2\\cos\\left(-\\frac{\\pi}{2}+2x+\\frac{\\pi}{3}\\right)=2\\sin\\left(2x+\\frac{\\pi}{3}\\right)$，\n\nB 正确；\n\n对于 C：$x\\in(0,m)$，$2x+\\frac{\\pi}{3}\\in\\left(\\frac{\\pi}{3},2m+\\frac{\\pi}{3}\\right)$，\n\n根据正弦函数的图象可得，$f(x)$ 在 $(0,m)$ 上有 3 个极值点，\n\n则 $\\frac{5\\pi}{2}<2m+\\frac{\\pi}{3}\\leq\\frac{7\\pi}{2}$，解得 $\\frac{13\\pi}{12}<m\\leq\\frac{19\\pi}{12}$，故 C 正确；\n\n对于 D：$x\\in\\left[0,\\frac{\\pi}{2}\\right]$，$2x+\\frac{\\pi}{3}\\in\\left[\\frac{\\pi}{3},\\frac{4\\pi}{3}\\right]$，\n\n$2\\sin\\frac{\\pi}{3}=\\sqrt{3},2\\sin\\frac{4\\pi}{3}=-\\sqrt{3}$，由图可知，$f(x)=m$ 在 $[0,\\frac{\\pi}{2}]$ 上只有一个实数根，\n\n则 $m\\in[-\\sqrt{3},\\sqrt{3})\\cup\\{2\\}$，故 D 错误。故选：BC。"
+ },
+ {
+  "key": "模拟题/湖北重点高中智学联盟2026届高三上学期10月联考#9",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'CD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知 $ i $ 为虚数单位，则下列结论正确的是\\paren[CD]",
+  "answer": "CD",
+  "options": [
+   {
+    "label": "A",
+    "text": "若复数 $ z_1, z_2 $ 满足 $ |z_1| = |z_2| $，则 $ z_1^2 = z_2^2 $"
+   },
+   {
+    "label": "B",
+    "text": "若 $ z_1 = 1 + i $，$ z_2 = -1 + i $，则 $ z_1 > z_2 $"
+   },
+   {
+    "label": "C",
+    "text": "若复数 $ z_1, z_2 $，满足 $ z_1 z_2 = 0 $，则 $ z_1 = 0 $ 或 $ z_2 = 0 $"
+   },
+   {
+    "label": "D",
+    "text": "若复数 $ z $ 满足，$ |z| = 1 $，则 $ |z - 2i| $ 最大值为 3"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/河北石家庄2026届高三上学期11月教学质量摸底检测#19",
+  "problems": [
+   "解答题的题干里不该有 \\fillin{}"
+  ],
+  "type": "detailed_answer",
+  "stem": "已知函数 $f(x)=\\ln x+1$，$g(x)=ax e^x$，$a\\in\\mathbb{R}$。\n\n(1) 求 $f(x)$ 在点 $(1,f(1))$ 处的切线 $l$ 的方程，并证明除切点外，函数 $f(x)$ 的图象在切线 $l$ 的下方；\n\n(2) 若 $0<a<\\frac{1}{2e}$，\n\n(i) 证明：函数 $h(x)=f(x)-g(x)$ 恰有两个零点；\n\n(ii) 设 $x_1$ 为 $h(x)$ 的较大零点，$h'(x_1)=0$，证明：$x_1<3x_0$。\\fillin[石家庄市 2026 届普通高中毕业年级摸底检测\n\n数学答案\n\n一、单选题：\n1-4 CDCA 5-8 BACD\n二、多选题：]",
+  "answer": "石家庄市 2026 届普通高中毕业年级摸底检测\n\n数学答案\n\n一、单选题：\n1-4 CDCA 5-8 BACD\n二、多选题：",
+  "options": [],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "$\\frac{10}{-3+i}$（其中$i$为虚数单位）的共轭复数为\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ 3 + i $"
+   },
+   {
+    "label": "B",
+    "text": "$ 3 - i $"
+   },
+   {
+    "label": "C",
+    "text": "$-3 + i$"
+   },
+   {
+    "label": "D",
+    "text": "$-3-i$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#8",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知函数 $ f(x) $ 的定义域为 $ \\mathbb{R} $，$ f(x+2) - 1 $ 为奇函数，$ f(2x+1) $ 为偶函数，则\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ f(-1) = -1 $"
+   },
+   {
+    "label": "B",
+    "text": "$ f(1) = 1 $"
+   },
+   {
+    "label": "C",
+    "text": "$ f(2) = -1 $"
+   },
+   {
+    "label": "D",
+    "text": "$ f(4) = 1 $\n\n二、选择题：本题共 3 小题，每小题 6 分，共 18 分。在每小题给出的四个选项中，有多项符合题目要求。全部选对的得 6 分，部分选对的得部分分，有选错的得 0 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#16",
+  "problems": [
+   "解答题不该有选项，实际 2 个"
+  ],
+  "type": "detailed_answer",
+  "stem": "已知$\\triangle ABC$的内角",
+  "answer": "见解析",
+  "options": [
+   {
+    "label": "A",
+    "text": ""
+   },
+   {
+    "label": "B",
+    "text": "C的对边分别为$a,b,c$，且$(2c-b)\\cos A=a\\cos B$，\n(1)求角A；\n(2)若$\\triangle ABC$的面积为$\\frac{3\\sqrt{3}}{2},\\sin B=\\frac{3}{2}\\sin C$，求$a$。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解：(1)因为 $(2c-b)\\cos A = ac\\cos B$，由正弦定理得 $2\\sin C\\cos A = \\sin B\\cos A + \\sin A\\cos B$，则 $\\sin(A+B) = 2\\sin C\\cos A$，则 $\\sin C = 2\\sin A\\cos A$。\n\n在 $\\triangle ABC$ 中，由 $\\sin C \\neq 0$，故 $\\cos A = \\frac{1}{2}$。\n\n因为 $A \\in (0, \\pi)$，所以 $A = \\frac{\\pi}{3}$；\n\n(2)因为 $\\triangle ABC$ 的面积为 $\\frac{3\\sqrt{3}}{2}$，所以 $\\frac{1}{2}bc\\sin A = \\frac{3\\sqrt{3}}{2} = \\frac{\\sqrt{3}}{4}bc$，得 $bc = 6$。\n\n由余弦定理 $a^2 = b^2 + c^2 - 2bc\\cos A$，则 $a^2 = 2^2 + 3^2 - 2 \\times 2 \\times 3 \\times \\frac{1}{2}$，可得 $a = \\sqrt{7}$。"
+ },
+ {
+  "key": "模拟题/A卷#3",
+  "problems": [
+   "单选题必须有 2–6 个选项，实际 24 个",
+   "选项标号必须从 A 连续，实际 ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X']"
+  ],
+  "type": "single_choice",
+  "stem": "考试结束后，将本试卷和答题卡一并交回。\\paren[A]",
+  "answer": "A",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ a < b < c $"
+   },
+   {
+    "label": "B",
+    "text": "$ b < a < c $"
+   },
+   {
+    "label": "C",
+    "text": "$ b < c < a $"
+   },
+   {
+    "label": "D",
+    "text": "$ c < a < b $\n\n7. 已知 $ f(x) $ 是定义在 $\\mathbb{R}$ 上的奇函数, $ f(x+3) $ 是偶函数, 且当 $ 3 < x < 6 $ 时, $ f(x) = 2^x - x^2 $, 则 $ f(-25) = $"
+   },
+   {
+    "label": "E",
+    "text": "-7"
+   },
+   {
+    "label": "F",
+    "text": "-1"
+   },
+   {
+    "label": "G",
+    "text": "1"
+   },
+   {
+    "label": "H",
+    "text": "7\n\n8. 若 $\\tan\\left(\\theta + \\frac{\\pi}{4}\\right) = -3$, 则 $\\frac{\\sin\\theta\\left(\\sin2\\theta - 1\\right)}{\\cos\\theta + \\cos^3\\theta} =$"
+   },
+   {
+    "label": "I",
+    "text": "$-\\frac{2\\sqrt{2}}{3}$"
+   },
+   {
+    "label": "J",
+    "text": "$-\\frac{1}{3}$"
+   },
+   {
+    "label": "K",
+    "text": "$\\frac{1}{3}$"
+   },
+   {
+    "label": "L",
+    "text": "$\\frac{2\\sqrt{2}}{3}$\n\n二、多项选择题：本题共3小题，每小题6分，共18分。在每小题给出的选项中，有多项符合题目要求，全部选对的得6分，部分选对的得部分，有选错的得0分。\n\n9. 已知双曲线 $E: \\frac{x^2}{a^2} - \\frac{y^2}{b^2} = 1$ ($a > 0, b > 0$) 的左、右焦点分别为 $F_1, F_2, |F_1F_2| = 4$, $E$ 的渐近线方程为 $y = \\pm x$, $P$ 是 $E$ 上的动点，则"
+   },
+   {
+    "label": "M",
+    "text": "$E$ 的离心率为 $\\sqrt{2}$"
+   },
+   {
+    "label": "N",
+    "text": "$|PF_1| - |PF_2| = 2\\sqrt{2}$"
+   },
+   {
+    "label": "O",
+    "text": "$E$ 与直线 $y = 2x$ 有交点"
+   },
+   {
+    "label": "P",
+    "text": "$E$ 与双曲线 $\\frac{y^2}{a^2} - \\frac{x^2}{b^2} = 1$ 无交点\n\n10. 记方程 $z^3 = 8$ 的三个不相等的复数根分别为 $z_1, z_2, z_3$，其中 $z_1 \\in \\mathbb{R}$，则"
+   },
+   {
+    "label": "Q",
+    "text": "充分不必要条件"
+   },
+   {
+    "label": "R",
+    "text": "必要不充分条件"
+   },
+   {
+    "label": "S",
+    "text": "不充分不必要条件"
+   },
+   {
+    "label": "T",
+    "text": "既不充分也不必要条件  \n\n11. 在 $\\triangle ABC$ 中，$2\\sin A + 2\\sin B = 3\\sin C$，$\\cos A + \\cos B = 2\\cos C$，则"
+   },
+   {
+    "label": "U",
+    "text": "$BC + AC > 2AB$"
+   },
+   {
+    "label": "V",
+    "text": "$\\sin 2A + \\sin 2B < 2\\sin 2C$"
+   },
+   {
+    "label": "W",
+    "text": "$7\\sin^2 C = 16\\sin A\\sin B$"
+   },
+   {
+    "label": "X",
+    "text": "$\\sin C = \\frac{3}{7}$\n\n数学(A卷)试题 第1页(共4页)\n\n数学(A卷)试题 第2页(共4页)"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "答案 C\n\n命题透析 本题考查抛物线的定义。\n\n解析 由题意知 C 的准线方程为 $x = -2$, 点 P 的横坐标为 1, 由抛物线的定义得 $|PF| = 1 + \\frac{p}{2} = 3$。\n考试结束后，将本试卷和答题卡一并交回。\n\n一、单项选择题：本题共8小题，每小题5分，共40分。在每小题给出的四个选项中，只有一项是符合题目要求的。\n\nA。-2 B。-1 C。1 D。2\n2. 已知平面向量 $\\boldsymbol{a} = (3, m)$, $\\boldsymbol{b} = (n-2, 1)$, 若 $\\boldsymbol{a} \\perp \\boldsymbol{b}$，则 $m + 3n =$\n\nA。1 B。2 C。3 D。6\n已知集合 $A = \\{x \\mid x^2 - ax - 2a^2 = 0\\}$, $B = \\{t + 1\\}$, 若 $A = B$, 则 $a + t =$\n\nA。-2 B。-1 C。0 D。1\n答案 B\n\n命题透析 本题考查集合的表示。\n\n解析 $ x^2 - ax - 2a^2 = (x-2a)(x+a) = 0 $, 由 B中有且仅有一个元素知 $ 2a = -a $, $ a = 0 $, $ A = \\{0\\} $, 于是 $ t + 1 = 0 $, $ t = -1 $, $ a + t = -1 $。"
+ },
+ {
+  "key": "模拟题/2026届宝鸡高三上学期高考模拟测试（一）#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $A = \\{-1, 0, 1, 2, 3\\}$，$B = \\{x \\in \\mathbb{N} \\mid -1 \\leq x \\leq 2\\}$，则 $A \\cap B = (\\ )$\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\{-1, 1, 2\\}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\{0, 1, 2\\}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\{-1, 0, 1, 2\\}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\{-1, 0, 1, 2, 3\\}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/2026届宝鸡高三上学期高考模拟测试（一）#11",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'B'"
+  ],
+  "type": "multi_choice",
+  "stem": "点$M$是棱长为1的正方体$ABCD-A_1B_1C_1D_1$中侧面$ADD_1A_1$上的一个动点（包含边界），则下列结论错误的有\\paren[B]",
+  "answer": "B",
+  "options": [
+   {
+    "label": "A",
+    "text": "有无数个点$M$满足$CM\\perp AD_1$"
+   },
+   {
+    "label": "B",
+    "text": "当点$M$在棱$DD_1$上运动时，$MA+MB_1$的最小值为$\\sqrt{3}+1$"
+   },
+   {
+    "label": "C",
+    "text": "若$MB=\\sqrt{2}$，则动点$M$的轨迹长度为$\\frac{\\pi}{2}$"
+   },
+   {
+    "label": "D",
+    "text": "在线段$AD_1$上存在点$M$，使得异面直线$MB_1$与$CD$所成的角是$\\frac{\\pi}{6}$\n\n第Ⅱ卷 （非选择题共92分）\n\n三、填空题：（本题共3小题，每小题5分，共15分）"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/2026届山东省潍坊市高三开学调研监测考试#7",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AC'"
+  ],
+  "type": "single_choice",
+  "stem": "Margalef 丰富度指数 $ d = \\frac{S-1}{\\ln N} $ 是用于衡量群落中生物种类丰富程度的一个指标，其中 S 和 N 分别表示群落中的生物种类数和生物个体总数。如果某生物群落一年后的生物种类数 S 没有改变，生物个体总数由 $ N_1 $ 变为 $ N_2 $，Margalef 丰富度指数由 1.8 提高到 4.5，则\\paren[AC]",
+  "answer": "AC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ 5N_2 = 2N_1 $"
+   },
+   {
+    "label": "B",
+    "text": "$ 2N_2 = 5N_1 $"
+   },
+   {
+    "label": "C",
+    "text": "$ N_2^2 = N_1^2 $"
+   },
+   {
+    "label": "D",
+    "text": "$ N_2^2 = N_1^2 $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/湖北云学联盟2026届高三上学期12月联考#9",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "下列有关说法正确的是\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "设随机变量$\\xi$服从正态分布$N(\\mu,2)$，若$P(\\xi<-1)=P(\\xi>9)$，则$\\mu=4$"
+   },
+   {
+    "label": "B",
+    "text": "若随机变量$X\\sim B\\left(6,\\frac{1}{3}\\right)$，则$E(2X+1)=5$"
+   },
+   {
+    "label": "C",
+    "text": "数据13,27,24,12,14,30,15,17,19,23的第70百分位数是23.5"
+   },
+   {
+    "label": "D",
+    "text": "甲、乙、丙、丁4个人到3个国家做学术交流，每人只去一个国家，每个国家都需要有人去，则不同的安排方法有72种"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ }
+]

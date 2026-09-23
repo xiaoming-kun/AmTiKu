@@ -4,7 +4,7 @@ import {
   ListFilter, SlidersHorizontal, X, Check, ChevronFirst, ChevronLast, ChevronRight,
   ClipboardList, Rows3, Rows2, BookPlus, FileText, ChevronUp, ChevronDown,
   LayoutGrid, ScanLine, FolderTree, ChartColumn, Sparkles, NotebookPen, Trash2, History,
-  Command as CommandIcon,
+  Route, Command as CommandIcon,
 } from 'lucide-react'
 import type { Q, Base } from '@/lib/types'
 import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
@@ -16,6 +16,7 @@ import QuestionCard from '@/app/QuestionCard'
 import { Trash, DeleteModal } from '@/app/Trash'
 import { Detail, TexSource } from '@/app/Detail'
 import { Stats, Changes } from '@/app/Stats'
+import { Chain } from '@/app/Chain'
 import CanvasEditor from '@/editor/CanvasEditor'
 import ExportPage from '@/app/ExportPage'
 import IngestDrawer from '@/app/IngestDrawer'
@@ -32,8 +33,8 @@ import CommandPalette, { type Cmd } from '@/app/CommandPalette'
  *  · 题目列表和当前卷子是**同一栏里的两个视图**（`view` 切换）；
  *  · 题目详情 / LaTeX 源码是**浮在内容区上的抽屉**（`dOpen`，按需开、随时关）。
  *  所以这里只剩「整屏页面」这一种 tab。 */
-type Tab = 'workbench' | 'handout' | 'stats' | 'changes' | 'trash'
-const FULL_PAGE: Tab[] = ['stats', 'changes', 'trash']
+type Tab = 'workbench' | 'handout' | 'stats' | 'changes' | 'trash' | 'chain'
+const FULL_PAGE: Tab[] = ['stats', 'changes', 'trash', 'chain']
 
 export default function App() {
   // 列表数据与筛选 → useQuestionList（一行拿到全部筛选状态，见 lib/useQuestionList.ts）
@@ -290,7 +291,7 @@ export default function App() {
   /* ── 导航动作 ── */
   const navActive: NavKey =
     tab === 'stats' ? 'stats' : tab === 'trash' ? 'trash' : tab === 'changes' ? 'changes'
-    : tab === 'handout' ? 'handout'
+    : tab === 'chain' ? 'chain' : tab === 'handout' ? 'handout'
     : view === 'paper' ? 'paper' : 'workbench'
 
   const pick = (k: NavKey) => {
@@ -395,7 +396,8 @@ export default function App() {
   const commands: Cmd[] = useMemo(() => {
     const navIcon: Record<string, ReactNode> = {
       workbench: <LayoutGrid size={13} />, ingest: <ScanLine size={13} />,
-      points: <FolderTree size={13} />, stats: <ChartColumn size={13} />,
+      points: <FolderTree size={13} />, chain: <Route size={13} />,
+      stats: <ChartColumn size={13} />,
       export: <Sparkles size={13} />, paper: <ClipboardList size={13} />,
       handout: <NotebookPen size={13} />, trash: <Trash2 size={13} />,
       changes: <History size={13} />,
@@ -404,6 +406,7 @@ export default function App() {
       workbench: 'gongzuotai workbench home list 题库 找题',
       ingest: 'luru ingest import 录入 新建',
       points: 'zhishidian points topics 考点 章节',
+      chain: 'zhishilianlu chain links 链路 先修 前置 关系 图',
       stats: 'zhiliang stats 统计 质量 覆盖',
       export: 'zujuan export 组卷 导出 pdf',
       paper: 'shijuan paper 卷子 试卷',
@@ -553,7 +556,13 @@ export default function App() {
             onExport={() => setShowExport(true)}
             onIngest={() => setShowIngest(true)} onReload={() => setReload((v) => v + 1)} />
 
-          {FULL_PAGE.includes(tab) ? (
+          {tab === 'chain' ? (
+            /* 链路图要**占满剩余高度并自己管滚动**，所以不能放进下面那个
+               `overflow-y-auto` 的 main —— 那样图会被拉高、页面出现两条滚动条。 */
+            <main className="anim-fade-in flex min-h-0 flex-1 flex-col overflow-hidden">
+              <Chain onPickPoint={(pid, title) => { findPoint(pid, title); setTab('workbench') }} />
+            </main>
+          ) : FULL_PAGE.includes(tab) ? (
             <main className="anim-fade-in min-h-0 flex-1 overflow-y-auto">
               {tab === 'stats' ? <Stats key={reload} />
                 : tab === 'trash' ? <Trash onChanged={() => setReload((v) => v + 1)} />

@@ -1,0 +1,602 @@
+[
+ {
+  "key": "模拟题/广州市荔湾区2026届高三上学期10月调研#9",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'C'"
+  ],
+  "type": "multi_choice",
+  "stem": "关于 $(2x-\\frac{1}{x})^6$ 的展开式，下列说法正确的是\\paren[C]",
+  "answer": "C",
+  "options": [
+   {
+    "label": "A",
+    "text": "二项式系数和为 64"
+   },
+   {
+    "label": "B",
+    "text": "所有项的系数之和为 2"
+   },
+   {
+    "label": "C",
+    "text": "第三项的二项式系数最大"
+   },
+   {
+    "label": "D",
+    "text": "系数最大值为 240"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/广州市荔湾区2026届高三上学期10月调研#11",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'C'"
+  ],
+  "type": "multi_choice",
+  "stem": "菱形 $ABCD$ 中，$AB = 2$，$\\angle A = 120^\\circ$，对角线 $AC$ 交 $BD$ 于点 $O$，沿对角线 $BD$ 将 $\\triangle ABD$ 折起，使二面角 $A-BD-C$ 的大小为 $120^\\circ$，则\\paren[C]",
+  "answer": "C",
+  "options": [
+   {
+    "label": "A",
+    "text": "$BD \\perp$ 平面 $AOC$"
+   },
+   {
+    "label": "B",
+    "text": "点 $A$ 到 $\\triangle BCD$ 所在平面的距离为 $\\frac{1}{2}$"
+   },
+   {
+    "label": "C",
+    "text": "平面 $AOC$ ⊥ 平面 $BCD$"
+   },
+   {
+    "label": "D",
+    "text": "四面体 $A-BCD$ 的外接球的表面积是 $28\\pi$\n\n三、填空题：本题共 3 小题，每小题 5 分，共 15 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/湖南长郡中学2025-2026学年高三上学期月考一#9",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'D'"
+  ],
+  "type": "multi_choice",
+  "stem": "(★) 在二项式 $\\left(\\frac{1}{x^3}-3x^2\\right)^n$ 的展开式中，只有第 5 项的二项式系数最大，则\\paren[D]",
+  "answer": "D",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ n=10 $"
+   },
+   {
+    "label": "B",
+    "text": "展开式中没有常数项"
+   },
+   {
+    "label": "C",
+    "text": "展开式所有二项式系数和为 1024"
+   },
+   {
+    "label": "D",
+    "text": "展开式所有项的系数和为 256"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/广东省2026届普通高中毕业班第一次调研考试#2",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知 $i$ 为虚数单位，若复数 $z = \\frac{3-i}{1+i}$，则 $|z| =$\\paren[ABC]",
+  "answer": "ABC",
+  "options": [
+   {
+    "label": "A",
+    "text": "1"
+   },
+   {
+    "label": "B",
+    "text": "$\\sqrt{2}$"
+   },
+   {
+    "label": "C",
+    "text": "2"
+   },
+   {
+    "label": "D",
+    "text": "$\\sqrt{5}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "因为 $z = \\frac{3-i}{1+i} = \\frac{(3-i)(1-i)}{(1+i)(1-i)} = \\frac{2-4i}{2} = 1-2i$，所以 $|z| = \\sqrt{1^2 + (-2)^2} = \\sqrt{5}$。\n\n（方法二）：$|z| = \\left| \\frac{3-i}{1+i} \\right| = \\frac{\\sqrt{10}}{\\sqrt{2}} = \\sqrt{5}$。故选：D。"
+ },
+ {
+  "key": "模拟题/广东省2026届普通高中毕业班第一次调研考试#3",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "样本点数据 $(i, y_i)$ ($i=1,2,3,4,5$)，且 $y_i \\leq y_{i+1}$ 大致呈线性分布，其经验回归方程为 $y = 2x - \\frac{5}{2}$，若 $y_3 = 5, y_5 = 8$，数据 $y_i$ 的 80\\% 分位数为 7，则当 $i=4$ 时，随机误差的残差为\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "-0.5"
+   },
+   {
+    "label": "B",
+    "text": "0.5"
+   },
+   {
+    "label": "C",
+    "text": "-1.5"
+   },
+   {
+    "label": "D",
+    "text": "1.5"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "将 $y_i$ 从小到大排列，$80\\% \\cdot 5 = 4$，所以 $\\frac{y_4 + y_5}{2} = 7 \\Rightarrow y_4 = 6$，预测值为 $y = 5.5$，所以残差为观测值-预测值=6-5.5=0.5 故选：B。"
+ },
+ {
+  "key": "模拟题/广东省2026届普通高中毕业班第一次调研考试#4",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知一圆锥高为 2，母线长为 $2\\sqrt{2}$。若用一平面截圆锥得到的圆台体积是圆锥的 $\\frac{7}{8}$，则圆台的侧面积为\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$6\\sqrt{2}\\pi$"
+   },
+   {
+    "label": "B",
+    "text": "$4\\sqrt{2}\\pi$"
+   },
+   {
+    "label": "C",
+    "text": "$3\\sqrt{2}\\pi$"
+   },
+   {
+    "label": "D",
+    "text": "$\\sqrt{2}\\pi$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "如图，设圆锥的高 $OA = 2$，母线 $AB = AC = 2\\sqrt{2}$，则圆锥的底面半径为 $R = \\sqrt{AC^2 - OA^2} = 2$，若用一平面截圆锥得到的圆台体积是圆锥的 $\\frac{7}{8}$，则截去圆锥体积是原圆锥体积的 $\\frac{1}{8}$，则 $r^2 \\cdot OA = 1$。设截去小圆锥的底面半径为 $r$，则 $\\frac{\\frac{1}{3}\\pi r^2 \\cdot OA}{3\\pi R^2 \\cdot OA} = \\frac{1}{8}$，则 $r^2 \\cdot OA = 1$。又 $\\frac{r}{R} = \\frac{OA}{OA}$，即 $r = OA$，代入①解得 $r = OA = 1$，则 $AD = \\sqrt{2}$，则圆台的侧面积为 $\\pi R \\cdot AC - \\pi r \\cdot AD = \\pi(4\\sqrt{2} - \\sqrt{2}) = 3\\sqrt{2}\\pi$。故选：C。"
+ },
+ {
+  "key": "模拟题/豫西北教研联盟2026届高三上学期第一次质检#11",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知抛物线 $C: y^2 = 2px$ ($p > 0$) 的焦点为 $F$, $O$ 为坐标原点, 动点 $P$ 在 $C$ 上, 若点 $M(2, \\sqrt{3})$ 满足 $|MF| = 2|OF|$, 则\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$C$ 的准线方程为 $x = -1$"
+   },
+   {
+    "label": "B",
+    "text": "$\\triangle PMF$ 周长的最小值为 5"
+   },
+   {
+    "label": "C",
+    "text": "直线 $MF$ 的倾斜角为 $\\frac{\\pi}{6}$"
+   },
+   {
+    "label": "D",
+    "text": "四边形 $OPMF$ 不可能是平行四边形\n\n三、填空题：本题共 3 小题，每小题 5 分，共 15 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/高三正文（2026年湛江市普通高考调研测试）#11",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'A'"
+  ],
+  "type": "multi_choice",
+  "stem": "设 $O$ 为坐标原点，抛物线 $C: y^2=2px$ 的准线 $l: x=-2, P$ 为 $C$ 上不与 $O$ 重合的动点，以 $P$ 为圆心，$l$ 为半径作圆，过点 $(-2,0)$ 作圆 $P$ 的两条切线交圆 $P$ 于 $M, N$ 两点，则\\paren[A]",
+  "answer": "A",
+  "options": [
+   {
+    "label": "A",
+    "text": "$l$ 始终与圆 $P$ 相离"
+   },
+   {
+    "label": "B",
+    "text": "$|MN|$ 无最值"
+   },
+   {
+    "label": "C",
+    "text": "存在点 $P$，使得 $OP \\perp MN$"
+   },
+   {
+    "label": "D",
+    "text": "$|OM|=2$ 时，$P$ 到 $l$ 的距离为 3"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "设 $O$ 为坐标原点，抛物线 $C: y^2=2px$ 的准线 $l: x=-2, P$ 为 $C$ 上不与 $O$ 重合的动点，以 $P$ 为圆心，$l$ 为半径作圆，过点 $(-2,0)$ 作圆 $P$ 的两条切线交圆 $P$ 于 $M, N$ 两点，则\n\nA。$l$ 始终与圆 $P$ 相离  \nB。$|MN|$ 无最值  \nC。存在点 $P$，使得 $OP \\perp MN$  \nD。$|OM|=2$ 时，$P$ 到 $l$ 的距离为 3\n\n三、填空题：本题共3小题，每小题5分，共15分。"
+ },
+ {
+  "key": "模拟题/浙江金华十校2026届高三上学期一模#10",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'D'"
+  ],
+  "type": "multi_choice",
+  "stem": "已知函数 $f(x)=x^2(x-a)$ 在 $x=2$ 处取得极小值，$y=f'(x)$ 为其导函数，则（▲）\\paren[D]",
+  "answer": "D",
+  "options": [
+   {
+    "label": "A",
+    "text": "$a=3$"
+   },
+   {
+    "label": "B",
+    "text": "$f'(\\sqrt{3}+1)-f'(1-\\sqrt{2})<0$"
+   },
+   {
+    "label": "C",
+    "text": "$f(x)\\geq-4$ 的解集为 $[-1,+\\infty)$"
+   },
+   {
+    "label": "D",
+    "text": "$\\forall x>0, f\\left(x+\\frac{1}{x}\\right)>f(-x-1)$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/浙江丽水、湖州、衢州三地市2026届高三上学期11月教学质量检测#6",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AC'"
+  ],
+  "type": "single_choice",
+  "stem": "若函数 $ y = \\sin\\left(\\omega x + \\frac{\\pi}{6}\\right) $ 的图象向右平移 $\\frac{\\pi}{4}$ 个单位后得到的图象关于 y 轴对称，则实数 $ \\omega $ 可以是\\paren[AC]",
+  "answer": "AC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\frac{2}{3}$"
+   },
+   {
+    "label": "B",
+    "text": "$-\\frac{2}{3}$"
+   },
+   {
+    "label": "C",
+    "text": "2"
+   },
+   {
+    "label": "D",
+    "text": "-2\n高三数学试题卷 第1页 共4页"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/江苏徐州2026届高三上学期期中摸底考试（零模）#11",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "定义在 $(0,+\\infty)$ 上的函数 $f(x)$ 满足 $f(x+1)=f(x)-x$，当 $0<x\\leq1$ 时，$f(x)=x-x^2$，则\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$f(2)=-1$"
+   },
+   {
+    "label": "B",
+    "text": "当 $2<x\\leq3$ 时，$f(x)=-x^2+3x-3$"
+   },
+   {
+    "label": "C",
+    "text": "$f(x)+\\frac{7}{2}x\\leq8$"
+   },
+   {
+    "label": "D",
+    "text": "当 $x\\in(0,n](n\\in\\mathbb{N}^*)$ 时，$f(x)+nx\\leq\\frac{n^2+n}{2}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/数学试卷#9",
+  "problems": [
+   "多选题的答案必须是 A–D，实际 '$BC$'"
+  ],
+  "type": "multi_choice",
+  "stem": "已知等比数列 $\\{a_n\\}$ 的首项为 4，公比为 $q$，前 $n$ 项和为 $S_n$。若 $\\frac{S_{10}}{S_5} = \\frac{33}{32}$，则\\paren[$BC$]",
+  "answer": "$BC$",
+  "options": [
+   {
+    "label": "A",
+    "text": "$q = -\\frac{1}{2}$"
+   },
+   {
+    "label": "B",
+    "text": "$S_3 = 7$"
+   },
+   {
+    "label": "C",
+    "text": "$a_n + S_n = 8$"
+   },
+   {
+    "label": "D",
+    "text": "$\\log_2 a_n = n - 3$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "已知等比数列 $\\{a_n\\}$ 的首项为 4，公比为 $q$，前 $n$ 项和为 $S_n$。若 $\\frac{S_{10}}{S_5} = \\frac{33}{32}$，则（ ）\n\nA。$q = -\\frac{1}{2}$\nB。$S_3 = 7$\nC。$a_n + S_n = 8$\nD。$\\log_2 a_n = n - 3$\n由题设，$\\frac{S_{10} - S_5}{S_5} = q^5$，而 $\\frac{S_{10}}{S_5} = \\frac{33}{32}$，则 $\\frac{S_{10} - S_5}{S_5} = \\frac{1}{32}$，所以 $q^5 = \\frac{1}{32} \\Rightarrow q = \\frac{1}{2}$，又 $a_1 = 4$，则 $a_n = 4 \\times \\left(\\frac{1}{2}\\right)^{n-1} = 2^{3-n}$，$A$ 错，且 $S_n = \\frac{4\\left[1 - \\left(\\frac{1}{2}\\right)^n\\right]}{1 - \\frac{1}{2}} = 8\\left[1 - \\left(\\frac{1}{2}\\right)^n\\right]$，所以 $S_3 = 8\\left[1 - \\left(\\frac{1}{2}\\right)^3\\right] = 7$，$B$ 对，$a_n + S_n = 2^{3-n} + 8\\left[1 - \\left(\\frac{1}{2}\\right)^n\\right] = 8$，$\\log_2 a_n = 3 - n$，$C$ 对，$D$ 错。\n\n故选：$BC$"
+ },
+ {
+  "key": "模拟题/数学试卷#11",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'A'"
+  ],
+  "type": "multi_choice",
+  "stem": "在四面体 $ABCD$ 中，$AB \\perp BC$，$BC \\perp CD$，$AB = BC = CD = 2$，$O$ 为四面体 $ABCD$ 外接球的球心，则\\paren[A]",
+  "answer": "A",
+  "options": [
+   {
+    "label": "A",
+    "text": "四面体 $ABCD$ 体积的最大值为 $\\frac{4}{3}$"
+   },
+   {
+    "label": "B",
+    "text": "$AD$ 长度的取值范围是 $[2, 2\\sqrt{5}]$"
+   },
+   {
+    "label": "C",
+    "text": "$\\overrightarrow{CO} \\cdot \\overrightarrow{CD} = \\overrightarrow{CO} \\cdot \\overrightarrow{BA}$"
+   },
+   {
+    "label": "D",
+    "text": "当直线 $AB$ 与 $CD$ 所成角为 $60^\\circ$ 时，四面体 $ABCD$ 外接球的表面积为 $\\frac{28\\pi}{3}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "F = CD = 2$，因为 $CD \\parallel BF$，\n故异面直线 AB、CD 所成的角为 $\\angle ABF$ 或其补角。\n可将将三棱锥 $C-ABF$ 置于圆柱 $O_1O_2$ 内，使得 $\\triangle ABF$ 的外接圆为圆 $O_2$，如右图所示：\n当 $\\angle ABF=60^\\circ$ 时，$\\triangle ABF$ 为等边三角形，则该三角形外接圆直径为 $2r=\\frac{2}{\\sin\\frac{\\pi}{3}}=\\frac{4\\sqrt{3}}{3}$，\n设球 $O$ 的半径为 $R$，则 $(2R)^2=(2r)^2+BC^2=\\frac{16}{3}+4=\\frac{28}{3}$（此时球 O 也是圆柱的外接球），\n此时，球 $O$ 的表面积为 $4\\pi r^2=\\frac{28\\pi}{3}$；\n当 $\\angle ABF=120^\\circ$ 时，由于 $AB=BF=2$，则 $\\angle AFB=30^\\circ$，\n则 $\\triangle ABF$ 外接圆直径为 $2r=\\frac{2}{\\sin30^\\circ}=4$，\n则 $(2R)^2=(2r)^2+BC^2=16+4=20$，\n此时，球 $O$ 的表面积为 $4\\pi r^2=20\\pi$。\n综上所述，球 $O$ 的表面积为 $\\frac{28\\pi}{3}$ 或 $20\\pi$，D 错误。\nD 选项还可以通过建立空间直角坐标系，建立方程组确定球 0 的半径。\n故选：AC。\n三、填空题：本题共3小题，每小题5分，共15分。\n\n题号 12 13 14\n\n答案 $3\\sqrt{5}$ 2（或表达为$\\left(\\frac{360}{\\pi}\\right)$） $\\frac{13}{6}$\n\n注意：填空题要么正确，要么错误。13题用近似值表示，不给分。"
+ },
+ {
+  "key": "模拟题/福建宁德2026届高三上学期11月期中#2",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BAC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知 $(1-i)z=1+3i$，则复数 $z$ 的虚部为\\paren[BAC]",
+  "answer": "BAC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$-2$"
+   },
+   {
+    "label": "B",
+    "text": "2"
+   },
+   {
+    "label": "C",
+    "text": "$-2i$"
+   },
+   {
+    "label": "D",
+    "text": "$ 2i $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/福建宁德2026届高三上学期11月期中#3",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BA'"
+  ],
+  "type": "single_choice",
+  "stem": "已知正实数 $ a, b $ 满足 $ a + b = 4 $，则 $ \\frac{1}{a+2} + \\frac{1}{b} $ 的最小值为\\paren[BA]",
+  "answer": "BA",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\frac{1}{3}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\frac{2}{3}$"
+   },
+   {
+    "label": "C",
+    "text": "1"
+   },
+   {
+    "label": "D",
+    "text": "4"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/福建宁德2026届高三上学期11月期中#6",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'CA'"
+  ],
+  "type": "single_choice",
+  "stem": "已知定义在 $\\mathbb{R}$ 上的函数 $f(x)=\\begin{cases}\\ln x, & x>1, \\\\ |x^2-x|, & x\\leq1, \\end{cases}$ 若方程 $f(x)-a(x-1)=0$ 恰有两个解，则实数 $a$ 的取值范围为\\paren[CA]",
+  "answer": "CA",
+  "options": [
+   {
+    "label": "A",
+    "text": "$(-\\infty, -1]$"
+   },
+   {
+    "label": "B",
+    "text": "$[0, 1]$"
+   },
+   {
+    "label": "C",
+    "text": "$(-\\infty, -1) \\cup [0, 1]$"
+   },
+   {
+    "label": "D",
+    "text": "$(-\\infty, -1] \\cup [0, 1]$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/福建宁德2026届高三上学期11月期中#9",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BCD'"
+  ],
+  "type": "single_choice",
+  "stem": "在 $\\triangle ABC$ 中，内角 A, B, C 所对的边分别为 $a, b, c$，如下判断正确的是\\paren[BCD]",
+  "answer": "BCD",
+  "options": [
+   {
+    "label": "A",
+    "text": "若 $A > B$，则 $\\cos A > \\cos B$"
+   },
+   {
+    "label": "B",
+    "text": "若 $b \\cos A - a \\cos B = 0$，则 $\\triangle ABC$ 为等腰三角形"
+   },
+   {
+    "label": "C",
+    "text": "若 $\\cos A \\cos B \\cos C > 0$，则 $\\triangle ABC$ 为锐角三角形"
+   },
+   {
+    "label": "D",
+    "text": "若满足条件 $A = \\frac{\\pi}{4}$, $c = 2$ 的 $\\triangle ABC$ 有两个，则 $a$ 的取值范围为 $(\\sqrt{2}, 2)$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/重庆市南开中学2026届高三11月第三次质量检测#2",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BD'"
+  ],
+  "type": "single_choice",
+  "stem": "若 $\\cos \\alpha + \\sin \\alpha = \\frac{1}{3}$，则 $\\sin 2\\alpha =$\\paren[BD]",
+  "answer": "BD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\frac{1}{9}$"
+   },
+   {
+    "label": "B",
+    "text": "$-\\frac{8}{9}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\frac{\\sqrt{6}}{3}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{\\sqrt{17}}{9}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "由于$\\cos \\alpha + \\sin \\alpha = \\frac{1}{3}$，则$\\cos^2 \\alpha + \\sin^2 \\alpha + 2\\sin \\alpha \\cdot \\cos \\alpha = \\frac{1}{9}$，即可得$\\sin 2\\alpha = 2\\sin \\alpha \\cdot \\cos \\alpha = -\\frac{8}{9}$。"
+ },
+ {
+  "key": "模拟题/浙江省“9+1”高中联盟高三上学期期中考试#3",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AD'"
+  ],
+  "type": "single_choice",
+  "stem": "椭圆 $ 3x^2 + y^2 = 1 $ 的离心率是（▲）\\paren[AD]",
+  "answer": "AD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ \\frac{\\sqrt{2}}{3} $"
+   },
+   {
+    "label": "B",
+    "text": "$ \\frac{\\sqrt{3}}{3} $"
+   },
+   {
+    "label": "C",
+    "text": "$ \\frac{\\sqrt{2}}{2} $"
+   },
+   {
+    "label": "D",
+    "text": "$ \\frac{\\sqrt{6}}{3} $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "D\n由题意：$ a^2 = 1, b^2 = \\frac{1}{3} $，则 $ c^2 = \\frac{2}{3} $，故 $ e = \\frac{c}{a} = \\frac{\\sqrt{6}}{3} $"
+ },
+ {
+  "key": "模拟题/浙江省“9+1”高中联盟高三上学期期中考试#6",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知等差数列 $\\{a_n\\}$ 满足 $a_1 = 2$，$a_3 + a_5 = 10$，数列 $\\{b_n\\}$ 的前 $n$ 项和 $S_n$ 满足 $S_n = 2b_n - 3(n \\in \\mathbb{N}^*)$，则数列 $\\{b_{a_n}\\}$\n的前10项和为（▲）\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "2046"
+   },
+   {
+    "label": "B",
+    "text": "3069"
+   },
+   {
+    "label": "C",
+    "text": "6138"
+   },
+   {
+    "label": "D",
+    "text": "6144\nQQ教师群：965672919 高三数学试题 第1页（共4页） QQ学生群：891279579"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "C\n由题意：$ a_1 = 2 $，$ a_4 = \\frac{a_5 - a_6}{2} = 5 $，则公差 $ d = \\frac{a_4 - a_1}{3} = 1 $，得 $ a_n = n + 1 $\n又 $ S_n = 2b_n - 3 $，$ S_{n+1} = 2b_{n-1} - 3(n \\geq 2) $，两式相减得 $ b_n = 2b_{n-1} $ ($ n \\geq 2 $)\n易知 $ b_1 = 1 $ 且 $ b_n = 3 \\times 2^{n-1} $，所以 $ b_{n_1} = b_{n+1} = 3 \\times 2^n $，故前 10 项和为 $ \\frac{6 \\times (1-2^{10})}{1-2} = 6 \\times 1023 = 6138 $"
+ }
+]

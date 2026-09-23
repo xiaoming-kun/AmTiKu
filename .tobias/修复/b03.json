@@ -1,0 +1,642 @@
+[
+ {
+  "key": "模拟题/河北省衡水市2025-2026学年高三上学期第三次调研考试（26008C）#4",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知直线 $ a $, $ b $, 平面 $ \\alpha $, 且 $ b \\subset \\alpha $, 则 “$ a \\parallel b $” 是 “$ a \\parallel \\alpha $” 的\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "充分不必要条件"
+   },
+   {
+    "label": "B",
+    "text": "必要不充分条件"
+   },
+   {
+    "label": "C",
+    "text": "充要条件"
+   },
+   {
+    "label": "D",
+    "text": "既不充分也不必要条件"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "由 $b \\subset \\alpha, a \\parallel b$，可得 $a \\parallel \\alpha$ 或 $a \\subset \\alpha$，所以“$a \\parallel b$”是“$a \\parallel a$”的不充分条件，由 $b \\subset \\alpha, a \\parallel \\alpha$，可得 $a \\parallel b$ 或 $a$ 与 $b$ 是异面直线，所以“$a \\parallel b$”是“$a \\parallel \\alpha$”的不必要条件，所以“$a \\parallel b$”是“$a \\parallel \\alpha$”的既不充分也不必要条件。故选：D。"
+ },
+ {
+  "key": "模拟题/河北省衡水市2025-2026学年高三上学期第三次调研考试（26008C）#5",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "已知 $\\sin\\left(\\alpha - \\frac{\\pi}{6}\\right) = \\frac{1}{3}$, 则 $\\sin\\left(2\\alpha + \\frac{\\pi}{6}\\right) =$\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "$-\\frac{7}{9}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\frac{7}{9}$"
+   },
+   {
+    "label": "C",
+    "text": "$-\\frac{4\\sqrt{2}}{9}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{4\\sqrt{2}}{9}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "由题意结合诱导公式得 $\\sin\\left(2\\alpha+\\frac{\\pi}{6}\\right)=\\sin\\left[2\\left(\\alpha-\\frac{\\pi}{6}\\right)+\\frac{\\pi}{2}\\right]=\\cos\\left(2\\alpha-\\frac{\\pi}{3}\\right)$，由二倍角的余弦公式得 $\\cos\\left(2\\alpha-\\frac{\\pi}{3}\\right)=1-2\\sin^2\\left(\\alpha-\\frac{\\pi}{6}\\right)=1-2\\times\\frac{1}{9}=\\frac{7}{9}$，故 B 正确。故选：B。"
+ },
+ {
+  "key": "模拟题/湖南省天壹名校联盟2026届高三8月入学考试#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $ A = \\{ x \\in \\mathbb{R} \\mid \\frac{x-3}{x+1} < 0 \\} $，$ B = \\{ x \\in \\mathbb{R} \\mid 3^x < 1 \\} $，则 $ A \\cap B = $\\paren[BD]",
+  "answer": "BD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$(3, +\\infty)$"
+   },
+   {
+    "label": "B",
+    "text": "$(-1, 0)$"
+   },
+   {
+    "label": "C",
+    "text": "$(-\\infty, 0)$"
+   },
+   {
+    "label": "D",
+    "text": "$(-\\infty, -1) \\cup (0, +\\infty)$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "$A=\\{x\\mid-1<x<3\\}$，$B=\\{x\\mid x<0\\}$，$A\\cap B=\\{x\\mid-1<x<0\\}$。"
+ },
+ {
+  "key": "模拟题/湖南省天壹名校联盟2026届高三8月入学考试#9",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "下列说法正确的是\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "不存在三个事件 A,B,C 两两对立"
+   },
+   {
+    "label": "B",
+    "text": "若三个事件 A,B,C 两两互斥，则 $ P(A)+P(B)+P(C) \\leqslant 1 $"
+   },
+   {
+    "label": "C",
+    "text": "给定事件 A,B,C,且 $ P(C)>0 $，则 $ P(A\\cup B\\mid C)=P(A\\mid C)+P(B\\mid C) $"
+   },
+   {
+    "label": "D",
+    "text": "已知函数 $ x_1,x_2,\\cdots,x_{10} $ 的极差为 4，方差为 2，则数据 $ 2x_1+1,2x_2+1,\\cdots,2x_{10}+1 $ 的极差和方差分别为 8,4"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "AB\n\n对于 A：事件 A 与事件 B 对立，由对立事件定义知事件 C 不能和 A 与 B 同时对立。\n\n对于 B：若三个事件 A, B, C 两两互斥，则 $P(A)+P(B)+P(C)=P(A\\cup B\\cup C)\\leq1$\n\n对于 C：当 A, B 互斥时，$P(A\\cup B\\mid C)=P(A\\mid C)+P(B\\mid C)$；\n\n当 A, B 不互斥时，$P(A\\cup B\\mid C)<P(A\\mid C)+P(B\\mid C)$，C 错误。\n\n对于 D：极差为 8，方差为 8，故 D 错误。"
+ },
+ {
+  "key": "模拟题/湖南天壹名校联盟2025年下学期高三9月联考#10",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AC'"
+  ],
+  "type": "single_choice",
+  "stem": "下列说法正确的是\\paren[AC]",
+  "answer": "AC",
+  "options": [
+   {
+    "label": "A",
+    "text": "甲、乙两人独立地破译一份密码，已知各人能破译的概率分别为 $\\frac{1}{3}, \\frac{1}{4}$，则密码被成功破译的概率为 $\\frac{1}{2}$"
+   },
+   {
+    "label": "B",
+    "text": "一箱 12 罐的饮料中有 2 罐有奖券，从中任意抽取 2 罐，这 2 罐中有奖券的概率为 $\\frac{11}{36}$"
+   },
+   {
+    "label": "C",
+    "text": "一个袋子中有 4 个红球，$n$ 个绿球，不放回地从中随机取出两个球，若取出的两球都是红球的概率为 $\\frac{1}{6}$，则 $n=5$"
+   },
+   {
+    "label": "D",
+    "text": "甲、乙两选手进行象棋比赛，如果每局比赛甲获胜的概率为 0.6，乙获胜的概率为 0.4，相比 3 局 2 胜制，5 局 3 胜制对甲更有利"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "A 选项：密码被成功破译的对立事件是两人均没破译成功，所以密码被成功破译的概率为 $1 - \\frac{2}{3} \\times \\frac{3}{4} = \\frac{1}{2}$，所以 A 选项正确；\n\nB 选项：2 罐中有奖券包括 1 罐有奖券和 2 罐有奖券两种情况，所以这 2 罐中有奖券的概率为 $\\frac{C_2^1 C_{10}^1 + C_2^2 C_{10}^2}{C_2^1 C_{12}^2} = \\frac{21}{66} = \\frac{7}{22}$，故 B 选项错误；\n\nC 选项：不放回地从中随机取出两个球，则取出的两球都是红球的概率 $\\frac{4}{n+4} \\times \\frac{3}{n+3} = \\frac{1}{6}$，整理得 $(n+4)(n+3)=72$，又 $n>0$，所以 $n=5$，故 C 选项正确；\n\nD 选项：采用 3 局 2 胜制，甲最终获胜有 2 种情况 2：0 或 2：1，前者是前两局甲连胜，后者是前两局甲 1 胜 1 负且第 3 局甲胜，因为每局比赛的结果是独立的，所以甲最终获胜的概率 $p_1 = 0.6^2 + C_2^1 \\times 0.6^2 \\times 0.4 = 0.648$；采用 5 局 3 胜制，甲最终获胜有 3 种情况 3：0, 3：1 或 3：2，因为每局比赛的结果是独立的，所以甲最终获胜的概率 $p_2 = 0.6^3 + C_2^3 \\times 0.6^3 \\times 0.4 + C_2^4 \\times 0.6^4 \\times 0.4^2 = 0.68256$，因为 $p_2 > p_1$，所以 5 局 3 胜制对甲"
+ },
+ {
+  "key": "模拟题/长郡中学2026届高三上学期月考（二）#10",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BCD'"
+  ],
+  "type": "single_choice",
+  "stem": "黄金三角形是一种特殊的等腰三角形，其底与腰的长度之比为黄金比例（黄金分割比=$\\frac{\\sqrt{5}-1}{2}$），这一比例在自然界、艺术及建筑设计中都有着广泛的应用，它象征着和谐与完美。已知在顶角为 $\\angle BAC$ 的黄金 $\\triangle ABC$ 中，它的底角正好是顶角的两倍，且它的底与腰之比为黄金分割比，$D$ 为 $BC$ 边上的中点，则下列选项正确的有\\paren[BCD]",
+  "answer": "BCD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\cos 18^\\circ=\\frac{CD}{AC}$"
+   },
+   {
+    "label": "B",
+    "text": "$2\\sin 18^\\circ=\\frac{\\sqrt{5}-1}{2}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\frac{1+\\tan 27^\\circ}{1-\\tan 27^\\circ}=\\frac{AD}{CD}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\cos \\angle BAC=\\frac{\\sqrt{5}+1}{4}$\n\n数学试题（长郡版） 第 2 页（共 8 页）"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "由题意可知 $2\\angle BAC=\\angle ACB=\\angle ABC$，$\\frac{BC}{AC}=\\frac{\\sqrt{5}-1}{2}$，\n又∵$\\angle BAC+\\angle ACB+\\angle ABC=180°$，\n∴$\\angle ACB=\\angle ABC=72°$，$\\angle BAC=36°$，\n∵D 为等腰三角形底边上的中点，\n由三角形三线合一可知 $AD\\perp BC$，$\\angle CAD=\\angle BAD=180°$，\n设 $AC=AB=2$，则 $BC=\\sqrt{5}-1$，\n∴$\\cos 180°=\\cos\\angle CAD=\\frac{AD}{AC}$，A 选项错误；\n$2\\sin 180°=2\\sin\\angle CAD=\\frac{2CD}{AC}=\\frac{BC}{AC}=\\frac{\\sqrt{5}-1}{2}$，B 选项正确；\n∵$\\frac{1+\\tan 27°}{1-\\tan 27°}=\\frac{\\tan 45°+\\tan 27°}{1-\\tan 45°\\tan 27°}=\\tan(45°+27°)=\\tan 72°=\\tan\\angle ACD=\\frac{AD}{CD}$，C 选项正确；\n由 B 项知 $\\sin 180°=\\frac{\\sqrt{5}-1}{4}$，∴$\\cos\\angle BAC=\\cos 36°=1-2\\sin^{2}18=1-2\\cdot\\left(\\frac{\\sqrt{5}-1}{4}\\right)^{2}=\\frac{\\sqrt{5}+1}{4}$，D 选项正确。"
+ },
+ {
+  "key": "模拟题/湖北省“新八校 协作体2026届高三上学期10月月考#10",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ACD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知将函数 $ f(x) = 2\\sin^2 x + 2\\sqrt{3}\\sin x \\cos x - 1 $ 的图象向左平移 $ \\frac{5\\pi}{6} $ 得函数 $ g(x) $ 的图象，则下列说法正确的是\\paren[ACD]",
+  "answer": "ACD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ f(x) $ 的最小正周期为 $ \\pi $"
+   },
+   {
+    "label": "B",
+    "text": "$ g(x) = 2\\cos 2x $"
+   },
+   {
+    "label": "C",
+    "text": "$ g(x) $ 的对称轴为 $ x = \\frac{\\pi}{2} + \\frac{k\\pi}{2} $，$ k \\in \\mathbb{Z} $"
+   },
+   {
+    "label": "D",
+    "text": "若函数 $ h(x) = g(x) + g\\left(x + \\frac{\\pi}{4}\\right) $，则 $ y = 2h(x) + x $ 在 $ (-\\infty, \\pi) $ 上有 6 个零点  \n数学试卷（共 4 页）第 2 页  \n3亿人都在用的扫描App"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "已知将函数 $f(x)=2\\sin^2 x+2\\sqrt{3}\\sin x\\cos x-1$ 的图象向左平移 $\\frac{5\\pi}{6}$ 得函数 $g(x)$ 的图象，则下列说法正确的是（ ）\nA。$f(x)$ 的最小正周期为 $\\pi$\nB。$g(x)=2\\cos 2x$\nC。$g(x)$ 的对称轴为 $x=\\frac{\\pi}{2}+\\frac{k\\pi}{2}$，$k \\in \\mathbb{Z}$\nD。若函数 $h(x)=g(x)+g\\left(x+\\frac{\\pi}{4}\\right)$，则 $y=2h(x)+x$ 在 $(-\\infty,\\pi)$ 上有 6 个零点\n【答案】ACD\n数学答案（共 10 页）第 3 页\n对于 A，依题意，$ T=\\frac{2\\pi}{2}=\\pi $，故 A 正确；对于 B $ g(x)=-2\\cos 2x $，B 错\n\n对于 C $ g(x)=-2\\cos 2x $，对称轴为 $ 2x=\\pi+k\\pi, x=\\frac{\\pi}{2}+\\frac{k\\pi}{2}, k\\in\\mathbb{Z} $，C 正确\n\n对于 D，$ h(x)=g(x)+g\\left(x+\\frac{\\pi}{4}\\right)=2\\sin 2x-2\\cos 2x=2\\sqrt{2}\\sin\\left(2x-\\frac{\\pi}{4}\\right) $，在直角坐标系中分别作出 $ y=h(x) $，$ y=-\\frac{1}{2}x $ 的图象如图所示，则 $ x \\in \\mathbb{R} $，$ y=\\frac{1}{2}x $ 的图象如图所示，则 $ x \\in (-\\infty, \\pi) $ 上有 6 个交点，即 $ y=2h(x)+x $ 在 $(-\\infty,\\pi)$ 上有 6 个零点，故 D 正确；故选：ACD。"
+ },
+ {
+  "key": "模拟题/2026届辽宁名校联盟高三10月份联合考试-（含）#9",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'A'"
+  ],
+  "type": "multi_choice",
+  "stem": "已知 $a>b>0$，则\\paren[A]",
+  "answer": "A",
+  "options": [
+   {
+    "label": "A",
+    "text": "$5^a<5^b$"
+   },
+   {
+    "label": "B",
+    "text": "$\\log_{0.6}(a+1)<\\log_{0.6}(b+1)$"
+   },
+   {
+    "label": "C",
+    "text": "$a^{-3}<b^{-3}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{a}{b}<a+\\frac{1}{b+1}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "因为指数函数 $ y = 5^x $ 在 $ (0, +\\infty) $ 上单调递增，且 $ a > b > 0 $，所以 $ 5^y > 5^a $，A 项错误；因为 $ a > b > 0 $，所以 $ a + 1 > b + 1 $，又对数函数 $ y = \\log_{a}x $ 在 $ (0, +\\infty) $ 上单调递减，所以 $ \\log_{a}a < (a+1) < \\log_{a}a $（$ a > 0 $）在 $ (-\\infty, +\\infty) $ 上单调递减。所以 $ \\log_a c = \\frac{1}{25} $，故选 A 项。"
+ },
+ {
+  "key": "模拟题/江苏如皋2026届高三上学期第一次教学质量调研#10",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'A'"
+  ],
+  "type": "multi_choice",
+  "stem": "已知二项展开式 $(1-2x)^{2025}=a_0+a_1x+a_2x^2+\\cdots+a_{2025}x^{2025}$，下列说法正确的是\\paren[A]",
+  "answer": "A",
+  "options": [
+   {
+    "label": "A",
+    "text": "$a_1=-4050$"
+   },
+   {
+    "label": "B",
+    "text": "$a_1+a_2+a_3+\\cdots+a_{2025}=-1$"
+   },
+   {
+    "label": "C",
+    "text": "$a_0+a_2+a_4+a_6+\\cdots+a_{2024}=\\frac{3^{2025}-1}{2}$"
+   },
+   {
+    "label": "D",
+    "text": "$2a_2+3a_3+4a_4+\\cdots+2025a_{2025}=0$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/深圳中学2026届高三上学期第一次阶段考试#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ACD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合$ A=\\{x \\mid -5 < x^3 < 5\\} $，$ B=\\{-3, -1, 0, 2, 3\\} $，则$ A \\cap B = $\\paren[ACD]",
+  "answer": "ACD",
+  "options": [
+   {
+    "label": "A",
+    "text": "{2, 3}"
+   },
+   {
+    "label": "B",
+    "text": "{-1, 0}"
+   },
+   {
+    "label": "C",
+    "text": "{-3, -1, 0}"
+   },
+   {
+    "label": "D",
+    "text": "{-1, 0, 2}"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "ac{2+\\sqrt{2}}{2} $。\n\n故 $ \\varphi(a) $ 在 $ \\left(1,1+\\frac{\\sqrt{2}}{2}\\right) $ 单调递增，在 $ \\left(1+\\frac{\\sqrt{2}}{2},e\\right) $ 单调递减，故 $ \\varphi(a)_{\\min} = \\min \\{ \\varphi(1), \\varphi(e) \\} $，只需证 $ \\varphi(e) > 0 $。\n\n而 $ \\varphi(e) = \\ln (2e-1) - \\sqrt{2} > \\ln (\\frac{8e}{5}) - \\sqrt{2} = (1+3 \\ln 2 - \\ln 5) - \\sqrt{2} > 1.46 - \\sqrt{2} > 0 $，证毕！\n\nⅡ。当 $ a > e $ 时，令 $ k(a) = \\tan A = \\frac{|CD|}{|AD|} = \\frac{a \\ln a - a + 1}{\\ln a} $，则 $ k'(a) = \\frac{a \\ln a (\\ln a-1) + (a-1)}{a \\ln^2 a} > 0 $。\n\n故 $ k(a) $ 单调递增，又 $ k(4) - \\sqrt{3} = \\frac{(8-2\\sqrt{3})\\ln 2 - 3}{\\ln 4} > \\frac{4.5 \\times \\ln 2 - 3}{\\ln 4} > 0 $，故当 $ a \\geq 4 $ 时，$ B > A > \\frac{\\pi}{3} $，则 $ C < \\frac{\\pi}{3} $。\n\n此时 $\\triangle ABC$ 不可能为等腰三角形，故当 $ a_1, a_2 \\in (e,4) $ 时，$\\triangle ABC$ 才可能为等腰三角形，故 $ |a_1 - a_2| < 4 - e $。"
+ },
+ {
+  "key": "模拟题/深圳中学2026届高三上学期第一次阶段考试#4",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABC'"
+  ],
+  "type": "single_choice",
+  "stem": "若$\\tan\\theta=2$，则$\\frac{\\sin\\theta(1+\\sin2\\theta)}{\\sin\\theta+\\cos\\theta}=$\\paren[ABC]",
+  "answer": "ABC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$-\\frac{8}{5}$"
+   },
+   {
+    "label": "B",
+    "text": "$-\\frac{6}{5}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\frac{6}{5}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{8}{5}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/深圳中学2026届高三上学期第一次阶段考试#9",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知$a>0,b>0$，若$a+2b=1$，则\\paren[AD]",
+  "answer": "AD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ab$的最大值为$\\frac{1}{8}$"
+   },
+   {
+    "label": "B",
+    "text": "$a^2+b^2$的最小值为1"
+   },
+   {
+    "label": "C",
+    "text": "$\\frac{2}{a}+\\frac{1}{b}$的最小值为8"
+   },
+   {
+    "label": "D",
+    "text": "$2^a+4^b$的最小值为$2\\sqrt{2}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/杭州第二中学2025年10月高三年级适应性检测#11",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知平面上一点 $P$ 到点 $F_1(-1,0)$，$F_2(1,0)$ 的距离满足 $\\|PF_1\\| - |PF_2|\\| = 2|PF_1| \\cdot |PF_2|$，设点 $P$ 的运动轨迹为曲线 $C$，则下列结论正确的是\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "曲线 $C$ 关于原点对称"
+   },
+   {
+    "label": "B",
+    "text": "$|PF_1| \\cdot |PF_2| \\leq 1$"
+   },
+   {
+    "label": "C",
+    "text": "点 $P$ 横坐标的取值范围是 $\\left[-\\sqrt{2}, \\sqrt{2}\\right]$"
+   },
+   {
+    "label": "D",
+    "text": "当点 $P$ 不在坐标轴上时，点 $P$ 在椭圆 $\\frac{x^2}{2} + y^2 = 1$ 内部"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "^2=1$ 的内部。故答案为：ABD。三、填空题：本题共 3 小题，每小题 5 分，共 15 分。12. $\\frac{\\pi}{4}$「解析」先计算 $\\overrightarrow{OA}\\cdot\\overrightarrow{OB}$，再计算 $\\left|\\overrightarrow{OA}\\right|,\\left|\\overrightarrow{OB}\\right|$，利用数量积的夹角公式即可求解。杭州第二中学\n由题意有：$\\overrightarrow{OA}\\cdot\\overrightarrow{OB}=1\\times3+2\\times1=5$，$\\left|\\overrightarrow{OA}\\right|=\\sqrt{1^{2}+2^{2}}=\\sqrt{5},\\left|\\overrightarrow{OB}\\right|=\\sqrt{3^{2}+1^{2}}=\\sqrt{10}$，\n\n所以$\\cos\\left\\langle\\overrightarrow{OA},\\overrightarrow{OB}\\right\\rangle=\\frac{\\overrightarrow{OA}\\cdot\\overrightarrow{OB}}{\\left|\\overrightarrow{OA}\\right|\\left|\\overrightarrow{OB}\\right|}=\\frac{5}{\\sqrt{5}\\times\\sqrt{10}}=\\frac{\\sqrt{2}}{2}$，又$\\left\\langle\\overrightarrow{OA},\\overrightarrow{OB}\\right\\rangle\\in\\left[0,\\pi\\right]$，\n\n所以$\\angle AOB=\\frac{\\pi}{4}$。\n\n故答案为：$\\frac{\\pi}{4}$。"
+ },
+ {
+  "key": "模拟题/2026届广东大湾区10月联考#2",
+  "problems": [
+   "单选题的答案必须是 A–C，实际 'D'"
+  ],
+  "type": "single_choice",
+  "stem": "下列函数中，在$(0,+\\infty)$上单调递减的是\\paren[D]",
+  "answer": "D",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ y = \\sqrt{x} $"
+   },
+   {
+    "label": "B",
+    "text": "$ y = \\left( \\frac{1}{2} \\right)^{x+1} $\nc。$ y = -\\frac{1}{x} $"
+   },
+   {
+    "label": "C",
+    "text": "$ y = \\log_2 x $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "az = 0 \\end{cases}$。\n\n令 $ z = \\sqrt{3} $，则由 $ ax - 2az = 0 $ 可得 $ x = 2\\sqrt{3} $，由 $ \\sqrt{3}ay - 2az = 0 $ 可得 $ y = 2 $，所以 $ \\overrightarrow{n} = (2\\sqrt{3},2,\\sqrt{3}) $。\n\n设平面 $ PAB $ 与平面 $ PDB $ 的夹角为 $ \\theta $，则 $ \\cos \\theta = \\frac{\\overrightarrow{n} \\cdot \\overrightarrow{DA}}{|\\overrightarrow{n}||\\overrightarrow{DA}|} $。\n\n2026 届大湾区联考 高三数学参考答案 第5页，共10页\n$\\bar{n} \\cdot \\overline{DA} = 2\\sqrt{3}a$, $|\\bar{n}| = \\sqrt{(2\\sqrt{3})^2 + 2^2 + (\\sqrt{3})^2} = \\sqrt{12 + 4 + 3} = \\sqrt{19}$, $|\\overline{DA}| = a$。\n\n所以 $\\cos\\theta = \\frac{2\\sqrt{3}a}{\\sqrt{19}a} = \\frac{2\\sqrt{57}}{19}$。\n下列函数中，在$(0,+\\infty)$上单调递减的是\nA。$ y = \\sqrt{x} $\nB。$ y = \\left( \\frac{1}{2} \\right)^{x+1} $\nD。$ y = \\log_2 x $\n$ 0 < \\frac{1}{2} < 1 $，所以 $ y = \\left( \\frac{1}{2} \\right)^{-1/2} $ 在 $ (0, +\\infty) $ 上为减函数，故选：B。"
+ },
+ {
+  "key": "模拟题/2026届广东大湾区10月联考#8",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知点 $F_1$、$F_2$ 是椭圆 $\\frac{x^2}{a^2} + \\frac{y^2}{b^2} = 1 (a > b > 0)$ 的左、右焦点，点 $M$ 为椭圆上一点，点 $F_1$ 关于 $\\angle F_1MF_2$ 的角平分线的对称点也在椭圆上，若 $\\cos\\angle F_1MF_2 = \\frac{7}{9}$，则椭圆的离心率为\\paren[BD]",
+  "answer": "BD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\frac{1}{2}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\frac{4}{5}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\frac{5}{6}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{\\sqrt{3}}{3}$\n\n二、选择题：本题共 3 小题，每小题 6 分，共 18 分。在每小题给出的选项中，有多项符合题目要求。全部选对得 6 分，部分选对的得部分分，有选错的得 0 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "ht| + \\left|F_2M\\right| = 3m + \\left|F_2M\\right| = 2a \\Rightarrow \\left|F_2M\\right| = 2a - 3m$\n由题可知 $ M $ 在线段 $ F_1N $ 的中虚线上，所以 $ \\left|MF_1\\right| = \\left|MN\\right| = \\left|F_2N\\right| = \\left|F_2M\\right| $。\n所以 $ 3m = 2a - 2m + 2a - 3m = m = \\frac{1}{2}a $，所以 $ \\left|MF_1\\right| = \\frac{3}{2}a_1 \\left|MF_1\\right| = \\frac{1}{2}a $，又 $ \\left|F_1F_1\\right| = 2c $。\n在 $\\triangle MF_1F_2$，由余弦定理得 $\\left|F_1F_2\\right|^2 + \\left|MF_1F_2\\right|^2 + \\left|MF_2F_2\\right|^2 = 2\\left|MF_1F_2\\right|\\cos\\angle F_1MF_2$，\n代入得 $ 4c^2 = \\frac{9}{4}a^2 + \\frac{1}{4}a^2 - 2\\frac{3}{2}a^2 = \\frac{1}{2}a^2\\frac{7}{9} $，化简得 $ 4c^2 = \\frac{4}{3}a^2 - 2a = \\sqrt{3}c $。\n则椭圆的离心率为 $ e = \\frac{c}{a} = \\frac{\\sqrt{3}}{3} $。\n二、选择题：本题共3小题，每小题6分。共18分。在每小题给出的选项中，有多项符合题\n题目要求。全部选对的得6分，部分选对的得部分，有选错的得0分。\n题号\n9\n10\n11\n答案\nBD\nAD\nBCD"
+ },
+ {
+  "key": "模拟题/2026届广东大湾区10月联考#11",
+  "problems": [
+   "选项 A 内容为空",
+   "选项 B 内容为空",
+   "选项 C 内容为空"
+  ],
+  "type": "multi_choice",
+  "stem": "下列四棱锥的所有棱长都相等，A，B，C，D，E是四棱锥的顶点或所在棱的中点，则直线DE不与平面ABC垂直的是\\paren[BCD]",
+  "answer": "BCD",
+  "options": [
+   {
+    "label": "A",
+    "text": ""
+   },
+   {
+    "label": "B",
+    "text": ""
+   },
+   {
+    "label": "C",
+    "text": ""
+   },
+   {
+    "label": "D",
+    "text": "E\n\n三、填空题：本题共3小题，每小题5分，共15分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "} \\cdot \\overrightarrow{AE} = \\overrightarrow{DA} \\cdot \\overrightarrow{AE} $。\n所以 $ AC $ 与 $ DE $ 不垂直，所以直线 $ DE $ 不与平面 $ ABC $ 垂直；\n\n对于 D：设棱长为 2，$\\overrightarrow{ED} = \\overrightarrow{EF} + \\overrightarrow{FD}$，$\\overrightarrow{AC} = \\overrightarrow{AF} + \\overrightarrow{FC}$，\n\n所以 $\\overrightarrow{ED} \\cdot \\overrightarrow{AC} = (\\overrightarrow{EF} + \\overrightarrow{FD}) \\cdot (\\overrightarrow{AF} + \\overrightarrow{FC}) = \\overrightarrow{EF} \\cdot \\overrightarrow{AF} + \\overrightarrow{FD} \\cdot \\overrightarrow{AF} + \\overrightarrow{EF} \\cdot \\overrightarrow{FC} + \\overrightarrow{FD} \\cdot \\overrightarrow{FC} = 2 \\times 2\\cos 120^\\circ + 0 + 2 \\times 1\\cos 180^\\circ + 1 \\times 1\\cos 60^\\circ = -\\frac{7}{2}$\n\n所以 $AC$ 与 $DE$ 不垂直，所以直线 $DE$ 不与平面 $ABC$ 垂直；\n\n故选：B。\n\n三、填空题：本大题共 3 小题，每小题 5 分，共 15 分。"
+ },
+ {
+  "key": "模拟题/2026届广东省六校联盟2026届高三上学期第二次联考#9",
+  "problems": [
+   "单选题的答案必须是 A–B，实际 'AC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知样本数据 $ x_i $，$ y_i = ax_i + b $ ($ a > 0 $) ($ i = 1,2,\\ldots,n $)，则\\paren[AC]",
+  "answer": "AC",
+  "options": [
+   {
+    "label": "A",
+    "text": "若样本数据 $ x_i $ 的极差为 R，则样本数据 $ y_i $ 的极差为 aR"
+   },
+   {
+    "label": "B",
+    "text": "若样本数据 $ x_i $ 的平均值为 $ \\bar{x} $，则样本数据 $ y_i $ 的平均值为 $ a\\bar{x} $\n\n第1页[共4页]"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "y_i$ 的方差为 $as^2$\n\n【答案】AC\n\n对于 A，设样本数据 $x_i$ ($i=1,2,\\ldots,n$) 中，最大值为 $x_k$，最小值为 $x_i$，则 $x_k - x_i = R$，\n\n由于 $y = ax + b$ ($a > 0$) 在 R 上单调递增，\n\n故样本数据 $y_i$ ($i=1,2,\\ldots,n$) 中，最大值为 $y_k = ax_k + b$，最小值为 $y_i = ax_i + b$，\n\n故 $y_k - y_i = ax_k + b - ax_i - b = a(x_k - x_i) = aR$，\n\n则样本数据 $y_i$ ($i=1,2,\\ldots,n$) 的极差为 aR，故 A 正确；\n\n对于 B，由平均数的性质可得样本数据 $y_i$ 的平均值为 $a\\bar{x} + b$，故 B 错误；\n\n对于 C，根据众数的定义可得，样本数据 $y_i$ 的众数为 aN + b，故 C 正确。\n\n对于 D，根据方差的性质，样本数据 $y_i$ ($i=1,2,\\ldots,n$) 的方差为 $a^2s^2$，故 D 错误；\n\n【故选】AC。\n已知样本数据 $ x_i $，$ y_i = ax_i + b $ ($ a > 0 $) ($ i = 1, 2, \\ldots, n $)，则\n\nA。若样本数据 $ x_i $ 的极差为 R，则样本数据 $ y_i $ 的极差为 aR\n\nB。若样本数据 $ x_i $ 的平均值为 $ \\bar{x} $，则样本数据 $ y_i $ 的平均值为 $ a\\bar{x} $\n\nC。若样本数据 $ x_i $ 的众数为 N，则样本数据 $ y_i $ 的众数为 aN + b\n\nD。若样本数据 $ x_i $ 的方差为 $ s^2 $，则样本数据 $ y_i $ 的方差为 $ as^2 $"
+ },
+ {
+  "key": "模拟题/绵阳市高中2023级第一次诊断性考试（绵阳A卷）#11",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知函数 $ f_k(x) = \\cos^2 k x - \\sin^2 k x $，$ g_k(x) = \\cos^2 k x + \\sin^2 k x $，$ k \\geq 2 $ 且 $ k \\in \\mathbb{N}^*$，则\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "函数 $ f_k(x) $ 的一个周期为 $ \\pi $"
+   },
+   {
+    "label": "B",
+    "text": "函数 $ f_2(x) $ 在 $[0, \\frac{\\pi}{2}]$ 上单调递减"
+   },
+   {
+    "label": "C",
+    "text": "曲线 $ y = f_k(x) $ 关于 $ x = \\frac{\\pi}{4} $ 对称"
+   },
+   {
+    "label": "D",
+    "text": "函数 $ f_k(x) $ 与函数 $ g_k(x) $ 的最大值相等\n\n数学 试题卷 第2页（共4页）"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "ABD\n三、填空题：本题共3个小题，每小题5分，共15分。"
+ },
+ {
+  "key": "模拟题/广州市天河区2026届高三上学期综合测试（一）#4",
+  "problems": [
+   "单选题必须有 2–6 个选项，实际 12 个",
+   "选项标号必须从 A 连续，实际 ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']"
+  ],
+  "type": "single_choice",
+  "stem": "考生必须保证答题卡的整洁，考试结束后，将试卷和答题卡一并交回。\n\n一、选择题：本题共 8 小题，每小题 5 分，共 40 分。在每小题给出的四个选项中，只有一项是符合题目要求的。\n已知函数 $f(x) = \\begin{cases} 2^x - a, & x < 2 \\\\ x^2, & x \\geq 2 \\end{cases}$，若 $f(x)$ 存在最小值，则实数 $a$ 的取值范围是\\paren[B]",
+  "answer": "B",
+  "options": [
+   {
+    "label": "A",
+    "text": "3"
+   },
+   {
+    "label": "B",
+    "text": "4"
+   },
+   {
+    "label": "C",
+    "text": "5"
+   },
+   {
+    "label": "D",
+    "text": "7\n\n2. 已知集合 $A = \\{1, 3, \\sqrt{m}\\}$，$B = \\{1, m\\}$，且 $B \\subseteq A$，则 $m$ 的值为"
+   },
+   {
+    "label": "E",
+    "text": "0 或 $\\sqrt{3}$"
+   },
+   {
+    "label": "F",
+    "text": "0 或 3"
+   },
+   {
+    "label": "G",
+    "text": "1 或 $\\sqrt{3}$"
+   },
+   {
+    "label": "H",
+    "text": "1 或 3\n\n3. 把函数 $y = \\tan \\frac{1}{2}x$ 的图象向左平移 $\\frac{\\pi}{3}$ 后得到函数 $y = f(x)$ 的图象，则 $y = f(x)$ 的单调区间为"
+   },
+   {
+    "label": "I",
+    "text": "$(-\\frac{4\\pi}{3} + 2k\\pi, \\frac{2\\pi}{3} + 2k\\pi)$ ($k \\in \\mathbb{Z}$)"
+   },
+   {
+    "label": "J",
+    "text": "$\\left(-\\frac{4\\pi}{3} + 4k\\pi, \\frac{2\\pi}{3} + 4k\\pi\\right)$ ($k \\in \\mathbb{Z}$)"
+   },
+   {
+    "label": "K",
+    "text": "$\\left(-\\frac{5\\pi}{3} + 2k\\pi, \\frac{\\pi}{3} + 2k\\pi\\right)$ ($k \\in \\mathbb{Z}$)"
+   },
+   {
+    "label": "L",
+    "text": "$\\left(-\\frac{5\\pi}{3} + 4k\\pi, \\frac{\\pi}{3} + 4k\\pi\\right)$ ($k \\in \\mathbb{Z}$)"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/广州市荔湾区2026届高三上学期10月调研#1",
+  "problems": [
+   "单选题必须有 2–6 个选项，实际 8 个",
+   "选项标号必须从 A 连续，实际 ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $ A = \\{ x | 2 \\leq x < 4 \\} $，$ B = \\{ x | 3x - 7 \\geq 8 - 2x \\} $，则 $ A \\cup B = $ \\paren[B]",
+  "answer": "B",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\{x|x \\geq 2\\}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\{x|x \\geq 3\\}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\{x|2 \\leq x \\leq 3\\}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\{x|3 \\leq x < 4\\}$\n2，复数 $ z $ 满足 $ |z - 2i| = 1 $，则 $ |z| $ 的最大值为（）"
+   },
+   {
+    "label": "E",
+    "text": "1"
+   },
+   {
+    "label": "F",
+    "text": "2"
+   },
+   {
+    "label": "G",
+    "text": "3"
+   },
+   {
+    "label": "H",
+    "text": "4"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ }
+]

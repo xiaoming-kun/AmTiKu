@@ -1,0 +1,360 @@
+[
+ {
+  "i": 120,
+  "key": "模拟题/湖南新高考教学教研联盟2026届高三上学期12月联考#17",
+  "type": "detailed_answer",
+  "stem": "将编号为1,2,…,n(n≥3,n∈N*)的小球随机放入编号为$a_{1},a_{2},\\cdots,a_{n}$的盒子，每个盒子里仅放一个小球，设编号为$a_{i}(1\\leq i\\leq n,i\\in N^{*})$的盒子里小球的编号为$b_{i}$，若$b_{i}=i$，则称该小球为“配球”。\n(1)当n=3时，求“配球”个数X的分布列和期望。\n(2)已知：若随机变量$X_{i}$服从两点分布，且$P(X_{i}=1)=p_{i},P(X_{i}=0)=1-p_{i},i=1,2,\\cdots,n$，则$E(\\sum_{i=1}^{n}X_{i})=\\sum_{i=1}^{n}p_{i}$。\n(i)求“配球”个数X的期望。\n(ii)若$b_{i}$满足：当i=1时，$b_{i}>b_{i+1}$；当i=n时，$b_{i}>b_{i-1}$；当$2\\leq i\\leq n-1$时，$b_{i}>b_{i-1}$，且$b_{i}>b_{i+1}$，则称该小球为“顶球”，求“顶球”个数Y的期望。",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 121,
+  "key": "模拟题/湖南新高考教学教研联盟2026届高三上学期12月联考#18",
+  "type": "detailed_answer",
+  "stem": "已知椭圆 $C:\\frac{x^{2}}{a^{2}}+\\frac{y^{2}}{b^{2}}=1(a>b>0)$ 的离心率为 $\\frac{1}{2}$，短轴长为 $2\\sqrt{3}$，正 $\\triangle Q_{1}Q_{2}Q_{3}$ 的三边分别与C相切于 $P_{1},P_{2},P_{3}$ 三点，O为坐标原点。\n(1)求椭圆C的方程；\n(2)若直线$Q_{1}Q_{2}$的斜率不存在，求$\\triangle Q_{1}Q_{2}Q_{3}$的中心坐标；\n(3)求证：点O不是$\\triangle Q_{1}Q_{2}Q_{3}$的中心。\n数学试卷第4页（共5页）",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 122,
+  "key": "模拟题/湖南新高考教学教研联盟2026届高三上学期12月联考#19",
+  "type": "detailed_answer",
+  "stem": "已知函数 $ f(x) = x + \\cos x $。\n(1) 若 $ f(2m+1) - f(2m-1) > 2 $, 求证: $-1 < \\sin m + \\cos m < 1$;\n(2) 若数列 $\\{a_n\\}$ 满足 $a_n = \\sin 2n$, 前 $n$ 项和为 $S_n$, 求证: $-\\frac{1}{2} \\tan \\frac{1}{2} < S_n < \\frac{1}{2 \\tan \\frac{1}{2}}$;\n(3) 若等差数列 $\\{b_n\\}$ 的公差 $d = 2026$, 前 $n$ 项和为 $T_n$, $\\sum_{i=1}^{2026} f(b_i) = 1013\\pi$, 求 $T_{2026}$。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 123,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#3",
+  "type": "single_choice",
+  "stem": "已知向量 $\\vec{a} = (4m, 1)$, $\\vec{b} = (9, m)$，则 “$\\vec{a} \\parallel \\vec{b}$” 是 “$m = \\frac{3}{2}$” 的\\paren[B]",
+  "options": [
+   "充分不必要条件",
+   "必要不充分条件",
+   "充要条件",
+   "既不充分也不必要条件"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 124,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#5",
+  "type": "single_choice",
+  "stem": "设等比数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，已知 $a_{2n}a_3 = 8a_1$，$a_5 = 16$，则 $S_5 =$\\paren[C]",
+  "options": [
+   "15",
+   "18",
+   "31",
+   "63"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 125,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#6",
+  "type": "single_choice",
+  "stem": "已知甲、乙、丙等 5 人站成一列，并要求甲站在乙、丙前面，则不同的安排方法的种数为\\paren[D]",
+  "options": [
+   "24",
+   "26",
+   "32",
+   "40"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 126,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#7",
+  "type": "detailed_answer",
+  "stem": "设直线 $ l: 3x + 4y + a = 0 $，圆 $ C: (x-2)^2 + y^2 = 1 $，若在圆 $ C $ 上存在两点 $ P, Q $，在直线 $ l $ 上存在一点 $ M $，\n使得 $\\angle PMQ = 90^\\circ$，则 $a$ 的取值范围是\n数学试卷 第1页（共4页）",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 127,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#12",
+  "type": "fill_in_blank",
+  "stem": "已知函数 $f(x)$ 的定义域为 $\\mathbb{R}$，若 $f(x+2) = -f(x)$，$f(3) = -3$，则 $f(2025) =$ \\fillin[3]。",
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 128,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#14",
+  "type": "fill_in_blank",
+  "stem": "已知函数 $ f(x) = 2\\left(\\sin 2x + \\frac{\\sqrt{3}}{2}\\right)\\cos x - \\sin 3x $，且 $ x \\in [0, 2\\pi] $，则满足 $ f(x) = \\sqrt{3} $ 的 $ x $ 的解集是。\n\n四、解答题：本题共 5 小题，共 77 分。解答应写出文字说明，证明过程或演算步骤 \\fillin[$\\left\\{ 0, \\frac{\\pi}{3}, 2\\pi\\right\\}$]。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 129,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#18",
+  "type": "detailed_answer",
+  "stem": "在平面直角坐标系 $ xOy $ 中，点 $ \\left( \\frac{1}{2}, \\sqrt{3} \\right) $ 和 $ \\left( \\frac{\\sqrt{3}}{2}, 1 \\right) $ 是中心为坐标原点，焦点在坐标轴上的椭圆 $ E $ 上的两点。\n\n(1) 求椭圆 $ E $ 的标准方程；\n(2) 若 $ P $ 为椭圆 $ E $ 上任意一点，以点 $ P $ 为圆心，$ |OP| $ 为半径的圆与圆 $ C: x^2 + \\left( y + \\sqrt{3} \\right)^2 = 5 $ 的公共弦为 $ MN $。证明：$ \\square CMN $ 的面积为定值，并求出该定值。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 130,
+  "key": "模拟题/江苏如东一中、宿迁一中、徐州中学等学校2026届高三上学期12月联考#19",
+  "type": "detailed_answer",
+  "stem": "设函数 $ f(x) = a(x+1) \\ln(x+1) - x $。\n\n(1) 若曲线 $ y = f(x) $ 在点 $ (0, f(0)) $ 处的切线方程为 $ y = x $，求 $ f(x) $ 的极值；\n(2) 若 $ f(x) \\geq 0 $，求 $ a $;\n(3) 已知数列 $ \\{a_n\\} $ 满足 $ a_1 = \\frac{1}{4} $, $ a_{n+1} = 2a_n - 2a_n^2 $，记 $ \\{a_n\\} $ 的前 $ n $ 项和为 $ S_n $，证明：$ \\sum_{k=1}^{n} \\frac{S_k}{k} > \\frac{n - \\ln n - 1}{2} $。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 131,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#1",
+  "type": "single_choice",
+  "stem": "$\\frac{10}{-3+i}$（其中$i$为虚数单位）的共轭复数为\\paren[AB]",
+  "options": [
+   "$ 3 + i $",
+   "$ 3 - i $",
+   "$-3 + i$",
+   "$-3-i$"
+  ],
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 132,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#4",
+  "type": "single_choice",
+  "stem": "“$\\sin \\frac{\\alpha}{2} = \\frac{\\sqrt{3}}{3}$”是“$\\sin(\\frac{\\pi}{2} + \\alpha) = \\frac{1}{3}$”的\\paren[D]",
+  "options": [
+   "充分不必要条件",
+   "必要不充分条件",
+   "充要条件",
+   "既不充分也不必要条件"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 133,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#6",
+  "type": "single_choice",
+  "stem": "已知 $(x_1, y_1)$，$(x_2, y_2)$ 是函数 $y = \\log_2 x$ 图象上两个不同的点，则 \\paren[A]",
+  "options": [
+   "$2^{\\frac{y_1 + y_2}{2}} < \\frac{x_1 + x_2}{2}$",
+   "$2^{\\frac{y_1 + y_2}{2}} > \\frac{x_1 + x_2}{2}$",
+   "$2^{\\frac{y_1 + y_2}{2}} < \\sqrt{x_1 \\cdot x_2}$",
+   "$2^{\\frac{y_1 + y_2}{2}} > \\sqrt{x_1 \\cdot x_2}$"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 134,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#13",
+  "type": "fill_in_blank",
+  "stem": "已知 $S_n$ 为数列 $\\{a_n\\}$ 的前 $n$ 项和，若 $\\left\\{ \\frac{S_n}{n} \\right\\}$ 为公差为 2 的等差数列，则 $a_{2025} - a_{2024}$ 的值为 \\fillin[$4$]。",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 135,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#14",
+  "type": "fill_in_blank",
+  "stem": "对任意 $k \\in \\mathbb{R}$，方程 $\\ln x + \\frac{1}{2}x^2 - kx - b = 0$ 有且仅有一个实数根，则实数 $b$ 的取值范围为 \\fillin[{$[-\\frac{3}{2}, +\\infty)$}]。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 136,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#15",
+  "type": "detailed_answer",
+  "stem": "已知函数 $ f(x) = \\sqrt{3} \\sin(x + \\theta) + \\cos(x + \\theta) $，$\\theta \\in [0, \\pi]$ 的图象关于 $ y $ 轴对称。\n(1) 求角 $\\theta$ 的值；\n(2) 角 $\\alpha \\in \\left(-\\frac{\\pi}{2}, \\frac{\\pi}{2}\\right)$，$f(\\alpha) = \\frac{6}{5}$，锐角 $\\beta$ 满足 $\\cos(\\alpha + \\beta) = -\\frac{12}{13}$，求 $\\sin \\beta$ 的值。\n值。",
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 137,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#17",
+  "type": "detailed_answer",
+  "stem": "已知 $ G $ 为 $\\triangle ABC$ 内一点，满足 $\\overrightarrow{CG} = \\frac{1}{3} (\\overrightarrow{CA} + \\overrightarrow{CB})$，$\\overrightarrow{AG} \\cdot \\overrightarrow{BG} = 0$。\n\n(1) 若 $ AB = 2AG $，求 $\\tan \\angle GAC$ 的值；\n\n(2) 求 $\\cos \\angle ACB$ 的最小值。",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 138,
+  "key": "模拟题/山东九五高中协作体2026届高三上学期12月质检#18",
+  "type": "detailed_answer",
+  "stem": "已知函数 $ f(x) = \\frac{\\ln(x+1)}{x} $。\n\n(1) 求函数 $ f(x) $ 的单调区间；\n\n(2) 证明：$ f(x) > -\\frac{1}{2}x + 1 $；\n\n(3) 若 $ f(x) > a^x $，其中 $ a > 0 $ 且 $ a \\neq 1 $，求实数 $ a $ 的值。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 139,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#1",
+  "type": "single_choice",
+  "stem": "复数 $(4-i)(1+i)$ 的虚部为\\paren[A]",
+  "options": [
+   "3",
+   "-3",
+   "3i",
+   "$-3i$"
+  ],
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 140,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#2",
+  "type": "single_choice",
+  "stem": "已知集合 $ A = \\{ x \\in \\mathbb{Z} \\mid -3 < 2x - 1 < 3 \\} $，$ B = \\{ x \\mid (x-1)(x+2) = 0 \\} $，则 $ A \\cap B = $\\paren[D]",
+  "options": [
+   "$\\{1, -2\\}$",
+   "$\\{0,1,-2\\}$",
+   "(1)",
+   "$\\{-2\\}$"
+  ],
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 141,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#4",
+  "type": "single_choice",
+  "stem": "若 $ a = \\log_e 0.6 $, $ b = 1.1^{0.6} $, $ c = \\log_0 s 0.6 $, 则 $ a $, $ b $, $ c $ 的大小关系为\\paren[B]",
+  "options": [
+   "$ a > b > c $",
+   "$ b > c > a $",
+   "$ c > a > b $",
+   "$ b > a > c $"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 142,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#6",
+  "type": "single_choice",
+  "stem": "在 $\\triangle ABC$ 中, $a, b, c$ 分别为内角 $A, B, C$ 所对的边, 若 $a = 2b\\cos(2026\\pi + C)$, 则此三角形一\n定是\\paren[C]",
+  "options": [
+   "等腰直角三角形",
+   "直角三角形",
+   "等腰三角形",
+   "等腰或直角三角形\n【高三数学 第1页(共4页)】\n6225C\nCS"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 143,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#9",
+  "type": "multi_choice",
+  "stem": "已知向量 $\\boldsymbol{a}=(m,3)$，$\\boldsymbol{b}=(1,-m)$，$\\boldsymbol{c}=\\boldsymbol{a}+m\\boldsymbol{b}$，若 $\\boldsymbol{b}\\perp\\boldsymbol{c}$，则实数 $m$ 的值可以为 \\paren[ABC]",
+  "options": [
+   "-1",
+   "0",
+   "1",
+   "2"
+  ],
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 144,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#12",
+  "type": "fill_in_blank",
+  "stem": "已知直线 $l$ 经过点 $P(1,2)$，且在 $x$ 轴和 $y$ 轴上的截距相等，则直线 $l$ 的方程为 \\fillin[$y=2x$ 或 $x+y-3=0$]。",
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 145,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#13",
+  "type": "fill_in_blank",
+  "stem": "设等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_1=1$，$S_4=5a_2$，则 $\\frac{S_n+8}{a_n}$ 的最小值为 \\fillin[$\\frac{9}{2}$]。",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 146,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#14",
+  "type": "fill_in_blank",
+  "stem": "已知正三棱锥 $D-ABC$ 的各顶点均在半径为 1 的球 $O$ 的球面上，则正三棱锥 $D-ABC$ 内切球半径的最大值为 \\fillin[$\\frac{1}{3}$]。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 147,
+  "key": "模拟题/山东省大联考2026届高三上学期12月联考#17",
+  "type": "detailed_answer",
+  "stem": "在递增的等比数列$\\{a_n\\}$中，$a_2+a_3+a_4=39$，且$2a_3-3$是$a_2$和$a_1$的等差中项。\n(1)求$\\{a_n\\}$的通项公式：\n(2)若$b_n=\\frac{1}{a_n}+\\log_3 a_n$，求数列$\\{b_n\\}$的前$n$项和$S_n$。",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 148,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#4",
+  "type": "single_choice",
+  "stem": "设 $ a $，$ b $ 是空间两条不同直线，则 “$ a $ 与 $ b $ 无公共点” 是 “$ a $ 与 $ b $ 是异面直线” 的\\paren[D]",
+  "options": [
+   "充分不必要条件",
+   "必要不充分条件",
+   "充分必要条件",
+   "既不充分也不必要条件"
+  ],
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 149,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#12",
+  "type": "fill_in_blank",
+  "stem": "若直线 $ y = kx - 2 $ 与曲线 $ C_1: y = x^2 $ 和圆 $ C_2: (x-a)^2 + y^2 = 10(a > 0) $，都相切，则 $ a $ 的值为 \\fillin[：$\\frac{9}{2}\\pi$【解答】解：设正四棱锥的底面边长为 $a$，高为 $h$，则 $\\frac{1}{3}ha^2 = \\frac{8}{3}$，可得 $a^2 = \\frac{8}{h}$，令球心到底距离为 $ABCD$ 的距离为 $d$，则外接球的半径 $d = |h - r|$，又 $r = \\sqrt{\\left(\\frac{\\sqrt{2}}{2}a\\right)^2 + d^2} = \\sqrt{\\frac{4}{h} + d^2}$，即 $r^2 = \\frac{4}{h} + (h - r)^2$，即 $r^2 = \\frac{4}{h} + h^2 - 2hr + r^2$，解得 $r = \\frac{h}{2} + \\frac{2}{h^2} = \\frac{h}{4} + \\frac{h}{4} + \\frac{2}{h^2} \\geq 3\\sqrt[3]{\\frac{h}{4} \\cdot \\frac{h}{4} \\cdot \\frac{2}{h^2}} = \\frac{3}{2}$，当且仅当 $h = 2$ 时取等号，则球体体积最小值为 $V = \\frac{4}{3}\\pi r^3 = \\frac{4}{3}\\pi \\times \\frac{27}{8} = \\frac{9}{2}\\pi$。四、解答题：本题共 5 小题，共 77 分。解答应写出文字说明、证明过程或演算步骤。15.【解答】解：（1）证明：∵平面 $ABCD \\parallel$ 平面 $A_1B_1C_1D_1$，平面 $ABCD \\cap$ 平面 $PAB = AB$，又平面 $A_1B_1C_1D_1 \\cap$ 平面 $PAB = A_1B_1$，∴$AB \\parallel A_1B_1$，同理$CD \\parallel C_1D_1$，又$AB \\parallel CD$，∴$A_1B_1 \\parallel C_1D_1$，又$C_1D_1 \\subset$平面$DCC_1D_1$，$A_1B_1 \\not\\subset$平面$DCC_1D_1$（2分）故P在平面ABCD上的投影为正方形ABCD的中心，$AO = \\frac{1}{2}AC = \\sqrt{2} \\cdots$（8分）高三数学参考答案 第4页（共8页）]。",
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 150,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#13",
+  "type": "fill_in_blank",
+  "stem": "已知 $ a > b > 1 $，若 $ \\log_a b + \\log_a a = \\frac{5}{2} $，则 $ \\frac{b}{a+4} $ 的最大值为 \\fillin[ABCD]。",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 151,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#14",
+  "type": "detailed_answer",
+  "stem": "已知正四棱锥 $ S-ABCD $ 的体积为 $ \\frac{8}{3} $，若 $ S $，$ A $，$ B $，$ C $，$ D $ 这5个顶点均在球 $ \\odot $ 的球面上，则球 $ \\odot $ 体积的最小值为 。\n\n四、解答题：本题共5小题，共77分。解答应写出文字说明、证明过程或演算步骤。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 152,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#15",
+  "type": "detailed_answer",
+  "stem": "已知底面边长和斜高均为2的正四棱锥 $P-ABCD$ 被平行于底面的平面所截得的正棱台为$A, B, C, D$，$ABCD$中，且满足$A B_{1} = \\frac{1}{2} A B$。\n\n(1) 求证：$ A B_{1} // $ 平面$ DCC_{1}D_{1} $;\n\n(2) 求棱台的体积$ V $和表面积$ S $。",
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 153,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#16",
+  "type": "detailed_answer",
+  "stem": "在$\\triangle ABC$中，角$A$，$B$，$C$所对的边分别为$a$，$b$，$c$，已知$\\cos B = \\frac{9}{16}$，$b = 5$，$\\frac{a}{c} = \\frac{2}{3}$。\n\n(1) 求$a$;\n\n(2) 求$\\sin A$;\n\n(3) 求$\\cos(B-2,4)$的值。",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 154,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#17",
+  "type": "detailed_answer",
+  "stem": "已知各项均为正数的$\\{a_i\\}$的前$n$项和为$S_n$，$a_1=1$，且$2S_n=a_1a_{n+1}(n\\in\\mathbb{N}^*$）。\n\n(1) 求$\\{a_i\\}$的通项公式;\n\n(2) 设$b_1=\\frac{1}{a_{n+1}a_{n+2}}$，记数列$\\{b_i\\}$的前$n$项和为$T_n$，求使得$T_n<\\frac{n}{2^2}$成立的正整数$n$的取值范围。\n\n【数学试题 第3页 （共4页）】",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 155,
+  "key": "模拟题/2026届安徽高三上学期第三次教学质量检测#18",
+  "type": "detailed_answer",
+  "stem": "已知椭圆 $C: \\frac{x^2}{a^2}+\\frac{y^2}{b^2}=1 (a>b>0)$ 的离心率为 $\\frac{\\sqrt{2}}{2}$，过右焦点的直线 $l$ 与椭圆 $C$ 交于 $M$，$N$ 两点，且当 $l \\perp x$ 轴时，$|MN|=2\\sqrt{2}$。\n\n(1) 求椭圆 $C$ 的方程:\n\n(2) 若直线 $l$ 的斜率存在且不为0，点$M$，$N$在$x$轴上的射影分别为$P$，$Q$，且$R(4,y_0)$，$N$，$P$三点共线，设$\\Delta RMN$与$\\Delta RPQ$的面积分别为$S_1$，$S_2$，试判断$\\frac{S_1}{S_2}$是否为定值，若是，求出该定值，如果不是，请说明理由。",
+  "hint_difficulty": "难题"
+ },
+ {
+  "i": 156,
+  "key": "模拟题/昆明一中2026届高三上学期第五次联考#1",
+  "type": "single_choice",
+  "stem": "复数 $ z = 1 + i^3 $ 的共轭复数是\\paren[D]",
+  "options": [
+   "-1-i",
+   "-1+i",
+   "1-i",
+   "1+i"
+  ],
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 157,
+  "key": "模拟题/昆明一中2026届高三上学期第五次联考#4",
+  "type": "detailed_answer",
+  "stem": "下表为2018至2024年某手机品牌的年产量 $ y $（单位：万台），其中2018至2024年的年份代码 $ x $ 分别为1至7.\n年份代码 $ x $ 1 2 3 4 5 6 7\n年产量 $ y $/万台 28 32 36 40 a b c\n数学·第1页(共4页)",
+  "hint_difficulty": "中档题"
+ },
+ {
+  "i": 158,
+  "key": "模拟题/昆明一中2026届高三上学期第五次联考#12",
+  "type": "fill_in_blank",
+  "stem": "已知数列 $\\{a_n\\}$ 中，$a_1 = 1$，且 $P_n(a_n, a_{n+1})(n \\in \\mathbb{N}^*)$ 在直线 $x - y + 2 = 0$ 上，$\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，则 $S_{10} = $ \\fillin[$100$]。",
+  "hint_difficulty": "简单题"
+ },
+ {
+  "i": 159,
+  "key": "模拟题/昆明一中2026届高三上学期第五次联考#13",
+  "type": "fill_in_blank",
+  "stem": "$\\left(2x - \\frac{1}{x^2}\\right)^6$ 展开式中第 4 项的系数为 \\fillin[$-160$]。",
+  "hint_difficulty": "中档题"
+ }
+]

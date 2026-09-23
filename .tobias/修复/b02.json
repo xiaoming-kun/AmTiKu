@@ -1,0 +1,586 @@
+[
+ {
+  "key": "模拟题/浙江嘉兴市2026届高三上学期基础测试（一模）#8",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABC'"
+  ],
+  "type": "single_choice",
+  "stem": "若实数 $x$，$y$ 满足 $\\log_2 x + \\log_y 3 = \\log_2 y + \\log_x 2$，则下列结论 $\\cdot$ 可$\\cdot$能成立的是\\paren[ABC]",
+  "answer": "ABC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$1 < x < y^2$"
+   },
+   {
+    "label": "B",
+    "text": "$1 < y < x^2$"
+   },
+   {
+    "label": "C",
+    "text": "$0 < y^2 < x < 1$"
+   },
+   {
+    "label": "D",
+    "text": "$0 < y < x^2 < 1$\n\n二、选择题：本题共 3 小题，每小题 6 分，共 18 分。在每小题给出的选项中，有多项符合题目要求。全部选对的得 6 分，部分选对得部分分，有选错的得 0 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/浙江嘉兴市2026届高三上学期基础测试（一模）#11",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "在三棱锥 $ A-BCD $ 中，$ BC = 4 $，$ CD = 2 $，$ BC \\perp CD $，点 $ A $ 在平面 $ BCD $ 上的射影为点 $ H $，直线 $ AB $，$ AC $ 与平面 $ BCD $ 所成的角分别为 $ 60^\\circ $，$ 30^\\circ $，则\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "点 $ H $ 的轨迹长度为 $ 3\\pi $"
+   },
+   {
+    "label": "B",
+    "text": "cos $ \\angle HCD $ 的取值范围是 $\\left[-\\frac{1}{3}, \\frac{1}{3}\\right]$"
+   },
+   {
+    "label": "C",
+    "text": "三棱锥 $ A-BCD $ 的体积的最小值是 $ \\sqrt{3} $"
+   },
+   {
+    "label": "D",
+    "text": "当 $ AH $ 最大时，三棱锥 $ A-BCD $ 的外接球的表面积为 $ 68\\pi $\n\n三、填空题：本题共 3 小题，每小题 5 分，共 15 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "in \\theta \\leq \\cos \\angle HCD \\leq \\sin \\theta$，所以 $\\cos \\angle HCD \\in \\left[-\\frac{1}{3}, \\frac{1}{3}\\right]$，所以 B 正确；\n\n对于选项 C: 由 $BH \\in [1,2]$，可得 $AH = \\sqrt{3}BH \\in \\left[\\sqrt{3}, 2\\sqrt{3}\\right]$，所以体积 $V = \\frac{1}{3} \\times \\left(\\frac{1}{2} \\times 2 \\times 4\\right) \\times PH = \\frac{4}{3}PH \\in \\left[\\frac{4\\sqrt{3}}{3}, \\frac{8\\sqrt{3}}{3}\\right]$，所以 C 错误；\n\n对于选项 D: 当 $AH$ 最大时，$AH = 2\\sqrt{3}$，$BH = 2$，所以 $AB = 4$，所以 $\\triangle ABC$ 是顶角 $120^\\circ$ 的等腰三角形，记 $\\triangle ABC$ 的外心是 $O_1$，则四边形 $ABCO_1$ 是菱形，取 $BD$ 的中点 $O_2$，则点 $O_2$ 是 $\\triangle BCD$ 的外心，所以过点 $O_1, O_2$ 分别作平面 $ABC, BCD$ 的垂线，交于点 $O$，则点 $O$ 就是三棱锥 $A-BCD$ 的外接球心。又 $OO_2 = AH = 2\\sqrt{3}$，$DO_2 = \\sqrt{5}$，记三棱锥 $A-BCD$ 的外接球半径为 $R$，则 $R^2 = OO_2^2 + DO_2^2 = 12 + 5 = 17$，所以外接球的表面积为 $68\\pi$，所以 D 正确；\n\n综上所述，选 ABD。\n\n三、填空题（15分）"
+ },
+ {
+  "key": "模拟题/2026届福建省泉州市高三上学期一检#11",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'B'"
+  ],
+  "type": "multi_choice",
+  "stem": "在 $\\triangle ABC$ 中，若 $\\frac{\\sin A}{\\sin B} + \\frac{\\sin B}{\\sin A} = 4\\cos C$，则\\paren[B]",
+  "answer": "B",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\sin^2 A + \\sin^2 B = \\sin^2 C$"
+   },
+   {
+    "label": "B",
+    "text": "$C$ 的最大值为 $60^\\circ$"
+   },
+   {
+    "label": "C",
+    "text": "$\\sin A \\sin(C-B) = \\sin B \\sin(A-C)$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{1}{\\tan A} + \\frac{1}{\\tan B} = \\frac{2}{\\tan C}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/2026届福建省泉州市高三上学期一检#15",
+  "problems": [
+   "解答题不该有选项，实际 2 个"
+  ],
+  "type": "detailed_answer",
+  "stem": "为比较",
+  "answer": "见解析",
+  "options": [
+   {
+    "label": "A",
+    "text": "B两种AI教学系统在提升教师备课效率方面的差异，研究人员在某地区随机招\n募了200名教师，并随机分配其中100名使用系统A，其余100名使用系统"
+   },
+   {
+    "label": "B",
+    "text": "经过一个月的试\n用后，以“备课时间减少15\\%以上”作为备课效率显著提升的标准，经整理得到如下列联表：\n备课效率\n显著提升\n没有显著提升\n合计\n使用的教学系统\n系统A\n75\n25\n100\n系统B\n55\n45\n100\n合计\n130\n70\n200\n（1）记事件“该地区教师使用系统A后，备课效率显著提升”的概率为P，求P的估计值：\n（2）根据小概率值 $\\alpha = 0.005$ 的独立性检验，分析这两种 AI 教学系统在显著提升教师备课\n效率方面是否存在差异。\n附：$\\chi^2=\\frac{n(ad-bc)^2}{(a+b)(c+d)(a+c)(b+d)}$, $\\frac{\\alpha}{x_\\alpha}$ | 0.05 | 0.005 | 0.001\n$ x_\\alpha $\n3.841\n7.879\n10.828\n高三数学试题 第4页（共8页）"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "(13分)\n【试题解析】\n\n解法一：(1) $ P \\approx \\frac{75}{100} = \\frac{3}{4} $ （或0.75）。……3分\n\n故由频率估计概率，$ P $的估计值为 $ \\frac{3}{4} $。……4分\n\n（若作答未体现“估计”，或由样本估计总体，或由频率估计概率，扣1分。）\n\n（2）零假设为 $ H_0 $：这两种AI教学系统在显著提升教师备课效率方面没有差异。……2分\n\n根据表中数据可得，$ \\chi^2 = \\frac{200 \\times (75 \\times 45 - 55 \\times 25)^2}{130 \\times 70 \\times 100} \\approx 8.791 > 7.879 = x_{0.005} $ ……5分\n\n根据小概率值 $ \\alpha = 0.005 $ 的独立性检验，我们推断 $ H_0 $ 不成立，……7分\n\n即认为这两种AI教学系统在显著提升教师备课效率方面存在差异，此推断犯错误的概率不超过0.005。 ……9分\n\n（卡方运算中，列式、运算和“>7.879”各1分。没有进行假设，满分最多为5分。）\n\n解法二：（1）设事件“该地区教师使用系统A”为M，事件“备课效率显著提升”为N。1分\n\n由频率估计概率，得：$ P(M) = \\frac{100}{200} = 0.5 $，$ P(MN) = \\frac{75}{200} = 0.375 $，……2分\n\n$ P(N|M) = \\frac{P(MN)}{P(M)} = \\frac{0.375}{0.5} = 0.75 $。 ……3分\n\n故由频率估计概率，$ P $的估计值为 $ \\frac{3}{4} $。 ……4分\n\n（写出条件概率公式即给1分）\n\n（2）同解法一。"
+ },
+ {
+  "key": "模拟题/江苏苏州2026届高三上学期期初阳光调研#10",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'C'"
+  ],
+  "type": "multi_choice",
+  "stem": "在棱长为 1 的正方体 $ABCD-A_1B_1C_1D_1$ 中，则\\paren[C]",
+  "answer": "C",
+  "options": [
+   {
+    "label": "A",
+    "text": "$AC \\perp B_1D_1$"
+   },
+   {
+    "label": "B",
+    "text": "$AC$ 与 $BC_1$ 所成角的大小为 $45^\\circ$"
+   },
+   {
+    "label": "C",
+    "text": "二面角 $A - B_1D_1 - C$ 的正切值为 $2\\sqrt{2}$"
+   },
+   {
+    "label": "D",
+    "text": "从正方体的八个顶点中任取四个点，其中四个点可以构成正四面体的概率是 $\\frac{1}{35}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/山东省济南市2025-2026学年高三上学期摸底考试#2",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知向量 $a = (0, 1)$，$b = (1, 2)$，满足 $a + \\lambda b$ 与 $b$ 垂直，则实数 $\\lambda$ 的值为\\paren[AC]",
+  "answer": "AC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$-\\frac{2}{5}$"
+   },
+   {
+    "label": "B",
+    "text": "$-\\frac{1}{5}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\frac{1}{5}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{2}{5}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "已知向量 $\\boldsymbol{a} = (0, 1)$，$\\boldsymbol{b} = (1, 2)$，满足 $a + \\lambda b$ 与 $\\boldsymbol{b}$ 垂直，则实数 $\\lambda$ 的值为\n\nA。$-\\frac{2}{5}$ B。$-\\frac{1}{5}$ C。$\\frac{1}{5}$ D。$\\frac{2}{5}$"
+ },
+ {
+  "key": "模拟题/荆州市2026届高三（9月）起点考试#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "复数 $ z $ 满足 $ z(2+i)=i $，则 $ |\\vec{z}| = $\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\sqrt{3}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\sqrt{5}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\frac{\\sqrt{3}}{3}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\frac{\\sqrt{5}}{5}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/荆州市2026届高三（9月）起点考试#2",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $ A = \\{1, m\\} $, $ B = \\{0, 1, 2, 3\\} $，则 “$ A \\subseteq B $” 是 “$ m = 2 $” 的\\paren[AD]",
+  "answer": "AD",
+  "options": [
+   {
+    "label": "A",
+    "text": "充要条件"
+   },
+   {
+    "label": "B",
+    "text": "充分不必要条件"
+   },
+   {
+    "label": "C",
+    "text": "必要不充分条件"
+   },
+   {
+    "label": "D",
+    "text": "既不充分也不必要条件"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/荆州市2026届高三（9月）起点考试#18",
+  "problems": [
+   "解答题不该有选项，实际 3 个"
+  ],
+  "type": "detailed_answer",
+  "stem": "在电竞比赛中一般采用“双败淘汰制”，这是一种兼顾效率与公平的比赛赛制，基本原则是“失败2次才被淘汰”“越先淘汰所获名次越低”，且每场比赛只有胜负之分。现组织",
+  "answer": "见解析",
+  "options": [
+   {
+    "label": "A",
+    "text": ""
+   },
+   {
+    "label": "B",
+    "text": ""
+   },
+   {
+    "label": "C",
+    "text": "D共4个电竞队参加比赛，采用“双败淘汰制”，其流程如下：\n\n第一轮：抽签随机分成2组比赛，每组比赛的胜者进入胜者组，败者进入败者组。第二轮：胜者组、败者组分别比赛，胜者组的胜者（记为W）进入决赛，败者组的败者组失败2次，被淘汰并获得第4名。第三轮：第二轮胜者组的败者与败者组的胜者比赛，胜者（记为L）进入决赛，败者被淘汰并获得第3名。第四轮：决赛，若W获胜则比赛结束，W获得冠军，L获得第2名；若L获胜则需加赛一场，加赛胜者获得冠军，败者获得第2名。\n\n已知A队战胜其他3支队伍的概率均为$\\frac{2}{3}$。\n\n(1)求A队全胜夺冠的概率；\n\n(2)设A队在整个赛事中参赛场次为随机变量X，求X的分布列及数学期望E(X)。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "数为 2、3、4 或 5。以下是 $ X $ 的取值及对应概率：\n\n$ X = 2 $：“负负”，被淘汰。$ P(X = 2) = \\frac{1}{3} \\times \\frac{1}{3} = \\frac{1}{9} $……7分\n\n$ X = 3 $：有三种情况：“胜胜胜”（夺冠）：“胜负负”（淘汰）；“负胜负”（淘汰）。所以 $ P(X = 3) = (\\frac{2}{3})^3 + 2 \\cdot \\frac{2}{3} \\cdot (\\frac{1}{3})^2 = \\frac{4}{9} $……9分\n\n$ X = 4 $：有三种情况：“胜胜负”，然后参加加赛；“胜负胜负”；“负胜胜负”。所以 $ P(X = 4) = \\frac{2}{3} \\cdot \\frac{2}{3} \\cdot \\frac{1}{3} + 2 \\left( \\frac{2}{3} \\right)^2 \\left( \\frac{1}{3} \\right)^2 = \\frac{20}{81} $……12分\n\n$ X = 5 $：注意到 A 若前两场均胜，则其不可能参加第五场比赛，故其前 4 场比赛的胜负情况仅有两种：“胜负胜胜”“负胜胜胜”，第五场为加赛。$ P(X = 5) = 2 \\cdot \\frac{1}{3} \\cdot \\left( \\frac{2}{3} \\right)^3 = \\frac{16}{81} $……15分\n\n故所求分布列为\n\n$\\begin{array}{llllll} X & 2 & 3 & 4 & 5 \\\\ \\hline P & \\frac{1}{9} & \\frac{4}{9} & \\frac{20}{81} & \\frac{16}{81} \\\\ \\hline \\end{array}$\n\n所以 $ E(X) = \\frac{286}{81} $……17分"
+ },
+ {
+  "key": "模拟题/湖北省部分名校2026届高三上学期9月月考#4",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABC'"
+  ],
+  "type": "single_choice",
+  "stem": "当 $1 \\leq x \\leq 4$ 时，关于 $x$ 的不等式 $x^3 - mx - m + 15 \\leq 0$ 有解的一个充分不必要条件是\\paren[ABC]",
+  "answer": "ABC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$m \\in [5, +\\infty)$"
+   },
+   {
+    "label": "B",
+    "text": "$m \\in [6, +\\infty)$"
+   },
+   {
+    "label": "C",
+    "text": "$m \\in [7, +\\infty)$"
+   },
+   {
+    "label": "D",
+    "text": "$m \\in (-\\infty, 8]$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/2026届安徽皖江名校高三上学期9月开学考试#10",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BD'"
+  ],
+  "type": "single_choice",
+  "stem": "在正三棱台 $ ABC-A_1B_1C_1 $ 中，$ D, E $ 分别为 $ BC, AC $ 的中点，则\\paren[BD]",
+  "answer": "BD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ AD \\perp $ 平面 $ BCC_1B_1 $"
+   },
+   {
+    "label": "B",
+    "text": "$ BC \\perp $ 平面 $ ADA_1 $"
+   },
+   {
+    "label": "C",
+    "text": "$ C_1D \\parallel $ 平面 $ ABB_1A_1 $"
+   },
+   {
+    "label": "D",
+    "text": "$ AB \\parallel $ 平面 $ C_1DE $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "因为 $ BC \\perp AD $，$ BC \\perp AA_1 $，$ BC \\perp $ 平面 $ ADA_1 $，故 $ B $ 正确；$ AB \\parallel DE $，故 $ AB \\parallel $ 平面 $ C_1DE $，故 D 正确。"
+ },
+ {
+  "key": "模拟题/唐山市2025-2026学年度高三年级摸底演练#9",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'C'"
+  ],
+  "type": "multi_choice",
+  "stem": "在 $(x-y)^5$ 的展开式中, 下列说法正确的是\\paren[C]",
+  "answer": "C",
+  "options": [
+   {
+    "label": "A",
+    "text": "一共有 5 项"
+   },
+   {
+    "label": "B",
+    "text": "第 3 项为 $-10x^3y^2$"
+   },
+   {
+    "label": "C",
+    "text": "所有项的系数和为 0"
+   },
+   {
+    "label": "D",
+    "text": "所有项的二项式系数和为 32"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/浙江省A9协作体2026届高三上学期暑假返校联考#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知复数 $ z = \\frac{3+i}{1-i} $，则 $ \\overline{z} $ 的虚部为\\paren[AC]",
+  "answer": "AC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$-2i$"
+   },
+   {
+    "label": "B",
+    "text": "2"
+   },
+   {
+    "label": "C",
+    "text": "$ 2i $"
+   },
+   {
+    "label": "D",
+    "text": "$-2$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/浙江省A9协作体2026届高三上学期暑假返校联考#8",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ACD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知定义在 $\\mathbb{R}$ 上的函数 $f(x)$，对任意的实数 $x$，$y$ 都有 $f(x+y)=f(x)+f(y)+3xy(x+y)$，则\\paren[ACD]",
+  "answer": "ACD",
+  "options": [
+   {
+    "label": "A",
+    "text": "函数 $f(x)$ 在 $\\mathbb{R}$ 上单调递增"
+   },
+   {
+    "label": "B",
+    "text": "函数 $f(x)$ 为偶函数"
+   },
+   {
+    "label": "C",
+    "text": "函数 $f(x-2)+1$ 关于点 $(2,1)$ 对称"
+   },
+   {
+    "label": "D",
+    "text": "$f\\left(\\frac{x+y}{2}\\right)\\leq\\frac{f(x)+f(y)}{2}$\n\n二、选择题：本题共 3 小题，每小题 6 分，共 18 分，在每小题给出的四个选项中，有多项符合题目要求，全部选对的得 6 分，部分选对的得部分分，有选错的得 0 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/云南师大附中2026届高考适应性月考卷（三）#4",
+  "problems": [
+   "单选题的答案必须是 A–C，实际 'D'"
+  ],
+  "type": "single_choice",
+  "stem": "已知向量 $\\overrightarrow{a} = (4\\sin\\alpha, 1-\\cos\\alpha)$，$\\overrightarrow{b} = (1, -2)$，若 $\\overrightarrow{a} \\cdot \\overrightarrow{b} = -2$，则 $\\tan\\alpha =$\\paren[D]",
+  "answer": "D",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\frac{1}{2}$"
+   },
+   {
+    "label": "B",
+    "text": "2"
+   },
+   {
+    "label": "C",
+    "text": "-2\n\n数学·第1页（共6页）"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "因为向量 $ \\vec{a} = (4\\sin\\alpha, 1-\\cos\\alpha) $，$ \\vec{b} = (1,-2) $，所以 $ \\vec{a} \\cdot \\vec{b} = 4\\sin\\alpha - 2 + 2\\cos\\alpha = -2 $，即 $ \\cos\\alpha = -2\\sin\\alpha $，所以 $ \\tan\\alpha = -\\frac{1}{2} $，故选 D。"
+ },
+ {
+  "key": "模拟题/浙南名校联盟2026届高三上学期10月联考#3",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $ A = \\{1, 3, a^2\\} $, $ B = \\{1, a+2\\} $，若 $ A \\cap B = B $，则实数 $ a $ 的值为\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "1"
+   },
+   {
+    "label": "B",
+    "text": "2"
+   },
+   {
+    "label": "C",
+    "text": "2 或 -1"
+   },
+   {
+    "label": "D",
+    "text": "1 或 -1"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/浙南名校联盟2026届高三上学期10月联考#8",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知实数$a,b,c$满足$1.5^a + a = \\log_{1.2} b + b = \\sin c + c$，则下列关系不可能成立的是\\paren[ABC]",
+  "answer": "ABC",
+  "options": [
+   {
+    "label": "A",
+    "text": "$a < b < c$"
+   },
+   {
+    "label": "B",
+    "text": "$a = b < c$"
+   },
+   {
+    "label": "C",
+    "text": "$b < a = c$"
+   },
+   {
+    "label": "D",
+    "text": "$b < a < c$\n\n二、选择题：本题共 3 个小题，每小题 6 分，共 18 分。在每小题给出的选项中，有多项符合题目的要求，全部选对的得 6 分，部分选对的得部分分，有选错的得 0 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/江浙皖高中（县中）发展共同体2026届高三上学期10月联考#10",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "一家大型超市的店长为了解本店日销售情况，记录了过去 100 天的日销售营业额（单位：万元）并将数据整理下表。\n\n日销售额 [100, 150]  \n频数 5  \n据表中数据，结论中正确的是（ ▲ ）。\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "100 天日销售营业额的中位数小于 250 万元。"
+   },
+   {
+    "label": "B",
+    "text": "100 天日销售营业额的平均值为 230 万元。"
+   },
+   {
+    "label": "C",
+    "text": "100 天日销售营业额的第 75 百分位数介于 200~250 之间。"
+   },
+   {
+    "label": "D",
+    "text": "100 天日销售营业额的极差介于 150~250 之间。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "业额的极差介于150~250之间\n一家大型超市的店长为了解本店日销售情况，记录了过去100天的日销售营业额(单位：万元)并将数据整理下表\n\n日销售额 [100,150] [150,200] [200,250] [250,300] [300,350]\n\n频数 5 20 40 30 5\n\n据表中数据，结论中正确的是\n\nA。100天日销售营业额的中位数小于250万元。\n\nB。100天日销售营业额的平均值为230万元\n\nC。100天日销售营业额的第75百分位数介于200~250之间\n\nD。100天日销售营业额的极差介于150~250之间\n\n【答案】ABD\n\n对于A，根据频数分布表可知，营业额大于或等于250的天数共有30+5=35天，故中位数一定小于250，故A正确；\n\n日销售营业额的平均值为$\\frac{1}{100} \\times (5 \\times 125 + 20 \\times 175 + 40 \\times 225 + 30 \\times 275 + 5 \\times 325) = 230$，故B正确；\n\n因为$5+20+40=65<75$，所以第75百分位数不小于250，故C错误；\n\n极差最大值小于350-100=250，最小值大于300-150=150，故D正确。\n\n【故选】ABD\n对于A，根据频数分布表可知，营业额大于或等于250的天数共有$30+5=35$天，故中位数一定小于250，故A正确；日销售营业额的平均值为$\\frac{1}{100}\\times(5\\times125+20\\times175+40\\times225+30\\times275+5\\times325)=230$，故B正确；因为$5+20+40=65<75$，所以第75百分位数不小于250，故C错误；极差最大值小于350-100=250，最小值大于300-150=150，故D正确。故答案选ABD。"
+ },
+ {
+  "key": "模拟题/江浙皖高中（县中）发展共同体2026届高三上学期10月联考#11",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'D'"
+  ],
+  "type": "multi_choice",
+  "stem": "在正四棱柱 $ABCD-A_1B_1C_1D_1$ 中，$AA_1=2AB=2$，$E$ 是 $CC_1$ 的中点，则（ ▲ ）。\\paren[D]",
+  "answer": "D",
+  "options": [
+   {
+    "label": "A",
+    "text": "$AC \\parallel$ 平面 $A_1C_1D$"
+   },
+   {
+    "label": "B",
+    "text": "$B_1E \\perp$ 平面 $ABE$"
+   },
+   {
+    "label": "C",
+    "text": "对角线 $BD_1$ 与底面 $ABCD$ 所成的角为 $45^\\circ$"
+   },
+   {
+    "label": "D",
+    "text": "四面体 $ABED_1$ 的体积是 $\\frac{1}{3}$。\n\n三、填空题：本题共 3 小题，每小题 5 分，共 15 分。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "所成的角，其正切值为 $\\sqrt{2}$，故 C 错误；因为 $C_1D_1$ // 平面 $ABE$，所以 $V_{D_1-ABE} = V_{C_1-ABE} = V_{A-C_1BE} = \\frac{1}{3} \\times AB \\times S_{\\triangle BCE} = \\frac{1}{3} \\times 1 \\times \\frac{1}{2} \\times 1 \\times 1 = \\frac{1}{6}$，故 D 错误。\n\n【答案】AB\n\n第Ⅱ卷（非选择题 共92分）\n\n三、填空题：本题共3小题，每小题5分，共15分。\n因为$AC\\parallel A_1C_1$，$A_1C_1\\subset$平面$A_1C_1D$，$AC\\subset$平面$A_1C_1D$，所以$AC\\parallel$平面$A_1C_1D$，故A正确；因为$E$为$CC_1$中点，且$CC_1=2BC$，所以$B_1E\\perp BE$，又$AB\\perp B_1E$，$AB\\cap BE=B$，所以$B_1E\\perp$平面$ABE$，故B正确；由正四棱柱性质及线面角定义可知$\\angle DBD_1$为对角线$BD_1$与底面ABCD所成的角，其正切值为$\\sqrt{2}$，故C错误；因为$C_1D_1\\parallel$平面$ABE$，所以$V_{D_1\\times\\angle BE}=V_{A_1\\times\\angle BE}=V_{A_1\\times\\angle BE}=\\frac{1}{3}\\times AB\\times S_{\\triangle BCE}=\\frac{1}{3}\\times1\\times\\frac{1}{2}\\times1\\times1=\\frac{1}{6}$，故D错误，答案选AB。\n\n三、填空题：本题共3小题，每小题5分，共15分。"
+ },
+ {
+  "key": "模拟题/河北省衡水市2025-2026学年高三上学期第三次调研考试（26008C）#3",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ACD'"
+  ],
+  "type": "single_choice",
+  "stem": "若复数 $ z $ 满足 $(1+2i)z=10i$, 则 $ z $ 的虚部为\\paren[ACD]",
+  "answer": "ACD",
+  "options": [
+   {
+    "label": "A",
+    "text": "4"
+   },
+   {
+    "label": "B",
+    "text": "2i"
+   },
+   {
+    "label": "C",
+    "text": "4i"
+   },
+   {
+    "label": "D",
+    "text": "2"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "由 $(1+2i)z=10i$，则 $z=\\frac{10i}{1+2i}=\\frac{10i\\cdot(1-2i)}{(1+2i)(1-2i)}=\\frac{10i+20}{5}=4+2i$，则 $z$ 的虚部为 2。故选：D。"
+ }
+]

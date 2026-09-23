@@ -1,0 +1,594 @@
+[
+ {
+  "key": "模拟题/安徽华师联盟2027届高三9月份开学质量检测#16",
+  "problems": [
+   "解答题不该有选项，实际 4 个"
+  ],
+  "type": "detailed_answer",
+  "stem": "某电商平台开展“用户满意度调研”，设置了一道关于售后服务的单选题。\n题目：你对本店销售后服务整体评价为",
+  "answer": "见解析",
+  "options": [
+   {
+    "label": "A",
+    "text": "非常满意"
+   },
+   {
+    "label": "B",
+    "text": "比较满意"
+   },
+   {
+    "label": "C",
+    "text": "不太满意"
+   },
+   {
+    "label": "D",
+    "text": "很不满意\n平台规定：只有选择 A 或 B，才视为“满意”；选择 C 或 D，则视为“不满意”。\n甲、乙两家店铺的顾客都参与了调研，为了解顾客对售后服务的真实满意度，平台分别随机抽取了两家店铺各 100 名顾客的作答数据，其中甲店顾客选择“满意”（A 或 B）的人数为 80 人，乙店顾客选择“满意”（A 或 B）的人数为 75 人。假设顾客作答相互独立，用样本估计总体，以频率估计概率。\n(1)从甲、乙两家店铺的所有顾客中随机抽取 1 名顾客，抽到的顾客来自于哪家店铺是等可能的，求该顾客选择“不满意”(C 或 D)的概率；\n(2)从甲、乙两家店铺的所有顾客中各随机抽取 2 名，设 X 为这 4 名顾客中选择“满意”（A 或 B）的人数，求 X 的分布列和数学期望。"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "(1)$\\frac{9}{40}$ （2）X 的分布列见解析，$E(X)=3.1$\n\n【命题意图】本题主要考查条件概率、全概率公式及分布列、数学期望等知识；考查模型识别能力、数据处理能力、模型的建立和运用能力；考查模型中数据应用的思想，数学在实际应用中的实用思想；体现应用性、综合性。\n\n【试题解析】(1)记事件 $F=$“抽取1名顾客来自于甲店铺”，事件 $E=$“抽取1名顾客来自于乙店铺”，事件 $M=$“顾客选择满意”，……1分\n\n高三数学试题参考答案 第1页(共6页)"
+ },
+ {
+  "key": "模拟题/安徽江南十校2027届高三第一次综合素质检测#9",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABD'"
+  ],
+  "type": "single_choice",
+  "stem": "双曲线 $ C $: $5y^2 -4x^2 = 20$ 的上、下焦点分别为 $ F_1, F_2 $，下列结论正确的是\\paren[ABD]",
+  "answer": "ABD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ C $ 的虚轴长为 $ 2\\sqrt{5} $"
+   },
+   {
+    "label": "B",
+    "text": "$ C $ 的离心率为 $ \\frac{3}{2} $"
+   },
+   {
+    "label": "C",
+    "text": "若 $ P $ 为 $ C $ 上一点，则 $ |PF_1| - |PF_2| = 4 $"
+   },
+   {
+    "label": "D",
+    "text": "$ C $ 的渐近线方程为 $ y = \\pm \\frac{2\\sqrt{5}}{5}x $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "ABD 由题得$\\frac{y^2}{4}-\\frac{x^2}{5}=1$, $a=2$, $b=\\sqrt{5}$, $c=\\sqrt{4+5}=3$, 所以 C 的虚轴长为 $2b=2\\sqrt{5}$, 故 A 正\n【高三数学参考答案 第1页(共7页)】"
+ },
+ {
+  "key": "模拟题/浙江A9协作体2027届高三上学期暑假返校学情诊断#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'ABB'"
+  ],
+  "type": "single_choice",
+  "stem": "设 $ A = \\{1,2,3,4\\} $，$ B = \\{3,4,5,6\\} $，则 $ A \\cap B = $\\paren[ABB]",
+  "answer": "ABB",
+  "options": [
+   {
+    "label": "A",
+    "text": "\\{3\\}"
+   },
+   {
+    "label": "B",
+    "text": "\\{3,4\\}"
+   },
+   {
+    "label": "C",
+    "text": "\\{1,2,3,4,5,6\\}"
+   },
+   {
+    "label": "D",
+    "text": "$\\varnothing$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "交集取两集合的公共元素，$A \\cap B = \\{3, 4\\}$。"
+ },
+ {
+  "key": "模拟题/浙江A9协作体2027届高三上学期暑假返校学情诊断#2",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BAA'"
+  ],
+  "type": "single_choice",
+  "stem": "已知 i 为虚数单位，则复数 $\\frac{1}{i}$ =\\paren[BAA]",
+  "answer": "BAA",
+  "options": [
+   {
+    "label": "A",
+    "text": "1"
+   },
+   {
+    "label": "B",
+    "text": "-1"
+   },
+   {
+    "label": "C",
+    "text": "i"
+   },
+   {
+    "label": "D",
+    "text": "-i"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "分子分母同乘 i：$\\frac{1}{i} = \\frac{i}{i^2} = \\frac{i}{-1} = -i$。"
+ },
+ {
+  "key": "模拟题/浙江A9协作体2027届高三上学期暑假返校学情诊断#3",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "向量 $\\overrightarrow{a}=(-1,2)$，$\\overrightarrow{b}=(\\lambda,4)$，若 $\\overrightarrow{a}\\perp\\overrightarrow{b}$，则 $\\lambda=$\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "2"
+   },
+   {
+    "label": "B",
+    "text": "-2"
+   },
+   {
+    "label": "C",
+    "text": "8"
+   },
+   {
+    "label": "D",
+    "text": "-8"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "垂直等价于数量积为零：$\\vec{a}\\cdot\\vec{b}=(-1)\\times\\lambda+2\\times4=0$，解得 $\\lambda=8$。"
+ },
+ {
+  "key": "模拟题/浙江A9协作体2027届高三上学期暑假返校学情诊断#9",
+  "problems": [
+   "多选题的答案必须是 A–D，实际 '$ BCD $'"
+  ],
+  "type": "multi_choice",
+  "stem": "7个样本数据：5，6，3，1，9，6，12，则下列说法正确的是\\paren[$ BCD $]",
+  "answer": "$ BCD $",
+  "options": [
+   {
+    "label": "A",
+    "text": "极差是10"
+   },
+   {
+    "label": "B",
+    "text": "平均数是6"
+   },
+   {
+    "label": "C",
+    "text": "众数是6"
+   },
+   {
+    "label": "D",
+    "text": "中位数是6"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "将数据从小到大排列：1，3，5，6，6，9，12。\n极差为 $12-1=11$，故 $A$ 错；\n平均数为 $\\frac{1+3+5+6+6+9+12}{7} = \\frac{42}{7} = 6$，故 B 对；\n6 出现 2 次，次数最多，众数为 6，故 C 对；\n共7个数据，中位数为第4个数6，故D对。"
+ },
+ {
+  "key": "模拟题/深圳中学2027届高三摸底考试#5",
+  "problems": [
+   "单选题的答案必须是 A–D，实际 '$C$'"
+  ],
+  "type": "single_choice",
+  "stem": "已知全集 $U = \\mathbb{R}$，集合 $A = \\left\\{ x \\in \\mathbb{Z} \\mid \\frac{x-3}{x+1} \\leq 0 \\right\\}$，$B = \\{ x \\mid \\log_2(x+2) > 2 \\}$，则 $A \\cap \\complement_U B =$\\paren[$C$]",
+  "answer": "$C$",
+  "options": [
+   {
+    "label": "A",
+    "text": "$\\{ x \\mid -1 \\leq x \\leq 2 \\}$"
+   },
+   {
+    "label": "B",
+    "text": "$\\{ x \\mid -1 < x \\leq 2 \\}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\{ 0, 1, 2 \\}$"
+   },
+   {
+    "label": "D",
+    "text": "$\\{ -1, 0, 1, 2 \\}$\n\n数学试题 A 第 1 页 共 4 页"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "已知全集集$U=\\mathbb{R}$，集合$A=\\left\\{x\\in\\mathbb{Z}\\mid\\frac{x-3}{x+1}\\leq0\\right\\},B=\\left\\{x\\mid\\log_{2}(x+2)>2\\right\\}$，则$A\\cap\\complement_U B=$\n\nA。$\\{x\\mid-1\\leq x\\leq2\\}$  B。$\\{x\\mid-1<x\\leq2\\}$  C。$\\{0,1,2\\}$  D。$\\{-1,0,1,2\\}$\n\n由 $\\frac{x-3}{x+1} \\leqslant 0$ 得 $\\begin{cases} (x-3)(x+1) \\leqslant 0 \\\\ x+1 \\neq 0 \\end{cases}$，解得 $-1 < x \\leqslant 3$。又 $x \\in \\mathbb{Z}$，所以 $A = \\{0, 1, 2, 3\\}$。\n\n由 $\\log_2(x+2) > 2 = \\log_2 4$，得 $x > 2$，所以 $B = \\{ x \\mid x > 2 \\}$，所以 $\\left\\{\\_{U} B = \\{ x \\mid x \\leqslant 2 \\}\\right\\}$，\n\n所以 $A \\cap \\left\\{\\_{U} B = \\{0, 1, 2\\}\\right\\}$。"
+ },
+ {
+  "key": "模拟题/深圳中学2027届高三摸底考试#9",
+  "problems": [
+   "多选题的答案必须是 A–D，实际 '$ AC $'"
+  ],
+  "type": "multi_choice",
+  "stem": "下列说法正确的有\\paren[$ AC $]",
+  "answer": "$ AC $",
+  "options": [
+   {
+    "label": "A",
+    "text": "若 $ X \\sim B\\left(4, \\frac{2}{3}\\right) $，则 $ P\\left(X \\leq 2\\right) = \\frac{11}{27} $"
+   },
+   {
+    "label": "B",
+    "text": "若 $ X \\sim N\\left(\\mu, \\sigma^2\\right) $，且 $ P\\left(X \\leq -3\\right) + P\\left(X \\leq 5\\right) = 1 $，则 $ \\mu = 2 $"
+   },
+   {
+    "label": "C",
+    "text": "已知事件 $ A, B $ 互斥，$ P\\left(A\\right) = \\frac{1}{4} $，$ P\\left(B\\right) = \\frac{1}{3} $，则 $ P\\left(A \\cup B\\right) = \\frac{7}{12} $"
+   },
+   {
+    "label": "D",
+    "text": "已知事件 $ A, B $ 相互独立，$ P\\left(A\\right) = \\frac{1}{4} $，$ P\\left(B\\right) = \\frac{1}{3} $，则 $ P\\left(\\overline{A}\\overline{B}\\right) = \\frac{1}{6} $"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "}{27} $\n\nB。若 $ X \\sim N(\\mu, \\sigma^2) $，且 $ P(X \\leq -3) + P(X \\leq 5) = 1 $，则 $ \\mu = 2 $\n\nC。已知事件 $ A, B $ 互斥，$ P(A) = \\frac{1}{4} $，$ P(B) = \\frac{1}{3} $，则 $ P(A \\cup B) = \\frac{7}{12} $\n\nD。已知事件 $ A, B $ 相互独立，$ P(A) = \\frac{1}{4} $，$ P(B) = \\frac{1}{3} $，则 $ P\\left(\\overline{A} \\setminus \\overline{B}\\right) = \\frac{1}{6} $\n对于 $ A $，若 $ X \\sim B\\left(4, \\frac{2}{3}\\right) $，则 $ P(X \\leq 2) = C_4^0 \\left(\\frac{1}{3}\\right)^4 \\left(\\frac{2}{3}\\right)^0 + C_4^1 \\left(\\frac{1}{3}\\right)^3 \\left(\\frac{2}{3}\\right)^1 + C_4^2 \\left(\\frac{1}{3}\\right)^2 \\left(\\frac{2}{3}\\right)^2 = \\frac{1+8+24}{81} = \\frac{11}{27} $，故 $ A $ 正确；\n\n对于 $ B $，若 $ X \\sim N(\\mu, \\sigma^2) $，且 $ P(X \\leq -3) + P(X \\leq 5) = 1 $，则 $ P(X \\leq -3) = 1 - P(X \\leq 5) = P(X > 5) $，这表明 $ \\mu = \\frac{5-3}{2} = 1 $，故 $ B $ 错误；"
+ },
+ {
+  "key": "模拟题/深圳中学2027届高三摸底考试#10",
+  "problems": [
+   "多选题的答案必须是 A–D，实际 '$ACD$'"
+  ],
+  "type": "multi_choice",
+  "stem": "已知圆锥 $SO$（$O$ 是底面圆的圆心，$S$ 是圆锥的顶点）底面半径为1，母线长为$\\sqrt{3}$。若 $P$，$Q$ 为底面圆\n周上任意不同两点，则下列结论正确的是\\paren[$ACD$]",
+  "answer": "$ACD$",
+  "options": [
+   {
+    "label": "A",
+    "text": "三棱锥 $O-SPQ$ 体积的最大值为 $\\frac{\\sqrt{2}}{6}$"
+   },
+   {
+    "label": "B",
+    "text": "三角形 $SPQ$ 面积的最大值为 $\\frac{3}{2}$"
+   },
+   {
+    "label": "C",
+    "text": "当 $\\angle POQ = 60^\\circ$ 时，平面 $SPQ$ 与平面 $SOQ$ 夹角的余弦值为 $\\frac{\\sqrt{22}}{11}$"
+   },
+   {
+    "label": "D",
+    "text": "四面体 $SOPQ$ 外接球表面积恒大于 $3\\pi$\n\n数学试题 A 第 2 页 共 4 页"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "$。\n\n过 $P$ 作 $PN \\perp OQ$，垂足为 $N$。因为 $SO \\perp$ 底面，所以 $SO \\perp PN$；\n\n又 $PN \\perp OQ$，且 $SO$ 与 $OQ$ 都在平面 $SOQ$ 内，所以 $PN \\perp$ 平面 $SOQ$。\n\n因此 $\\Delta SPQ$ 在平面 $SOQ$ 上的投影就是 $\\Delta SNQ$。\n\n在等边 $\\Delta OPQ$ 中，$OP = 1$，$\\angle POQ = 60^\\circ$，所以 $ON = OP \\cdot \\cos 60^\\circ = \\frac{1}{2}$, $NQ = OQ - ON = 1 - \\frac{1}{2} = \\frac{1}{2}$\n\n因为 $SO \\perp$ 底面，且 $NQ$ 在底面上，所以 $SO \\perp NQ$。\n\n于是 $\\Delta SNQ$ 的面积 $S_{\\Delta SNQ} = \\frac{1}{2} \\cdot NQ \\cdot SO = \\frac{1}{2} \\cdot \\frac{1}{2} \\cdot \\sqrt{2} = \\frac{\\sqrt{2}}{4}$，\n\n所以 $\\cos \\alpha = \\frac{S_{\\Delta SWQ}}{S_{\\Delta SPQ}} = \\frac{\\frac{\\sqrt{2}}{4}}{\\frac{\\sqrt{11}}{4}} = \\frac{\\sqrt{2}}{\\sqrt{11}} = \\frac{\\sqrt{22}}{11}$。选项 C 正确。\n\n设外接球球心为 $O'$，球心在底面 $OPQ$ 上的投影为 $K$。\n\n因为 $O'$ 到 $O, P, Q$ 距离相等，所以 $K$ 到 $O, P, Q$ 距离相等，即 $K$ 是 $\\Delta OPQ$ 的外心。"
+ },
+ {
+  "key": "模拟题/宁夏回族自治区银川一中2026-2027学年高三上学期第一次月考#3",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "从 1, 2, 3, 4, 5, 6, 7 七个数字中，选出两个奇数和一个偶数，组成一个没有重复数\n字的三位数，这样的三位数共有\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "18个"
+   },
+   {
+    "label": "B",
+    "text": "36个"
+   },
+   {
+    "label": "C",
+    "text": "72个"
+   },
+   {
+    "label": "D",
+    "text": "108个"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "利用排列组合以及分步乘法计数原理即可求解。\n由题意得：第一步：先选两个奇数有 $C_4^2$ 种选法，\n\n第二步：再选一个偶数有 $C_1^1$ 种选法，\n\n第三步：最后将三个数组成没有重复的三位数有 $\\Lambda_3^3$ 种排法，\n\n根据分步乘法计数原理共有：$C_4^2C_1^1A_3^3=108$ 种排法。"
+ },
+ {
+  "key": "模拟题/宁夏回族自治区银川一中2026-2027学年高三上学期第一次月考#5",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知函数 $ f(x) = a + \\frac{3}{2^x - 1} $ 为奇函数，则下列结论不正确的是\\paren[AD]",
+  "answer": "AD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$ f(x) $ 的定义域为 $ \\{x | x \\neq 0\\} $"
+   },
+   {
+    "label": "B",
+    "text": "$ a = \\frac{3}{2} $"
+   },
+   {
+    "label": "C",
+    "text": "$ f(x) $的单调递减区间为$(- \\infty, 0]$，$[0, +\\infty)$"
+   },
+   {
+    "label": "D",
+    "text": "$f(x)$的值域为$\\left(-\\infty, -\\frac{3}{2}\\right)$ U$[0, +\\infty)$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "frac{3}{2^1-1}=0$，解得 $a=\\frac{3}{2}$，\n\n当 $a=\\frac{3}{2}$ 时，$f(x)=\\frac{3}{2}+\\frac{3}{2^2-1}=\\frac{3\\left(2^2+1\\right)}{2\\left(2^2-1\\right)}$，$f(-x)=\\frac{3\\left(2^{-x}+1\\right)}{2\\left(2^{-x}-1\\right)}=\\frac{3\\left(2^x+1\\right)}{2\\left(1-2^x\\right)}=-f(x)$。则 $a=\\frac{3}{2}$ 符合题意，所以 B 正确；\n对于C，当$x>0$时，$y=2^{\\varepsilon}-1>0$，且在$(0,+\\infty)$上递增，则$y=\\frac{3}{2^{\\varepsilon}-1}$在$(0,+\\infty)$上递减，\n所以$f(x)$在$(0,+\\infty)$上递减，又$f(x)$是奇函数，\n则$f(x)$的单调递减区间为$(-\\infty,0)$和$(0,+\\infty)$，故C正确，\n对于D，由选项B可知，$f(x)=\\frac{3}{2}+\\frac{3}{2^{\\varepsilon}-1}$，当$x>0$时，$y=2^{\\varepsilon}-1>0$，则$y=\\frac{3}{2^{\\varepsilon}-1}>0$，\n所以$f(x)=\\frac{3}{2}+\\frac{3}{2^{\\varepsilon}-1}>\\frac{3}{2}$，又$f(x)$是奇函数，当$x<0$时，$f(x)<-\\frac{3}{2}$。\n所以$f(x)$的值域$\\left(-\\infty,-\\frac{3}{2}\\right)\\cup\\left(\\frac{3}{2},+\\infty\\right)$，故D错误。"
+ },
+ {
+  "key": "模拟题/宁夏回族自治区银川一中2026-2027学年高三上学期第一次月考#10",
+  "problems": [
+   "单选题的答案必须是 A–B，实际 'ACD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知函数 $f(x)=xe^x$，则下列结论正确的是？\\paren[ACD]",
+  "answer": "ACD",
+  "options": [
+   {
+    "label": "A",
+    "text": "$f(x)$ 在 $(-1,+\\infty)$ 上单调递增"
+   },
+   {
+    "label": "B",
+    "text": "若函数 $y=f(x)-a$ 有两个零点，则 $a>-\\frac{1}{c}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "-1, +\\infty)$ 上单调递增，所以选项A正确，\n\n对于选项B，若 $ y = f(x) - a $ 有两个不同的零点，即直线 $ y = a $ 与 $ y = f(x) $ 有两个交点，\n\n因为 $ x = -1 $ 是 $ f(x) $ 的极小值点，$ f(-1) = -\\frac{1}{c} $。\n\n因为 $ f(0) = 0 $，且 $ x < 0 $ 时 $ f(x) < 0 $，\n\n所以，当 $ -\\frac{1}{e} < a < 0 $ 时直线 $ y = a $ 与 $ y = f(x) $ 有两个交点，选项B错误；\n\n对于选项C，由 $ f(x) \\leq e $，得到 $ xe^x \\leq e $，当 $ x \\leq 0 $ 时，$ xe^x \\leq 0 < c $ 恒成立，\n\n当 $ x > 0 $ 时，由 $ xe^x \\leq c $，得到 $ \\ln x + x \\leq 1 $，\n\n令 $ h(x) = \\ln x + x $，在区间 $ (0, +\\infty) $ 上单调递增，所以 $ h(x) \\leq h(1) $，则 $ 0 < x \\leq 1 $，\n\n综上，不等式 $ f(x) \\leq e $ 的解集为 $ (-\\infty, 1] $，C 选项正确；\n\n对于选项D，由 $ f(x_1) = x_2 \\ln x_2 = 4 $，得到 $ x_1 e^a = x_2 \\ln x_2 = \\ln x_2 e^{\\ln x_2} = 4 > 0 $，\n\n则 $ x_1 > 0, x_2 > 1 $，由选项A知，$ f(x) = xe^x $ 在区间 $ (-1, +\\infty) $ 上单调递增，\n\n所以 $ x_1 = \\ln x_2 $，则 $ x_1 x_2 = x_2 \\ln x_2 = 4 $，故选项D正确"
+ },
+ {
+  "key": "模拟题/湖北圆创联盟2026届高三第一次联合测评（联考）#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AD'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $ A = \\{ x | | x | \\leq 2 \\} $, $ B = \\{ x \\in \\mathbb{Z} | x^2 < 10 \\} $, 则 $ A \\cap B $ 的元素个数为 3。\\paren[AD]",
+  "answer": "AD",
+  "options": [
+   {
+    "label": "A",
+    "text": "3"
+   },
+   {
+    "label": "B",
+    "text": "4"
+   },
+   {
+    "label": "C",
+    "text": "5"
+   },
+   {
+    "label": "D",
+    "text": "6"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "由题意 $ A = [-2, 2] $, $ B = \\{-3, -2, -1, 0, 1, 2, 3\\} $, $ A \\cap B = \\{-2, -1, 0, 1, 2\\} $, 共 5 个元素, 故\n选 C。"
+ },
+ {
+  "key": "模拟题/云师大附中2026届高三上学期高考适应性月考卷（四）#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'BC'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $A = \\{-2, -1, 0, 1, 2\\}$，$B = \\{x \\mid |x| > x\\}$，则 $A \\cap B =$\n已知抛物线 $ C $: $ y^2 = 2px $ ($p > 0$) 的焦点为 $ F $，若直线 $ x - my - 1 = 0 $ 过点 $ F $ 与 $ C $ 交于 $ A $, $ B $ 两点，线段 $ AB $ 的中垂线与 $ C $ 的准线交于点 $ P $，且线段 $ AB $ 的中点为 $ Q $，则\\paren[BC]",
+  "answer": "BC",
+  "options": [
+   {
+    "label": "A",
+    "text": "\\{-2, -1, 0\\}"
+   },
+   {
+    "label": "B",
+    "text": "\\{-2, -1\\}"
+   },
+   {
+    "label": "C",
+    "text": "\\{-2\\}"
+   },
+   {
+    "label": "D",
+    "text": "$\\{0, 1, 2\\}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/云师大附中2026届高三上学期高考适应性月考卷（四）#4",
+  "problems": [
+   "选项 A 内容为空"
+  ],
+  "type": "single_choice",
+  "stem": "若$\\sin 2\\alpha = -1$，则 $\\tan \\alpha =$\\paren[A]",
+  "answer": "A",
+  "options": [
+   {
+    "label": "A",
+    "text": ""
+   },
+   {
+    "label": "B",
+    "text": "$\\frac{\\sqrt{3}}{3}$"
+   },
+   {
+    "label": "C",
+    "text": "1"
+   },
+   {
+    "label": "D",
+    "text": "$\\pm 1$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "$\\because \\sin 2\\alpha = -1, \\therefore 2\\alpha = 2k\\pi - \\frac{\\pi}{2}, \\therefore \\alpha = k\\pi - \\frac{\\pi}{4}, \\therefore \\tan \\alpha = \\tan\\left(k\\pi - \\frac{\\pi}{4}\\right) = -1$，故选 A。"
+ },
+ {
+  "key": "模拟题/2026届武汉九月调考高三#1",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "已知集合 $A = \\{x \\mid x^2 - x - 2 > 0\\}$，$B = \\{x \\mid x^2 < 3x\\}$，则 $A \\cap B =$\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "$(-1, 0)$"
+   },
+   {
+    "label": "B",
+    "text": "$(-1, 3)$"
+   },
+   {
+    "label": "C",
+    "text": "$(2, 3)$"
+   },
+   {
+    "label": "D",
+    "text": "$(0, 2)$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "已知集合 $A = \\{x \\mid x^2 - x - 2 > 0\\}$，$B = \\{x \\mid x^2 < 3x\\}$，则 $A \\cap B =$\nA。$(-1, 0)$  \nB。$(-1, 3)$  \nC。$(2, 3)$  \nD。$(0, 2)$"
+ },
+ {
+  "key": "模拟题/2026届武汉九月调考高三#11",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'B'"
+  ],
+  "type": "multi_choice",
+  "stem": "设 $ A, B $ 是一个随机试验中的两个事件，$ P(A \\mid B) + P(B \\mid A) = 1 $，$ P(A \\cup B) = \\frac{3}{4} $，则\\paren[B]",
+  "answer": "B",
+  "options": [
+   {
+    "label": "A",
+    "text": "事件 $ A, B $ 相互独立"
+   },
+   {
+    "label": "B",
+    "text": "若 $ P(AB) = \\frac{1}{8} $，则 $ |P(A) - P(B)| = \\frac{\\sqrt{21}}{8} $"
+   },
+   {
+    "label": "C",
+    "text": "$ P(AB) \\leqslant P(\\overline{A}\\overline{B}) $"
+   },
+   {
+    "label": "D",
+    "text": "若 $ P(A \\mid \\overline{B}) = P(\\overline{A} \\mid B) $，则必有 $ P(A) = P(B) $\n高三九月数学试卷 第2页(共4页)"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "设 $ A, B $ 是一个随机试验中的两个事件，$ P(A \\mid B) + P(B \\mid A) = 1 $，$ P(A \\cup B) = \\frac{3}{4} $，则\nA。事件 $ A, B $ 相互独立  \nB。若 $ P(AB) = \\frac{1}{8} $，则 $ |P(A) - P(B)| = \\frac{\\sqrt{21}}{8} $  \nC。$ P(AB) \\leqslant P(\\overline{A}\\overline{B}) $  \nD。若 $ P(A \\mid \\overline{B}) = P(\\overline{A} \\mid B) $，则必有 $ P(A) = P(B) $  \n高三九月数学试卷 第 2 页 (共 4 页)"
+ },
+ {
+  "key": "模拟题/山东名校考试联盟2026届高三上学期开学摸底考试#10",
+  "problems": [
+   "多选题答案至少 2 个字母，实际 'B'"
+  ],
+  "type": "multi_choice",
+  "stem": "在 $\\triangle ABC$ 中，$c\\cos B + b\\cos C = 2$，$(a+c)(\\sin C - \\sin A) = b(\\sin C - \\sin B)$，则\\paren[B]",
+  "answer": "B",
+  "options": [
+   {
+    "label": "A",
+    "text": "$a = 2$"
+   },
+   {
+    "label": "B",
+    "text": "$A = \\frac{\\pi}{6}$"
+   },
+   {
+    "label": "C",
+    "text": "$\\triangle ABC$ 周长的最大值为 6"
+   },
+   {
+    "label": "D",
+    "text": "$\\triangle ABC$ 面积的最大值为 $\\sqrt{3}$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/浙江嘉兴市2026届高三上学期基础测试（一模）#2",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "已知复数 $z = i(2 + i)$，则 $\\overline{z} =$\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "$1 - 2i$"
+   },
+   {
+    "label": "B",
+    "text": "$1 + 2i$"
+   },
+   {
+    "label": "C",
+    "text": "$-1 - 2i$"
+   },
+   {
+    "label": "D",
+    "text": "$-1 + 2i$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ },
+ {
+  "key": "模拟题/浙江嘉兴市2026届高三上学期基础测试（一模）#5",
+  "problems": [
+   "单选题答案只能 1 个字母，实际 'AB'"
+  ],
+  "type": "single_choice",
+  "stem": "已知数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，$a_1 = a$，$a_2 = 2 - a$，$a_{n+2} = 2a_n$，则 $S_{2n} =$\\paren[AB]",
+  "answer": "AB",
+  "options": [
+   {
+    "label": "A",
+    "text": "$2^{n+1} - 2$"
+   },
+   {
+    "label": "B",
+    "text": "$a(2^{n+1} - 2)$"
+   },
+   {
+    "label": "C",
+    "text": "$2^{2n} - 2$"
+   },
+   {
+    "label": "D",
+    "text": "$a(2^{2n} - 2)$"
+   }
+  ],
+  "n_figures": 0,
+  "figure_missing_flag": false,
+  "solution_tail": "解析无"
+ }
+]

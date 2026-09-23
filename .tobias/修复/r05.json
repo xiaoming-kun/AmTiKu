@@ -1,0 +1,430 @@
+[
+ {
+  "key": "模拟题/湖北省部分重点中学（六校）2026届高三上学期第一次联考+ - 副本#6",
+  "why": "单选被记成两字母 'BD'：官方答案表第6题为B、推导也只有B是对称中心，answer改B并同步 \\paren[BD]→\\paren[B]。",
+  "src": "原卷参考答案（六校 scan p005 与 p005_01 两种读法第6位均为B）；推导：相邻对称中心距 π/(2ω)=π/2 ⇒ ω=1、f(x)=tan(x+π/4)，中心 x=kπ/2−π/4，四选项中仅 x=π/4（B）；又 f(π)=1 既非零点也非极点，D 恒非中心，'BD' 系错粘。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "BD",
+   "stem": "图象的个对称中心为",
+   "options": [
+    "$\\left(\\frac{\\pi}{8},0\\right)$"
+   ]
+  },
+  "set": {
+   "answer": "B",
+   "stem": "已知函数 $f(x)=\\tan(\\omega x+\\varphi)\\left(\\omega>0,\\left|\\varphi\\right|<\\frac{\\pi}{2}\\right)$ 图象相邻的两个对称中心间的距离为 $\\frac{\\pi}{2}$，若 $f(\\pi)=1$，则函数 $f(x)$ 图象的个对称中心为\\paren[B]"
+  }
+ },
+ {
+  "key": "模拟题/湖北省部分重点中学（六校）2026届高三上学期第一次联考+ - 副本#19",
+  "why": "题干的(2)(3)问被切进唯一的'选项'还夹带页脚，解答题不该有选项：按原卷把两段并回题干（补回切分丢的『A、』）、options置空；答案栏须为「见解析」，原答案(1)的结果并入解析开头不丢失。",
+  "src": "原卷扫描 p004「19.（17分）…(2) 若直线 l 与 Ω 交于 A、B 两点…若不存在，请说明理由。高三数学试卷（共 4 页）第 4 页」；(1) 由 2a=2√2、2a+2c=2+2√2 ⇒ c=1、b²=1，Ω: x²/2+y²=1，即原答案栏内容。",
+  "expect": {
+   "type": "detailed_answer",
+   "answer": "(1) $\\frac{x^2}{2} + y^2 = 1$",
+   "stem": "若直线 $ l $ 与 $ \\Omega $ 交于",
+   "solution": "(2) $\\left[\\frac{2\\sqrt{6}}{3}",
+   "options": [
+    "B 两点，且 $\\overrightarrow{OA} \\cdot \\overrightarrow{OB} = 0$"
+   ]
+  },
+  "set": {
+   "answer": "见解析",
+   "stem": "已知 $ O $ 为坐标原点，椭圆 $ \\Omega: \\frac{x^2}{a^2} + \\frac{y^2}{b^2} = 1 $ ($ a > b > 0 $) 左、右焦点分别为 $ F_1, F_2 $，长半轴长为 $ \\sqrt{2} $，\n过 $ F_1 $ 的直线 $ m $ 与椭圆 $ \\Omega $ 交于 C、D 两点，$\\Delta F_1F_2C$ 的周长为 $2 + 2\\sqrt{2}$。\n(1) 求 $\\Omega$ 的方程;\n(2) 若直线 $ l $ 与 $ \\Omega $ 交于A、B 两点，且 $\\overrightarrow{OA} \\cdot \\overrightarrow{OB} = 0$，求 $|AB|$ 的取值范围；\n(3) 已知点 $ P $ 是椭圆 $ \\Omega $ 上的动点，是否存在定圆 $ O: x^2 + y^2 = r^2 $ ($ r > 0 $)，使得当过点 $ P $ 能作\n圆 $ O $ 的两条切线 $ PM $、$ PN $ 时（其中 $ M $、$ N $ 分别是两切线与 $ \\Omega $ 的另一交点），总满足 $ |PM| = |PN| $？\n若存在，求出圆 $ O $ 的半径 $ r $；若不存在，请说明理由。",
+   "options": [],
+   "solution": "(1) $\\frac{x^2}{2} + y^2 = 1$\n\n(2) $\\left[\\frac{2\\sqrt{6}}{3}, \\sqrt{3}\\right]$\n\n(3) $ y = \\frac{\\sqrt{6}}{3} $"
+  }
+ },
+ {
+  "key": "模拟题/浙江稽阳联谊学校2026届高三上学期11月联考#5",
+  "why": "单选答案 'AD' 与解析结论矛盾（解析结尾即 B、原卷答案也是 B）：answer改B并同步 \\paren[AD]→\\paren[B]。",
+  "src": "解析原文结尾「B」；原卷答案「5.【答案】B」（稽阳答案 scan p001_15）；推导：|AB|=2，面积=点C到直线的距离d，圆心到直线 √2、半径1 ⇒ d∈[√2−1,√2+1]，即选项B。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "AD",
+   "stem": "面积的取值范围是",
+   "options": [
+    "$[2, 6]$"
+   ]
+  },
+  "set": {
+   "answer": "B",
+   "stem": "已知点 $ A $，$ B $ 在直线 $ x + y + 2 = 0 $ 上，且 $ |AB| = 2 $，点 $ C $ 在圆 $ M: (x-2)^2 + (y+2)^2 = 1 $ 上，则 $\\triangle ABC$ 面积的取值范围是\\paren[B]"
+  }
+ },
+ {
+  "key": "模拟题/2026届苏州市高三上学期期中阳光调研+ - 副本#9",
+  "why": "原卷第9题在多选区，整页OCR把另一组字母选项（F/E/G/H）拼进来凑成8个且单选记'AD'：按逐题裁片恢复原卷四个向量/角度选项，type改multi_choice、answer改官方ACD并同步 \\paren[AD]→\\paren[ACD]。",
+  "src": "原卷逐题裁片 p002_08「9…O为正八边形的中心，则 A.∠AOB=45° B.OB⃗+OE⃗=√2AB⃗ C.HD⃗=√2AC⃗ D.AB⃗·AE⃗=1」（整页 OCR 才多出一行『A.F B.E C.G D.H』）；官方答案「多项选择题 9 10 11 → ACD ABD AC」（p007_03）；复核 A✓C✓D✓、B✗（坐标算得 OB⃗+OE⃗=AB⃗ 而非 √2AB⃗）。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "AD",
+   "stem": "正八边形 $ABCDEFGH$",
+   "options": [
+    "$\\angle AOB = 45^\\circ$",
+    "$F$"
+   ]
+  },
+  "set": {
+   "type": "multi_choice",
+   "answer": "ACD",
+   "stem": "《易经》是中华民族智慧的结晶，易有太极，太极生两仪，两仪生四象，四象生八卦。如图所示是八卦模型图以及根据该图抽象得到的正八边形 $ABCDEFGH$，其中 $|AB|=1$，$O$ 为正八边形的中心，则 \\paren[ACD]",
+   "options": [
+    [
+     "A",
+     "$\\angle AOB = 45^\\circ$"
+    ],
+    [
+     "B",
+     "$\\overrightarrow{OB} + \\overrightarrow{OE} = \\sqrt{2}\\overrightarrow{AB}$"
+    ],
+    [
+     "C",
+     "$\\overrightarrow{HD} = \\sqrt{2}\\overrightarrow{AC}$"
+    ],
+    [
+     "D",
+     "$\\overrightarrow{AB} \\cdot \\overrightarrow{AE} = 1$"
+    ]
+   ]
+  }
+ },
+ {
+  "key": "模拟题/辽宁省多校调研2026届高三上学期11月联考#18",
+  "why": "题干(3)问等被切成两个'选项'，解答题不该有选项：按原卷把两段并回题干（补回切分丢失的『A、』『B、』），options置空。",
+  "src": "原卷扫描 p008「18.（17分）已知二次曲线…连接 PA、BQ, 直线 PA 与直线 BQ 交于点 G…(3)…若直线 GM、AB、PQ 三线共点, K(1,0)…求 S₁/S₂ 的取值范围。」",
+  "expect": {
+   "type": "detailed_answer",
+   "answer": "见解析",
+   "stem": "(P 在 Q 的上方), 连接 P",
+   "options": [
+    "BQ, 直线 PA 与直线 BQ 交于点 G",
+    "求 $\\frac{S_1}{S_2}$ 的取值范围"
+   ]
+  },
+  "set": {
+   "stem": "已知二次曲线 $\\Gamma$: $\\frac{x^2}{a^2} + \\frac{y^2}{b^2} = 1$ ($a > b > 0$), $\\Gamma$ 的长轴长为 4, A, B 为 $\\Gamma$ 的左、右顶点, 点 F 为 $\\Gamma$ 的左焦点, 过 F 作直线 PQ 交 $\\Gamma$ 于 P、Q (P 在 Q 的上方), 连接 PA、BQ, 直线 PA 与直线 BQ 交于点 G。过 P 作 $\\Gamma$ 的切线 l 交直线 x=2 于点 H。当 $PQ \\perp x$ 轴时, $|PQ|=3$。\n\n(1) 求 $\\Gamma$ 的方程;\n\n(2) 求证: 直线 GH 过一定点;\n\n(3) 点 M 为线段 BP 上一动点, 若直线 GM、AB、PQ 三线共点, $K(1,0)$, 设 $\\triangle PMK$ 的面积为 $S_1$, $\\triangle QMF$ 的面积为 $S_2$, 求 $\\frac{S_1}{S_2}$ 的取值范围。",
+   "options": []
+  }
+ },
+ {
+  "key": "模拟题/江苏常州2026届高三上学期11月期中调研+ - 副本#9",
+  "why": "多选第9题被记单字母 'D'：原卷答案 9. AC，改 answer 为 AC 并同步 \\paren[D]→\\paren[AC]。",
+  "src": "原卷答案「二、选择题 9. AC」（常州 scan p005）；推导：z=e^{iθ}(θ≠kπ) ⇒ 1/z+z=2cosθ∈(−2,2) 恒为实数，0（θ=π/2）、1（θ=π/3）可取到即 A、C，i 与 1+i 非实数不可取。",
+  "expect": {
+   "type": "multi_choice",
+   "answer": "D",
+   "stem": "的可能取值有",
+   "options": [
+    "$ 1 + i $"
+   ]
+  },
+  "set": {
+   "answer": "AC",
+   "stem": "已知 $ z $ 是虚数，且 $ |z| = 1 $。下列四个选项中，$ \\frac{1}{z} + z $ 的可能取值有\\paren[AC]"
+  }
+ },
+ {
+  "key": "模拟题/江苏常州2026届高三上学期11月期中调研+ - 副本#11",
+  "why": "折叠题四个选项是独立命题、原卷在多选区（11题=AC），库里记成单选 'ACD'：type改multi_choice、answer改AC并同步 \\paren[ACD]→\\paren[AC]；D选项尾部混入的页码『高三数学 第2页（共4页）』一并清掉。",
+  "src": "原卷答案「二、选择题…11. AC」（常州 scan p005）；推导：折后 Q(√2/2,1/2,±1/2)，AQ⃗·BQ⃗=0 ⇒ A对；V=⅓·½·(1/√2)=√2/12≠√2/4 ⇒ B错；Q到平面ABP(z=0)距离=1/2 ⇒ C对；A,B,P,Q外接球半径 √(5/8)=√10/4≠√10/2 ⇒ D错。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "ACD",
+   "stem": "则\\paren[ACD]",
+   "options": [
+    "$AQ \\perp BQ$",
+    "\\frac{\\sqrt{10}}{2}"
+   ]
+  },
+  "set": {
+   "type": "multi_choice",
+   "answer": "AC",
+   "stem": "已知在矩形 $ABCD$ 中，$AB = \\sqrt{2}$，$BC = 1$，$P$ 为线段 $CD$ 的中点，将 $\\triangle ADP$，$\\triangle BCP$ 分别沿 $AP$，$BP$ 翻折，使得 $C, D$ 两点重合于点 $Q$，则\\paren[AC]",
+   "options": [
+    [
+     "A",
+     "$AQ \\perp BQ$"
+    ],
+    [
+     "B",
+     "三棱锥 $P-ABQ$ 的体积为 $\\frac{\\sqrt{2}}{4}$"
+    ],
+    [
+     "C",
+     "点 $Q$ 到平面 $ABP$ 的距离为 $\\frac{1}{2}$"
+    ],
+    [
+     "D",
+     "存在半径为 $\\frac{\\sqrt{10}}{2}$ 的球 $O$，使得 $A, B, P, Q$ 四点均在球 $O$ 的球面上"
+    ]
+   ]
+  }
+ },
+ {
+  "key": "模拟题/广东衡水金卷2026届高三上学期11月联考#3",
+  "why": "题干混进了第10题选项与第11题整题、本题选项被挤到 E–H：按原卷把题干恢复为第3题原句并把 \\paren[A] 接回，选项全量替换为原卷 A.−1 B.0 C.1 D.2（答案A不变）。",
+  "src": "原卷扫描 p001「3. 若函数 f(x)=(x−1)(x−a) 与 g(x)=bx²+cx 表示同一个函数，则 c =」其后版面行「A. -1 B. 0 C. 1 D. 2」（『C. λa²+μb²…』『D. |λa+μb|…』属左栏第10题、整段『11. 设函数…』是第11题）；官方答案「3. A…故只可能 a=0…c=−1」。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "A",
+   "stem": "表示同一个函数，则 $c =$",
+   "options": [
+    "$f(1) = 0$",
+    "-1"
+   ]
+  },
+  "set": {
+   "stem": "若函数 $f(x) = (x-1)(x-a)$ 与 $g(x) = bx^2 + cx$ 表示同一个函数，则 $c =$\\paren[A]",
+   "options": [
+    [
+     "A",
+     "-1"
+    ],
+    [
+     "B",
+     "0"
+    ],
+    [
+     "C",
+     "1"
+    ],
+    [
+     "D",
+     "2"
+    ]
+   ]
+  }
+ },
+ {
+  "key": "模拟题/重庆市第八中学2026届高考适应性月考卷（三）#9",
+  "why": "多选第9题只记了 'B' 且选项C被OCR丢了共轭横线（原文 ω=1/ω̄ 才与官方解析一致）：answer改ACD、选项C补回 \\bar、同步 \\paren[B]→\\paren[ACD]。",
+  "src": "原卷参考答案 p001_09「…ω·ω̄=(−1/2+√3/2i)(−1/2−√3/2i)=1，故 C 正确…|z| 最大值为 2，D 正确，选 ACD」；A：ω³=1 真；B：ω+ω²=−1 ⇒ ω²=−ω 假；C 带共轭即 ωω̄=1 真。",
+  "expect": {
+   "type": "multi_choice",
+   "answer": "B",
+   "stem": "复数 $z$ 满足",
+   "options": [
+    "$\\omega^3 = 1$",
+    "$\\omega = \\frac{1}{\\omega}$"
+   ]
+  },
+  "set": {
+   "answer": "ACD",
+   "stem": "已知 $\\omega = -\\frac{1}{2} + \\frac{\\sqrt{3}}{2}i$，复数 $z$ 满足 $|z - \\omega| = 1$，则\\paren[ACD]",
+   "options": [
+    [
+     "A",
+     "$\\omega^3 = 1$"
+    ],
+    [
+     "B",
+     "$\\omega^2 = -\\omega$"
+    ],
+    [
+     "C",
+     "$\\omega = \\frac{1}{\\bar{\\omega}}$"
+    ],
+    [
+     "D",
+     "$|z|$ 的最大值为 2"
+    ]
+   ]
+  }
+ },
+ {
+  "key": "模拟题/【】-江苏省南通市海安市2026届高三年级上学期期中学业质量监测(11.17-11.19)#4",
+  "why": "单选答案 'BC' 是答案行粘连：解析明确【答案】A（a=−3），answer改A并同步 \\paren[BC]→\\paren[A]。",
+  "src": "解析原文「【答案】A…∴ a = −3，选 A。」；推导：f'(1)=3+2a、切线 y−(1+a)=(3+2a)(x−1) 过 (0,1) ⇒ −a=−3−2a ⇒ a=−3，即选项A。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "BC",
+   "stem": "切线过点 $ (0, 1) $",
+   "options": [
+    "-3"
+   ]
+  },
+  "set": {
+   "answer": "A",
+   "stem": "若函数 $ f(x) = x^3 + ax^2 $ ($ a \\in \\mathbb{R} $) 的图象在 $ x = 1 $ 处的切线过点 $ (0, 1) $，则 $ a = $\\paren[A]"
+  }
+ },
+ {
+  "key": "模拟题/江苏省扬州市2025-2026学年高三上学期11月期中考试（含） - 副本#9",
+  "why": "题干首行混进了他题答案「$ f(x) = x \\cos x $」且作答括号被塞成该串：删掉泄露行，answer按原卷【答案】ACD 填回 \\paren。",
+  "src": "原卷 p009「9. 在正△ABC中…下列结论正确的有（ ）。【答案】ACD…D对，选ACD.」；推导：A 向量闭合和为0✓；B 投影=−BD⃗✗；C (AB⃗+AC⃗)·BC⃗=2AD⃗·BC⃗=0✓；D AB⃗·AD⃗=27/4✓。",
+  "expect": {
+   "type": "multi_choice",
+   "answer": "$ f(x) = x \\cos x $",
+   "stem": "在正$\\triangle ABC$中",
+   "options": [
+    "投影向量为"
+   ]
+  },
+  "set": {
+   "answer": "ACD",
+   "stem": "在正$\\triangle ABC$中，边长为3，$D$为边$BC$的中点，则下列结论正确的有。 \\paren[ACD]"
+  }
+ },
+ {
+  "key": "模拟题/2026届广西省高三11月跨市联合调研考试（含） - 副本#10",
+  "why": "多选第10题只记了 'A'，解析逐项结论是 A错、B对、C对、D错：answer改BC并同步 \\paren[A]→\\paren[BC]。",
+  "src": "解析原文「即 p = 4，A 错误。…则 HD ⟂ OD，B 正确。…|AB| 取得最小值 8，C 正确。…与 C 的准线相切，D 错误。」；复核：p=4≠2；焦点(2,0)与圆心重合 ⇒ x_H=2 ⇒ B✓；通径2p=8✓；直径圆与准线相切而非y轴✗。",
+  "expect": {
+   "type": "multi_choice",
+   "answer": "A",
+   "stem": "O 为坐标原点，则",
+   "options": [
+    "$ p = 2 $"
+   ]
+  },
+  "set": {
+   "answer": "BC",
+   "stem": "已知抛物线 $ C: y^2 = 2px $ ($ p > 0 $) 的准线与圆 $ D: (x-2)^2 + y^2 = 16 $ 相切，H 为 C 与圆 D 的一个交点，过圆心 D 作直线 l 与 C 交于 A, B 两点，O 为坐标原点，则\\paren[BC]"
+  }
+ },
+ {
+  "key": "模拟题/重庆南开中学校2026届高三12月月考#2",
+  "why": "单选答案 'AB' 是粘连：解析结尾「选 C」（原卷答案 2. C 一致），answer改C并同步 \\paren[AB]→\\paren[C]。",
+  "src": "解析原文「由题得 $ A = \\{-1, 0, 1, 2\\} $，代入集合 B 检验可得，选 C。」；原卷答案表「2. C」（南开12月 scan p001）；推导：1/x≤1 ⇒ x<0 或 x≥1 ⇒ A∩B={−1,1,2}=选项C。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "AB",
+   "stem": "则 $ A \\cap B = $",
+   "options": [
+    "$\\{ -1, 1, 2 \\}$"
+   ]
+  },
+  "set": {
+   "answer": "C",
+   "stem": "已知集合 $ A = \\{ x | -1 \\leqslant x \\leqslant 2, x \\in \\mathbb{Z} \\} $, $ B = \\left\\{ x \\left| \\frac{1}{x} \\leqslant 1 \\right. \\right\\} $, 则 $ A \\cap B = $\\paren[C]"
+  }
+ },
+ {
+  "key": "模拟题/广东惠州“六校联盟”2026届高三上学期期中#7",
+  "skip": true,
+  "reason": "选项D在原卷整页OCR与逐题裁片OCR两遍均为『D.』后空白、入库即空；官方解析只给『故选A』（详解方法一二三均不提D），库内解析为『解析无』，n_figures=0、无图可依——D的文字既算不出也无处还原，宁缺勿错。"
+ },
+ {
+  "key": "模拟题/湖南师大附中2026届高三上学期月考（四）#6",
+  "why": "单选答案 'CD' 是粘连：解析解得 m=−4/3 即选项D，answer改D并同步 \\paren[CD]→\\paren[D]。",
+  "src": "解析原文「$(m+3)^2=1+m^2$, 则 $6m+8=0 \\Rightarrow m=-\\frac{4}{3}$」=选项D；原卷答案 p007「6 D」（湖师大月考四答案表）。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "CD",
+   "stem": "实数 $ m $ 的值为",
+   "options": [
+    "$-\\frac{4}{3}$"
+   ]
+  },
+  "set": {
+   "answer": "D",
+   "stem": "已知 A, B 为直线 $ x - my - 2 = 0 $ 与圆 C: $ x^2 + y^2 + 2x - 2y - 2 = 0 $\n的交点, $ C $ 为圆心, 若 $\\triangle ABC$ 是一个面积为 $\\sqrt{3}$ 的钝角三角形, 则\n实数 $ m $ 的值为\\paren[D]"
+  }
+ },
+ {
+  "key": "模拟题/湖南师大附中2026届高三上学期月考（四）#8",
+  "why": "单选答案 'CD' 是粘连：解析最小值 (1+ln2)/2 即选项D，answer改D并同步 \\paren[CD]→\\paren[D]；D选项尾部混入的『二、选择题…』卷面说明一并清掉。",
+  "src": "解析原文「即$b-a$的最小值为$h\\left(\\frac{1}{2}\\right)=\\frac{1+\\ln 2}{2}$」=选项D；原卷答案 p007「8 D」（湖师大月考四答案表）。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "CD",
+   "stem": "b - a $ 的最小值为",
+   "options": [
+    "二、选择题"
+   ]
+  },
+  "set": {
+   "answer": "D",
+   "stem": "已知函数 $ f(x) = e^{2x-1} $, $ g(x) = \\frac{1}{2} + \\ln x $, 若 $ f(a) = g(b) $, 则 $ b - a $ 的最小值为\\paren[D]",
+   "options": [
+    [
+     "A",
+     "$ e^{\\frac{1}{2}} - 1 $"
+    ],
+    [
+     "B",
+     "$ 1 + \\ln 2 $"
+    ],
+    [
+     "C",
+     "$ \\frac{e^{\\frac{1}{2}} - 1}{2} $"
+    ],
+    [
+     "D",
+     "$ \\frac{1 + \\ln 2}{2} $"
+    ]
+   ]
+  }
+ },
+ {
+  "key": "模拟题/深圳中学2025年12月高三第二次阶段测试#9",
+  "why": "多选第9题只记了 'C'，官方详解『故选 BC』：answer改BC并同步 \\paren[C]→\\paren[BC]。",
+  "src": "原卷参考答案 p006_07「9. 由余弦定理 $a^2=(c-\\frac12)^2+\\frac34 \\geq \\frac34$，故 $a \\geq \\frac{\\sqrt{3}}{2}$，故选 BC.」；推导：a 可取 [√3/2,∞) 任意值，B(1)、C(2) 在内，A(1/2)、D≈0.41 不在。",
+  "expect": {
+   "type": "multi_choice",
+   "answer": "C",
+   "stem": "值可能为",
+   "options": [
+    "$\\frac{1}{2}$"
+   ]
+  },
+  "set": {
+   "answer": "BC",
+   "stem": "在 $\\triangle ABC$ 中，角 $A, B, C$ 的对边分别是 $a, b, c$，$A = 60^\\circ$，$b = 1$，则 $a$ 的值可能为。\\paren[BC]"
+  }
+ },
+ {
+  "key": "模拟题/2026届山东青岛高三部分学生上学期12月调研检测#1",
+  "why": "单选答案 'ABC' 是粘连：第三象限要求 a<−1 即唯一选项A，answer改A并同步 \\paren[ABC]→\\paren[A]。",
+  "src": "原卷答案「一、选择题 题号1 答案 A」（青岛12月 scan p001）；推导：(1+i)(a−i)=(a+1)+(a−1)i，第三象限 ⇔ a+1<0 且 a−1<0 ⇔ a<−1，即 A(−∞,−1)；B(−∞,1) 取 a=0 得点 (1,−1) 在第四象限。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "ABC",
+   "stem": "第三象限",
+   "options": [
+    "$(-\\infty, -1)$"
+   ]
+  },
+  "set": {
+   "answer": "A",
+   "stem": "在复平面内，复数$(1+i)(a-i)$对应的点在第三象限，则实数$a$的取值范围是\\paren[A]"
+  }
+ },
+ {
+  "key": "模拟题/2026届山东青岛高三部分学生上学期12月调研检测#9",
+  "why": "该题原卷在多选区（9–11）且官方答案 BCD，库里记成单选 'AC'：type改multi_choice、answer改BCD并同步 \\paren[AC]→\\paren[BCD]。",
+  "src": "原卷答案「二、选择题 题号 9 10 11 答案 BCD ABC BCD」（青岛12月 scan p001）；推导：ȳ=10、â=3.4 ⇒ b̂=(10−3.4)/3=2.2（A错）；x=5 残差=15−(2.2×5+3.4)=0.6（B对）；70% 位置 5×0.7=3.5→第4个=11（C对）；被去掉的 (3,10) 恰是均值点，各偏差平方和、积和均不变 ⇒ 相关系数不变（D对）。",
+  "expect": {
+   "type": "single_choice",
+   "answer": "AC",
+   "stem": "\\paren[AC]",
+   "options": [
+    "$\\hat{b}=2.3$"
+   ]
+  },
+  "set": {
+   "type": "multi_choice",
+   "answer": "BCD",
+   "stem": "已知变量 x, y 的样本数据如下表，根据最小二乘法，得经验回归方程为 $\\hat{y} = \\hat{b}x + 3.4$，则\n$\\begin{bmatrix} x & 1 & 2 & 3 & 4 & 5 \\\\ y & 5 & 9 & 10 & 11 & 15 \\end{bmatrix}$\n\n附：$r = \\frac{\\sum_{r=1}^{n} (x_i - \\overline{x})(y_i - \\overline{y})}{\\sqrt{\\sum_{r=1}^{n} (x_i - \\overline{x})^2} \\cdot \\sqrt{\\sum_{r=1}^{n} (y_i - \\overline{y})^2}} $，$\\hat{b} = \\frac{\\sum_{r=1}^{n} (x_i - \\overline{x})(y_i - \\overline{y})}{\\sum_{r=1}^{n} (x_i - \\overline{x})^2}$，$\\hat{a} = \\overline{y} - \\hat{b}\\overline{x}$.\\paren[BCD]"
+  }
+ },
+ {
+  "key": "模拟题/湖南长沙一中2026届高三月考四#10",
+  "why": "多选第10题只记了 'D'，解析结尾『故选 AC』：answer改AC并同步 \\paren[D]→\\paren[AC]。",
+  "src": "解析原文「…则四边形 $NF_1MF_2$ 的面积 $S=2S_{\\triangle MF_1F_2}=\\frac{4\\sqrt{7}}{3}$，故 D 不正确。故选 AC。」；复核：M=(a,b)、N=(−a,−b)、4a²=3b² ⇒ cos∠MA₂N=−1/2 ⇒ A✓；|MA₁|=2|MA₂| ⇒ C✓；e=√21/3≠7/3 ⇒ B✗；面积 4√7/3≠2√7/3 ⇒ D✗。",
+  "expect": {
+   "type": "multi_choice",
+   "answer": "D",
+   "stem": "一定正确的是",
+   "options": [
+    "双曲线 C 的离心率为"
+   ]
+  },
+  "set": {
+   "answer": "AC",
+   "stem": "已知双曲线 $C: \\frac{x^2}{a^2} - \\frac{y^2}{b^2} = 1$ ($a > 0, b > 0$) 的左、右焦点分别为 $F_1, F_2$，左、右顶点分别为 $A_1, A_2$，以 $F_1F_2$ 为直径的圆与双曲线 C 的一条渐近线交于 M, N 两点，点 M 位于第一象限，且 $\\angle A_1MA_2 = \\frac{\\pi}{3}$，则下列说法一定正确的是\\paren[AC]"
+  }
+ }
+]
