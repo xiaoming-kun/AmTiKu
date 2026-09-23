@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   ListFilter, SlidersHorizontal, X, Check, ChevronFirst, ChevronLast, ChevronRight,
-  ClipboardList, Rows3, Rows2, BookPlus, FileText,
+  ClipboardList, Rows3, Rows2, BookPlus, FileText, ChevronUp, ChevronDown,
   LayoutGrid, ScanLine, FolderTree, ChartColumn, Sparkles, NotebookPen, Trash2, History,
   Command as CommandIcon,
 } from 'lucide-react'
@@ -140,6 +140,30 @@ export default function App() {
     })
   }
   const removeFromPaper = (k: string) => setPaperMap((m) => { const n = new Map(m); n.delete(k); return n })
+
+  /** 在卷子里上下挪一道题。
+   *
+   *  **只在同一题型内部换位**：卷面是按题型分节的（`amti/paper.py` 固定按
+   *  单选 → 多选 → 填空 → 解答 分节，节内保持你给的顺序），
+   *  所以"把这道单选挪到填空那一节去"根本没有意义。
+   *  实现上就是把这题的 key 和同题型里相邻那题在 Map 里换个位置——
+   *  Map 的迭代顺序就是插入顺序，也就是卷面顺序。 */
+  const moveInPaper = (key: string, d: -1 | 1) => {
+    setPaperMap((m) => {
+      const q = m.get(key)
+      if (!q) return m
+      const arr = [...m.entries()]
+      const same = arr.filter(([, v]) => v.type === q.type)
+      const i = same.findIndex(([k]) => k === key)
+      const j = i + d
+      if (i < 0 || j < 0 || j >= same.length) return m   // 到顶/到底就不动
+      const next = [...arr]
+      const a = arr.indexOf(same[i])
+      const b = arr.indexOf(same[j])
+      ;[next[a], next[b]] = [next[b], next[a]]
+      return new Map(next)
+    })
+  }
   /** 带撤销的移出（卷子视图里点 ✕ 走这条） */
   const removeFromPaperUndo = (k: string) => {
     const it = paperMap.get(k)
@@ -187,6 +211,15 @@ export default function App() {
   }
   // 手动改筛选（不是从详情点考点跳过来）就把那句说明收掉
   useEffect(() => { setFindNote('') }, [q, has, missing, diffs, years])
+
+  /** **卷子空了就别停在卷子视图上。**
+   *
+   *  清空、或撤销掉最后一次加入之后，原来会留在「当前卷子 0 题」那一屏：
+   *  整屏只剩一句"卷子还是空的"，而表头还写着「题库 20,934 道」——
+   *  看着跟"筛不出题"一模一样（用户就是这么被绕进去的）。 */
+  useEffect(() => {
+    if (view === 'paper' && !paper.length) setView('list')
+  }, [view, paper.length])
 
   /** 删一道题：走 `/api/questions/{key}/trash`，**移进回收站不是真删**。 */
   const [deleteAsk, setDeleteAsk] = useState<
@@ -239,6 +272,21 @@ export default function App() {
     }
   }
 
+  /** 切到「当前卷子」这个视图。
+   *
+   *  **空卷子不切过去**：不然整屏变成"当前卷子 0 题"，而表头还写着
+   *  「题库 48 道」——看着就像"筛不出题"（用户就是这么被绕进去的）。
+   *  空的时候留在列表上，用一条提示说清楚。 */
+  const gotoPaper = () => {
+    setTab('workbench')
+    if (!paper.length) {
+      setView('list')
+      toast('卷子还是空的 —— 先在题目卡片上点「加入组卷」', { tone: 'info' })
+      return
+    }
+    setView('paper')
+  }
+
   /* ── 导航动作 ── */
   const navActive: NavKey =
     tab === 'stats' ? 'stats' : tab === 'trash' ? 'trash' : tab === 'changes' ? 'changes'
@@ -256,7 +304,7 @@ export default function App() {
       return
     }
     // 「试卷管理」不是另一个页面，就是题目栏切到卷子那个视图
-    if (k === 'paper') { setTab('workbench'); setView('paper'); return }
+    if (k === 'paper') { gotoPaper(); return }
     setTab(k as Tab)
   }
 
@@ -377,7 +425,7 @@ export default function App() {
       { id: 'view:list', label: '切到题目列表', group: '看', icon: <ListFilter size={13} />,
         keywords: 'timu list 题目 列表', run: () => { setTab('workbench'); setView('list') } },
       { id: 'view:paper', label: '切到当前卷子', group: '看', icon: <ClipboardList size={13} />,
-        keywords: 'juanzi paper 卷子', run: () => { setTab('workbench'); setView('paper') } },
+        keywords: 'juanzi paper 卷子', run: gotoPaper },
       { id: 'view:filter', label: showFilter ? '收起筛选面板' : '展开筛选面板', group: '看',
         icon: <ListFilter size={13} />, keywords: 'shaixuan filter 筛选 考点',
         run: () => setShowFilter(!showFilter) },
@@ -406,7 +454,7 @@ export default function App() {
       out.push(
         { id: 'act:paper-view', label: `看卷子（${paper.length} 题 · ${paperScore} 分）`, group: '做',
           icon: <ClipboardList size={13} />, keywords: 'juanzi 卷子 查看',
-          run: () => { setTab('workbench'); setView('paper') } },
+          run: gotoPaper },
         { id: 'act:paper-clear', label: `清空卷子（${paper.length} 题）`, group: '做',
           icon: <Trash2 size={13} />, keywords: 'qingkong 清空 卷子', run: clearPaper },
       )
@@ -501,7 +549,7 @@ export default function App() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar q={q} onQ={setQ} inputRef={searchRef} base={base} paperCount={paper.length}
-            onPaper={() => { setTab('workbench'); setView('paper') }}
+            onPaper={gotoPaper}
             onExport={() => setShowExport(true)}
             onIngest={() => setShowIngest(true)} onReload={() => setReload((v) => v + 1)} />
 
@@ -671,7 +719,7 @@ export default function App() {
                 {/* ── 卷子条 ──
                     卷子不再单独占一栏，就在这儿：**一条计数 + 点开切视图**。
                     有题时常驻（提醒"你手上已经有几道了"）；空卷子不占地方。 */}
-                {(paper.length > 0 || view === 'paper') && (
+                {paper.length > 0 && (
                   <div
                     className={`flex shrink-0 items-center gap-2.5 border-b px-4 py-2
                                 text-[12.5px] ${view === 'paper'
@@ -696,7 +744,9 @@ export default function App() {
                         有解析 {answered}/{paper.length}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
-                        {view === 'paper' ? '在下面调整顺序、删题，或直接导出' : '点这里查看卷子'}
+                        {view === 'paper'
+                          ? '每题右侧 ▲▼ 在题型内调顺序，✕ 移出，或直接导出'
+                          : '点这里查看卷子'}
                       </span>
                       <span className="flex shrink-0 items-center gap-1 font-medium text-brand-ink">
                         {view === 'paper' ? '返回题目' : '查看卷子'}
@@ -727,7 +777,8 @@ export default function App() {
                 {view === 'paper' ? (
                   <PaperPanel paper={paper}
                     onOpen={(it) => { setSel(it); setDOpen(true) }}
-                    onRemove={removeFromPaperUndo} />
+                    onRemove={removeFromPaperUndo} onMove={moveInPaper}
+                    onBack={() => setView('list')} />
 
                 ) : (<>
                 {/* 用 `key` 把这一层绑到「页码 + 筛选条件」上：变了就整块重挂载，
@@ -952,8 +1003,9 @@ function ListSkeleton() {
 
 /** 卷子面板：挑好的题 + 「齐不齐」的体检 + 导出按钮。
  *  体检必须在**导出前**就看得见 —— 用户的原话是「导出的才发现没解析」。 */
-function PaperPanel({ paper, onOpen, onRemove }: {
+function PaperPanel({ paper, onOpen, onRemove, onMove, onBack }: {
   paper: Q[]; onOpen: (q: Q) => void; onRemove: (k: string) => void
+  onMove: (k: string, d: -1 | 1) => void; onBack: () => void
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -962,11 +1014,18 @@ function PaperPanel({ paper, onOpen, onRemove }: {
           <SlidersHorizontal size={22} className="text-border-strong" />
           <span className="text-[13px]">卷子还是空的</span>
           <span className="text-[11.5px] leading-relaxed">
-            回到题目列表，在卡片上点 <b className="text-brand-ink">加入组卷</b>，
+            在题目列表的卡片上点 <b className="text-brand-ink">加入组卷</b>，
             或按住 <kbd className="rounded border border-border bg-muted px-1">↑</kbd>
             <kbd className="ml-0.5 rounded border border-border bg-muted px-1">↓</kbd> 选好再按
             <kbd className="mx-0.5 rounded border border-border bg-muted px-1">Enter</kbd>
           </span>
+          {/* 正常走不到这儿（空卷子会被 gotoPaper / 那个 effect 拦在列表上），
+              留个出口以防万一 */}
+          <button onClick={onBack}
+            className="press mt-1 rounded-lg bg-brand px-3.5 py-2 text-[12.5px] font-medium
+                       text-white shadow-[var(--shadow-brand)] hover:brightness-105">
+            返回题目列表
+          </button>
         </div>
       ) : (<>
         {/* 题量/分数/有解析那一行**搬到卷子条上了**（题目栏顶部那条）——
@@ -1001,6 +1060,20 @@ function PaperPanel({ paper, onOpen, onRemove }: {
                         </span>
                       )}
                       <Flags flags={it.flags} />
+                      {/* 顺序：卷子是按题型分节的，所以只能**在节内**上下挪。
+                          到顶/到底时按钮置灰，不做无声无息的无操作。 */}
+                      <span className="flex shrink-0 items-center gap-0.5">
+                        <button onClick={(e) => { e.stopPropagation(); onMove(it.key, -1) }}
+                          disabled={i === 0} title="在这一节里上移"
+                          className="icon-btn h-5 w-5 disabled:opacity-25 disabled:hover:bg-transparent">
+                          <ChevronUp size={13} />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); onMove(it.key, 1) }}
+                          disabled={i === group.length - 1} title="在这一节里下移"
+                          className="icon-btn h-5 w-5 disabled:opacity-25 disabled:hover:bg-transparent">
+                          <ChevronDown size={13} />
+                        </button>
+                      </span>
                       <button onClick={(e) => { e.stopPropagation(); onRemove(it.key) }}
                         className="icon-btn h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100"
                         title="从卷子移除">
