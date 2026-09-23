@@ -219,7 +219,6 @@ body {
 @keyframes fade-in    { from { opacity: 0; }                              to { opacity: 1; } }
 @keyframes pop-in     { from { opacity: 0; transform: scale(.965); }      to { opacity: 1; transform: none; } }
 @keyframes slide-in-r { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
-@keyframes slide-in-l { from { opacity: 0; transform: translateX(-12px);} to { opacity: 1; transform: none; } }
 @keyframes slide-down { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes spin       { to { transform: rotate(360deg); } }
 @keyframes shimmer    { from { background-position: -200% 0; } to { background-position: 200% 0; } }
@@ -240,7 +239,6 @@ body {
 .anim-fade-in  { animation: fade-in 140ms ease-out both; }
 .anim-pop      { animation: pop-in 150ms var(--ease-soft) both; }
 .anim-slide-r  { animation: slide-in-r 210ms var(--ease-soft) both; }
-.anim-slide-l  { animation: slide-in-l 210ms var(--ease-soft) both; }
 .anim-slide-d  { animation: slide-down 200ms var(--ease-soft) both; }
 .anim-pulse    { animation: pulse-soft 1.6s ease-in-out infinite; }
 .anim-bump     { animation: bump 320ms var(--ease-spring) both; }
@@ -324,14 +322,9 @@ body {
 }
 .nav-item[data-on='1']::before { height: 18px; }
 
-/* 滚动区顶部/底部渐隐：暗示"还有更多"，比硬切一刀好 */
-.fade-y {
-  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
-}
-
 /* 尊重系统的「减少动态效果」——这不是可选项，是无障碍要求 */
 @media (prefers-reduced-motion: reduce) {
-  .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r, .anim-slide-l,
+  .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r,
   .anim-slide-d, .anim-pulse, .anim-bump, .anim-flash,
   .anim-stagger > *, .skeleton, .progress-track::after, .pop, .pop-c, .reveal {
     animation: none !important;
