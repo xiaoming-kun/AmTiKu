@@ -154,7 +154,14 @@ def main():
         L.append("- #%s %s（试卷 %d 个文件、答案 %d 个文件）"
                  % (x["序号"], x["卷名"], len(x["试卷"]), len(x["答案"])))
     if not nxt:
-        L.append("- todo 已清空，接下来轮到 `待重解析-曾判撞车` 那批")
+        rows = [x for x in sorted(q, key=lambda x: x["序号"])
+                if x["状态"] == "待重解析-曾判撞车"][:5]
+        if rows:
+            L.append("- todo 已清空，接下来轮到 `待重解析-曾判撞车` 那批 %d 场（从 #%s 起）"
+                     % (again, rows[0]["序号"]))
+        else:
+            L.append("- todo 与 `待重解析-曾判撞车` 均已清空 ⇒ **解析线没有可认领的场**，"
+                     "剩下的是入库与人工裁决，等用户批准")
     L.append("")
 
     L.append("## 并发锁\n")
