@@ -5,6 +5,7 @@ r"""录题入库：成品 JSON → Question → preview → commit（走 ingest 
 不带 --commit 只干跑。preview 有 errors / problems / missing_images 时**拒绝入库**。
 `--force` = 库里已有同 key 且解析非空时，以手里这份为准（补录解析用）。
 """
+import datetime as _dt
 import json, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -30,6 +31,50 @@ def derive_year(label):
     return int(m.group()) if m else None
 
 
+SOLVED_BY = "qoder/agent"      # 与本地求解线的 "qwen/qwen3.8-27b" 区分开
+
+
+def merge_sidecar(path, recs):
+    r"""把同名的 `.解答.json`（模型补写的解析）并进成品，**只填空、不覆盖原卷解析**。
+
+    为什么需要：补解析那条线产出的是 sidecar（`输出_v2/<序号>_<卷名>.解答.json`），
+    而本脚本原先只读 `.成品.json` ⇒ 3099 道补好的解析**一句都进不了库**，白躺在盘上。
+
+    三条硬规矩：
+    1. **只填 `解析` 为空或等于「解析无」的题**。原卷给了详解的一律不盖
+       （sidecar 是模型写的，原卷是印刷的，可信度不对等）。
+    2. **不取 sidecar 的 `答案`**。它是从成品抄过去的，拿它当判据是循环论证
+       （实测「答案 100% 相同」就是这么来的，不代表答对率）。
+    3. 题号对不上、或成品里根本没这道题的，**跳过并报告**，不猜。
+    """
+    sib = Path(str(path).replace(".成品.json", ".解答.json"))
+    if not sib.exists():
+        return 0, [], []
+    try:
+        sol = json.loads(sib.read_text(encoding="utf-8"))
+    except Exception as e:
+        return 0, [], ["sidecar 读不了：%s" % e]
+    by_no = {}
+    for r in sol:
+        by_no.setdefault(r.get("题号"), r)
+    have = {r.get("题号") for r in recs}
+    filled, orphan = [], []
+    for r in recs:
+        cur = (r.get("解析") or "").strip()
+        if cur and cur != "解析无":
+            continue
+        g = by_no.get(r.get("题号"))
+        if not g:
+            continue
+        txt = (g.get("解析") or "").strip()
+        if not txt:
+            continue
+        r["解析"] = txt          # 只写解析，不动 rec 的键集合（成品固定 9 键）
+        filled.append(r["题号"])
+    orphan = sorted(set(by_no) - have)
+    return len(filled), filled, orphan
+
+
 def main(path, do_commit, force=False):
     recs = json.loads(Path(path).read_text(encoding="utf-8"))
     label = re_label(path)
@@ -38,7 +83,19 @@ def main(path, do_commit, force=False):
     if fixed:
         Path(path).write_text(json.dumps(recs, ensure_ascii=False, indent=1), encoding="utf-8")
         print("修掉相邻数学段拼成 `$$` 的写法 %d 处（会让 conform 的数学段配对错位）" % fixed)
+    n_fill, filled, orphan = merge_sidecar(path, recs)
+    if n_fill:
+        print("并入 sidecar 模型解答 %d 道（题号 %s）" % (n_fill, filled))
+    if orphan:
+        print("⚠️ sidecar 里有 %d 个题号在成品中不存在，已跳过：%s" % (len(orphan), orphan))
     qs = [R2.rec_to_question(r, label) for r in recs]
+    # 模型补的解析要在库里可辨识：meta.solved_by 不参与指纹（不改 content_hash），
+    # 界面 Detail.tsx 会据此挂「AI 求解」角标，供人工复核。
+    filled_set = set(filled)
+    for r, q in zip(recs, qs):
+        if r.get("题号") in filled_set:
+            q.meta["solved_by"] = SOLVED_BY
+            q.meta["solved_at"] = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     tex = "\n\n".join(store.render_question(q) for q in qs)
     pv = ingest.preview(tex, book="模拟题", label=label, update_force=force)
     print("count=%s dup=%s" % (pv["count"], pv["dup"]))
