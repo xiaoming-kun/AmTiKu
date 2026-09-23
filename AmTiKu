@@ -15,7 +15,28 @@
 # 拼音也认（qidong / tingzhi / zhuangtai / wangye / qiu jie / yanshou / qu），
 # 省得切输入法。
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"   # 脚本所在目录（不再写死个人路径）
+# ── 找到题库目录 ──────────────────────────────────────────────
+#
+# **必须先把软链走到底，再取目录。**
+#
+# 这个脚本装在 PATH 上时是这么用的：
+#     ~/.local/bin/AmTiKu  ->  题库目录/AmTiKu   （软链）
+# 此时 `$0` 是 `/Users/xxx/.local/bin/AmTiKu`，`dirname "$0"` 得到的是
+# `.local/bin`，于是下面的 `./启动.sh` 必然报「No such file or directory」。
+# 而这个脚本的全部意义就是「在任何目录都能用」——所以这里顺着软链走到底。
+#
+# （macOS 自带 bash 3.2 没有 `readlink -f`，只能自己循环；
+#   顺带把软链写成相对路径的情况也处理了。）
+SELF="$0"
+while [ -L "$SELF" ]; do
+  link_dir="$(cd "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  case "$SELF" in
+    /*) ;;                          # 绝对路径软链，直接用
+    *)  SELF="$link_dir/$SELF" ;;   # 相对路径软链，补上前缀
+  esac
+done
+ROOT="$(cd "$(dirname "$SELF")" && pwd)"
 PORT=8899
 
 cd "$ROOT" 2>/dev/null || { echo "题库目录不见了：$ROOT"; exit 1; }
