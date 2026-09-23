@@ -14,7 +14,7 @@
  *     展开才去拉全量（答案与解析的块 IR 列表接口不带，见 server.py 的说明）
  */
 import { useEffect, useState } from 'react'
-import { Plus, BookPlus, Check, ChevronDown, Flame, AlertTriangle, Loader2 } from 'lucide-react'
+import { Plus, BookPlus, Check, ChevronDown, Flame, TriangleAlert, Loader2, Maximize2 } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { renderBlocks } from '@/lib/render'
 import { api, reportErr } from '@/lib/api'
@@ -34,11 +34,12 @@ function answerPreview(ans: string): string {
 
 export default function Card({
   q, active, inPaper, inHandout, selectMode, checked,
-  onOpen, onAdd, onAddHandout, onToggle,
+  onOpen, onDetail, onAdd, onAddHandout, onToggle,
 }: {
   q: Q; active: boolean; inPaper: boolean; inHandout: boolean
   selectMode: boolean; checked: boolean
-  onOpen: () => void; onAdd: () => void; onAddHandout: () => void; onToggle: () => void
+  onOpen: () => void; onDetail: () => void
+  onAdd: () => void; onAddHandout: () => void; onToggle: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [full, setFull] = useState<Q | null>(null)
@@ -111,6 +112,15 @@ export default function Card({
         {/* 动作按钮：**常驻可见**，不藏到悬停里 ——
             选定模式默认开着，藏起来的话老师根本找不到这两个入口（实测踩过）。 */}
         <div className="flex shrink-0 items-center gap-1.5">
+          {/* 「详情」是**唯一一个明确打开详情抽屉的入口**。
+              卡片本身点一下是"移光标 / 勾选"，多选模式下不该把抽屉也拽出来；
+              要看全文、改答案、改考点，就点这颗。 */}
+          <button onClick={(e) => { e.stopPropagation(); onDetail() }}
+            title="打开详情（看全文 / 改答案 / 改考点 / 源码）"
+            className="press icon-btn h-[26px] w-[26px] shrink-0 border border-border
+                       text-ink-faint hover:border-brand-line hover:text-brand-ink">
+            <Maximize2 size={12} />
+          </button>
           <button onClick={(e) => { e.stopPropagation(); onAddHandout() }}
             title={inHandout ? '已在讲义里' : '加入讲义'}
             className={`press flex h-[26px] items-center gap-1 rounded-lg border px-2 text-[11.5px]
@@ -148,7 +158,7 @@ export default function Card({
         {q.flags['存疑'] && (
           <span className="inline-flex items-center gap-0.5 rounded-md bg-warn-soft px-1.5 py-[1px]
                            text-[10.5px] font-medium text-warn">
-            <AlertTriangle size={10} />存疑
+            <TriangleAlert size={10} />存疑
           </span>
         )}
       </div>

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  PanelRightOpen, PanelRightClose, ListFilter, SlidersHorizontal, X, Check,
-  ChevronFirst, ChevronLast,
+  ListFilter, SlidersHorizontal, X, Check, ChevronFirst, ChevronLast, ChevronRight,
+  ClipboardList,
 } from 'lucide-react'
 import type { Q, Base } from '@/lib/types'
 import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
 import { SCORE, SECTION_LABEL } from '@/lib/paper'
 import { DIFF_STARS } from '@/lib/display'
 import { useQuestionList } from '@/lib/useQuestionList'
-import { Flags, Grip, useWidth, useFlag } from '@/app/ui'
+import { Flags, useFlag } from '@/app/ui'
 import QuestionCard from '@/app/QuestionCard'
 import { Trash, DeleteModal } from '@/app/Trash'
 import { Detail, TexSource } from '@/app/Detail'
@@ -21,9 +21,13 @@ import TopBar from '@/app/TopBar'
 import FilterPanel from '@/app/FilterPanel'
 import HelpButton from '@/app/HelpButton'
 
-/** 主区里能开的东西。`detail/tex/paper` 是**同一屏的三块内容**（列表 + 右侧面板），
- *  其余是整屏页面 —— 这个区分决定了布局怎么摆。 */
-type Tab = 'detail' | 'tex' | 'paper' | 'handout' | 'stats' | 'changes' | 'trash'
+/** 整屏页面。
+ *
+ *  **没有「第三栏」了**——内容区只有「筛选 | 题目」两栏：
+ *  · 题目列表和当前卷子是**同一栏里的两个视图**（`view` 切换）；
+ *  · 题目详情 / LaTeX 源码是**浮在内容区上的抽屉**（`dOpen`，按需开、随时关）。
+ *  所以这里只剩「整屏页面」这一种 tab。 */
+type Tab = 'workbench' | 'handout' | 'stats' | 'changes' | 'trash'
 const FULL_PAGE: Tab[] = ['stats', 'changes', 'trash']
 
 export default function App() {
@@ -38,23 +42,24 @@ export default function App() {
   } = L
 
   const [base, setBase] = useState<Base | null>(null)
-  const [tab, setTab] = useState<Tab>('detail')
+  const [tab, setTab] = useState<Tab>('workbench')
   const [showExport, setShowExport] = useState(false)
   const [showIngest, setShowIngest] = useState(false)
   const [handoutN, setHandoutN] = useState(0)
   const [globalErr, setGlobalErr] = useState('')
 
-  // 三块可收起的区域。宽度/开合都记忆 —— 老师会固定一种摆法，
-  // 不该每次打开都回到默认（尤其是把详情收起来用全宽列表的人）。
-  //
-  // **首次打开的默认值按窗口宽度定**：1600 的屏三栏并排绰绰有余，
-  // 1280 的笔记本再并排就只剩三百多像素给列表了——那种宽度下列表
-  // 一屏只放得下两道题，还不如默认把右侧收起来。
+  /** 题目栏里现在显示哪一个视图：题目列表 or 当前卷子。
+   *  两者**共用同一栏**（不是两个栏目），所以切换不改变任何宽度。 */
+  const [view, setView] = useState<'list' | 'paper'>('list')
+  /** 详情抽屉开着没有。它浮在内容区上（不占栏），Esc / ✕ 关掉。 */
+  const [dOpen, setDOpen] = useState(false)
+  const [dTab, setDTab] = useState<'detail' | 'tex'>('detail')
+
+  // 可收起的区域。开合都记忆 —— 老师会固定一种摆法，不该每次打开都回到默认。
+  // 首次打开按窗口宽度定：窄屏默认收起筛选面板，把宽度让给题目。
   const vw = typeof window === 'undefined' ? 1600 : window.innerWidth
   const [navShut, setNavShut] = useState(false)
   const [showFilter, setShowFilter] = useFlag('amtiku.showFilter', vw >= 1180)
-  const [showSide, setShowSide] = useFlag('amtiku.showSide', vw >= 1500)
-  const [wSide, setWSide] = useWidth('amtiku.w.side4', 440, 340, 820)
   const [filterHot, setFilterHot] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -95,13 +100,22 @@ export default function App() {
   const paperScore = paper.reduce((s, x) => s + (SCORE[x.type] || 0), 0)
   const answered = paper.filter((x) => x.flags['解析']).length
   const [sureClear, setSureClear] = useState(false)
+  /** 往卷子里加东西时让卷子那条计数**跳一下**。
+   *
+   *  加完不再自动跳到卷子视图了（批量挑题时每加一次就切走，等于逼人再切回来），
+   *  所以得有个轻量回执告诉用户"收到了"。这就是那个回执。 */
+  const [paperBump, setPaperBump] = useState(0)
+  const bumpPaper = () => {
+    setPaperBump((v) => v + 1)
+    setTimeout(() => setPaperBump(0), 400)
+  }
 
   // 导出对象**只认卷子**，默认为空。
   // 早先卷子一空就自动拿「当前筛选结果」顶上，于是刚进页面就显示
   // 「导出 38」——用户还没说要导出什么，程序先替他决定了。不对。
   const exportFrom = `卷子（${paper.length} 题）`
 
-  const addToPaper = (it: Q) => setPaperMap((m) => new Map(m).set(it.key, it))
+  const addToPaper = (it: Q) => { setPaperMap((m) => new Map(m).set(it.key, it)); bumpPaper() }
   const removeFromPaper = (k: string) => setPaperMap((m) => { const n = new Map(m); n.delete(k); return n })
   const addOneToHandout = (it: Q) => setHandoutMap((m) => new Map(m).set(it.key, it))
 
@@ -137,7 +151,10 @@ export default function App() {
       for (const x of items) if (checked.has(x.key)) n.set(x.key, x)
       return n
     })
-    exitSelect(); setTab('paper')
+    exitSelect()
+    // **加完不跳走**：批量挑题时每加一次就切视图，等于逼人再切回来。
+    // 卷子那条计数会自己跳一下（见下面的 bump），足够说明"收到了"。
+    bumpPaper()
   }
   const addCheckedToHandout = () => {
     setHandoutMap((m) => {
@@ -151,7 +168,8 @@ export default function App() {
   /* ── 导航动作 ── */
   const navActive: NavKey =
     tab === 'stats' ? 'stats' : tab === 'trash' ? 'trash' : tab === 'changes' ? 'changes'
-    : tab === 'paper' ? 'paper' : tab === 'handout' ? 'handout' : 'workbench'
+    : tab === 'handout' ? 'handout'
+    : view === 'paper' ? 'paper' : 'workbench'
 
   const pick = (k: NavKey) => {
     if (k === 'ingest') { setShowIngest(true); return }
@@ -159,10 +177,12 @@ export default function App() {
     if (k === 'points') {
       // 「知识点」= 把筛选面板亮出来并闪一下，而不是切走 ——
       // 它本来就在这一屏上，切页面反而多一次往返。
-      setShowFilter(true); setTab('detail')
+      setShowFilter(true); setTab('workbench')
       setFilterHot(true); setTimeout(() => setFilterHot(false), 900)
       return
     }
+    // 「试卷管理」不是另一个页面，就是题目栏切到卷子那个视图
+    if (k === 'paper') { setTab('workbench'); setView('paper'); return }
     setTab(k as Tab)
   }
 
@@ -207,7 +227,7 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault(); setShowExport(true); return
       }
-      if (e.key === 'Escape') { setShowExport(false); setShowIngest(false); return }
+      if (e.key === 'Escape') { setDOpen(false); setShowExport(false); setShowIngest(false); return }
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (typing()) return
       // 有弹层/全屏编辑器时，单键和方向键都让给它 ——
@@ -225,21 +245,17 @@ export default function App() {
         const step = e.key === 'ArrowDown' ? 1 : -1
         const next = cur < 0 ? 0 : Math.max(0, Math.min(items.length - 1, cur + step))
         setSel(items[next])
-        setTab('detail')
         listRef.current
           ?.querySelectorAll('article')[next]
           ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
         return
       }
-      if (e.key === 'Enter' && sel) { e.preventDefault(); addToPaper(sel); setTab('paper') }
+      if (e.key === 'Enter' && sel) { e.preventDefault(); addToPaper(sel) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, sel, setSel, listRef, showExport, showIngest, tab])
-
-  const filterWanted = !FULL_PAGE.includes(tab)
-  const sideWanted = filterWanted && (tab === 'paper' || tab === 'detail' || tab === 'tex')
+  }, [items, sel, setSel, listRef, showExport, showIngest, tab, dOpen])
 
   /** 列表头那句「现在看的是哪一批题」。
    *  写成函数而不是嵌套三元表达式：这东西有六层，塞在 JSX 里没人读得懂。 */
@@ -282,7 +298,8 @@ export default function App() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar q={q} onQ={setQ} inputRef={searchRef} base={base} paperCount={paper.length}
-            onPaper={() => setTab('paper')} onExport={() => setShowExport(true)}
+            onPaper={() => { setTab('workbench'); setView('paper') }}
+            onExport={() => setShowExport(true)}
             onIngest={() => setShowIngest(true)} onReload={() => setReload((v) => v + 1)} />
 
           {FULL_PAGE.includes(tab) ? (
@@ -292,7 +309,7 @@ export default function App() {
                 : <Changes />}
             </main>
           ) : (
-            <div className="flex min-h-0 flex-1">
+            <div className="relative flex min-h-0 flex-1">
               {/* ── 筛选面板 ──
                   按 K（知识点）时给一道粉色高亮**从面板内侧亮一下**：
                   面板自己不透明，所以闪光要画在它上面的一层覆盖物里，
@@ -307,9 +324,10 @@ export default function App() {
                 </div>
               )}
 
-              {/* ── 题目列表（永远占满剩下的宽度） ── */}
+              {/* ── 题目栏：**题目列表和卷子是同一栏里的两个视图** ──
+                  内容区到这儿就结束了（没有第三栏）。 */}
               <section className="flex min-w-0 flex-1 flex-col">
-                {/* 列表头：**一眼看出"现在看的是哪一批题"** + 三个视图开关 */}
+                {/* 列表头：**一眼看出"现在看的是哪一批题"** */}
                 <div className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border
                                 bg-surface px-4">
                   <h1 className="shrink-0 text-[19px] font-semibold tracking-tight">题库</h1>
@@ -332,6 +350,8 @@ export default function App() {
                       )}
                     </button>
                   )}
+                  {/* 每页 / 多选只对题目列表有意义，切到卷子视图就收起来 */}
+                  {view === 'list' && (<>
                   <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}
                     title="每页显示多少道"
                     className="press h-[30px] shrink-0 rounded-lg border border-border bg-surface
@@ -356,14 +376,69 @@ export default function App() {
                       <Check size={13} strokeWidth={2.6} />多选
                     </button>
                   )}
-                  <button onClick={() => setShowSide((v) => !v)} title={showSide ? '收起右侧面板' : '展开右侧面板'}
-                    className="icon-btn h-[30px] w-[30px] shrink-0 border border-border">
-                    {showSide ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-                  </button>
+                  </>)}
                 </div>
 
+                {/* ── 卷子条 ──
+                    卷子不再单独占一栏，就在这儿：**一条计数 + 点开切视图**。
+                    有题时常驻（提醒"你手上已经有几道了"）；空卷子不占地方。 */}
+                {(paper.length > 0 || view === 'paper') && (
+                  <div
+                    className={`flex shrink-0 items-center gap-2.5 border-b px-4 py-2
+                                text-[12.5px] ${view === 'paper'
+                      ? 'border-brand-line bg-brand-soft/60'
+                      : 'border-border bg-surface-2'}`}>
+                    <button onClick={() => setView(view === 'paper' ? 'list' : 'paper')}
+                      className="press flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                      <ClipboardList size={14}
+                        className={view === 'paper' ? 'shrink-0 text-brand' : 'shrink-0 text-ink-faint'} />
+                      {/* 只让**计数**跳一下就够。整条是满宽的，给它加 scale 动画
+                          会在动画那一帧里顶出视口 80px（还闪一下横向滚动条）。 */}
+                      <span key={paperBump} className="anim-bump inline-flex shrink-0 items-baseline gap-1">
+                        <span className={view === 'paper' ? 'font-semibold text-brand-ink' : 'font-semibold text-ink'}>
+                          {view === 'paper' ? '当前卷子' : '已选'}
+                        </span>
+                        <span className="tnum font-semibold text-brand-ink">{paper.length}</span>
+                        <span className={view === 'paper' ? 'text-brand-ink' : 'text-ink'}>题</span>
+                      </span>
+                      <span className="tnum shrink-0 text-ink-soft">{paperScore} 分</span>
+                      <span className={`tnum shrink-0 ${answered === paper.length && paper.length
+                        ? 'text-has' : 'text-warn'}`}>
+                        有解析 {answered}/{paper.length}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
+                        {view === 'paper' ? '在下面调整顺序、删题，或直接导出' : '点这里查看卷子'}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1 font-medium text-brand-ink">
+                        {view === 'paper' ? '返回题目' : '查看卷子'}
+                        {view === 'paper'
+                          ? <ChevronRight size={13} className="rotate-180" />
+                          : <ChevronRight size={13} />}
+                      </span>
+                    </button>
+                    {/* **一键清空**：挑卷子经常推倒重来，一道一道点 ✕ 太慢。
+                        但这是手工挑出来的，误点代价大——所以点第一下只是变成
+                        「确认清空？」，点第二下才真清，鼠标移开就自动收回。 */}
+                    <button
+                      onClick={() => { if (sureClear) { setSureClear(false); setPaperMap(new Map()) }
+                                       else setSureClear(true) }}
+                      onMouseLeave={() => setSureClear(false)}
+                      className={`press shrink-0 rounded-md border px-2 py-[3px] text-[11.5px]
+                                  transition-colors ${sureClear
+                        ? 'border-warn-line bg-warn-soft font-medium text-warn'
+                        : 'border-border bg-surface text-ink-faint hover:border-warn-line hover:text-warn'}`}>
+                      {sureClear ? '确认清空？' : '清空'}
+                    </button>
+                    <button onClick={() => setShowExport(true)}
+                      className="press shrink-0 rounded-md bg-brand px-2.5 py-[4px] text-[11.5px]
+                                 font-medium text-white shadow-[var(--shadow-brand)] hover:brightness-105">
+                      导出 ⌘↵
+                    </button>
+                  </div>
+                )}
+
                 {/* 多选工具条：勾了才出现，平时不占地方 */}
-                {selectMode && checked.size > 0 && (
+                {view === 'list' && selectMode && checked.size > 0 && (
                   <div className="anim-slide-d flex shrink-0 items-center gap-2 border-b border-brand-line
                                   bg-brand-soft/60 px-4 py-2 text-[12.5px]">
                     <span className="font-semibold text-brand-ink">
@@ -397,6 +472,13 @@ export default function App() {
                   </div>
                 )}
 
+                {/* ── 栏内主体：题目列表 / 当前卷子 ── */}
+                {view === 'paper' ? (
+                  <PaperPanel paper={paper}
+                    onOpen={(it) => { setSel(it); setDOpen(true) }}
+                    onRemove={removeFromPaper} />
+
+                ) : (<>
                 {/* 用 `key` 把这一层绑到「页码 + 筛选条件」上：变了就整块重挂载，
                     逐条入场动画才会重新跑一遍。不这么做的话，翻页时新内容会
                     "啪"地出现，看不出列表已经换了一批。 */}
@@ -409,7 +491,8 @@ export default function App() {
                     <QuestionCard key={it.key} q={it} active={sel?.key === it.key}
                       inPaper={paperMap.has(it.key)} inHandout={handoutMap.has(it.key)}
                       selectMode={selectMode} checked={checked.has(it.key)}
-                      onOpen={() => { setSel(it); if (!selectMode) setTab('detail') }}
+                      onOpen={() => { setSel(it); if (!selectMode) setDOpen(true) }}
+                      onDetail={() => { setSel(it); setDOpen(true) }}
                       onAdd={() => { addToPaper(it) }}
                       onAddHandout={() => addOneToHandout(it)}
                       onToggle={() => L.toggleCheck(it.key)} />
@@ -456,69 +539,64 @@ export default function App() {
                     </span>
                   </div>
                 )}
+                </>)}
               </section>
 
-              {/* ── 右侧面板：详情 / 源码 / 卷子 ── */}
-              {sideWanted && showSide && (
-                <>
-                  <Grip width={wSide} setWidth={setWSide} min={340} max={820} />
-                  <aside style={{ width: wSide }}
-                    className="anim-slide-r flex min-h-0 shrink-0 flex-col border-l border-border bg-surface">
-                    <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border px-3">
-                      {([['detail', '题目详情'], ['tex', 'LaTeX 源码'], ['paper', `卷子 ${paper.length}`]] as const)
-                        .map(([t, label]) => (
-                          <button key={t} onClick={() => setTab(t)}
-                            className={`press h-[30px] rounded-lg px-2.5 text-[12.5px] transition-colors ${
-                              tab === t ? 'bg-brand-soft font-semibold text-brand-ink'
-                                        : 'text-ink-soft hover:bg-muted'}`}>
-                            {label}
-                          </button>
-                        ))}
-                      <button onClick={() => setShowSide(false)} title="收起右侧面板"
-                        className="icon-btn ml-auto h-[30px] w-[30px]">
-                        <PanelRightClose size={15} />
+              {/* ── 详情抽屉 ──
+                  **浮在内容区上，不占栏**：看完就 Esc，题目栏的宽度一分不少。
+                  不做点击遮罩关闭 —— 组卷时经常要"点一道看一道"，
+                  抽屉开着还能继续点后面的卡片才顺手。 */}
+              {dOpen && (
+                <aside className="anim-slide-r absolute inset-y-0 right-0 z-30 flex
+                                  w-[min(620px,64%)] flex-col border-l border-border bg-surface
+                                  shadow-[var(--shadow-pop)]">
+                  <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border px-3">
+                    {([['detail', '题目详情'], ['tex', 'LaTeX 源码']] as const).map(([t, label]) => (
+                      <button key={t} onClick={() => setDTab(t)}
+                        className={`press h-[30px] rounded-lg px-2.5 text-[12.5px] transition-colors ${
+                          dTab === t ? 'bg-brand-soft font-semibold text-brand-ink'
+                                     : 'text-ink-soft hover:bg-muted'}`}>
+                        {label}
                       </button>
-                    </div>
+                    ))}
+                    <span className="min-w-0 flex-1" />
+                    <button onClick={() => setDOpen(false)} title="关闭（Esc）"
+                      className="icon-btn h-[30px] w-[30px]">
+                      <X size={16} />
+                    </button>
+                  </div>
 
-                    {tab === 'paper' ? (
-                      <PaperPanel paper={paper} score={paperScore} answered={answered}
-                        sureClear={sureClear}
-                        onSureClear={setSureClear}
-                        onOpen={(it) => { setSel(it); setTab('detail') }}
-                        onRemove={removeFromPaper}
-                        onClear={() => setPaperMap(new Map())}
-                        onExport={() => setShowExport(true)} />
-                    ) : tab === 'tex' ? (
-                      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                        {sel ? (<>
-                          <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
-                            <span className="text-[13px] font-semibold">
-                              {sel.point_titles?.[0] || sel.key}
-                            </span>
-                            <span className="text-[11.5px] text-ink-faint">
-                              {sel.type_label} · <code className="font-mono">{sel.key}</code>
-                            </span>
-                          </div>
-                          <TexSource qkey={sel.key} />
-                        </>) : (
-                          <div className="flex h-full items-center justify-center text-[13px] text-ink-faint">
-                            先在列表里选一道题
-                          </div>
-                        )}
+                  {!sel ? (
+                    <div className="flex flex-1 items-center justify-center text-[13px] text-ink-faint">
+                      先在列表里选一道题
+                    </div>
+                  ) : dTab === 'tex' ? (
+                    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                      <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
+                        <span className="text-[13px] font-semibold">
+                          {sel.point_titles?.[0] || sel.key}
+                        </span>
+                        <span className="text-[11.5px] text-ink-faint">
+                          {sel.type_label} · <code className="font-mono">{sel.key}</code>
+                        </span>
                       </div>
-                    ) : (
-                      <div key={sel?.key} className="anim-fade-in min-h-0 flex-1">
-                        <Detail q={full && full.key === sel?.key ? full : sel} facets={facets}
-                          onFindPoint={findPoint}
-                          onDeleteAsk={() => sel && setDeleteAsk({ qs: [sel] })}
-                          onSaved={(d) => {
-                            setSel(d)                              // 详情立刻反映新标签
-                            setItems((xs) => xs.map((x) => (x.key === d.key ? { ...x, ...d } : x)))
-                          }} />
-                      </div>
-                    )}
-                  </aside>
-                </>
+                      <TexSource qkey={sel.key} />
+                    </div>
+                  ) : (
+                    <div key={sel.key} className="anim-fade-in min-h-0 flex-1">
+                      <Detail q={full && full.key === sel.key ? full : sel} facets={facets}
+                        onFindPoint={(pid, title) => {
+                          // 点了考点就跳回列表去看那一批题：抽屉留着反而是挡路的
+                          findPoint(pid, title); setDOpen(false)
+                        }}
+                        onDeleteAsk={() => setDeleteAsk({ qs: [sel] })}
+                        onSaved={(d) => {
+                          setSel(d)                              // 详情立刻反映新标签
+                          setItems((xs) => xs.map((x) => (x.key === d.key ? { ...x, ...d } : x)))
+                        }} />
+                    </div>
+                  )}
+                </aside>
               )}
             </div>
           )}
@@ -560,7 +638,7 @@ export default function App() {
             <span className="ml-auto text-[11.5px] text-ink-faint">
               共 {handoutN} 份讲义
             </span>
-            <button onClick={() => setTab('detail')}
+            <button onClick={() => setTab('workbench')}
               className="press rounded-lg border border-border bg-surface px-3 py-1.5 text-[12.5px]
                          text-ink-soft hover:border-border-strong hover:text-ink">
               退出编辑
@@ -609,13 +687,9 @@ function ListSkeleton() {
 
 /** 卷子面板：挑好的题 + 「齐不齐」的体检 + 导出按钮。
  *  体检必须在**导出前**就看得见 —— 用户的原话是「导出的才发现没解析」。 */
-function PaperPanel({ paper, score, answered, sureClear, onSureClear, onOpen, onRemove, onClear, onExport }: {
-  paper: Q[]; score: number; answered: number; sureClear: boolean
-  onSureClear: (v: boolean) => void
-  onOpen: (q: Q) => void; onRemove: (k: string) => void
-  onClear: () => void; onExport: () => void
+function PaperPanel({ paper, onOpen, onRemove }: {
+  paper: Q[]; onOpen: (q: Q) => void; onRemove: (k: string) => void
 }) {
-  const all = answered === paper.length && paper.length > 0
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {paper.length === 0 ? (
@@ -623,46 +697,19 @@ function PaperPanel({ paper, score, answered, sureClear, onSureClear, onOpen, on
           <SlidersHorizontal size={22} className="text-border-strong" />
           <span className="text-[13px]">卷子还是空的</span>
           <span className="text-[11.5px] leading-relaxed">
-            在左边题目上点 <b className="text-brand-ink">加入组卷</b>，
+            回到题目列表，在卡片上点 <b className="text-brand-ink">加入组卷</b>，
             或按住 <kbd className="rounded border border-border bg-muted px-1">↑</kbd>
             <kbd className="ml-0.5 rounded border border-border bg-muted px-1">↓</kbd> 选好再按
             <kbd className="mx-0.5 rounded border border-border bg-muted px-1">Enter</kbd>
           </span>
         </div>
       ) : (<>
-        {/* 导出前就该看到这卷子齐不齐 */}
-        <div className="shrink-0 border-b border-border px-4 py-3">
-          <div className="flex items-baseline gap-3">
-            <span className="tnum text-[20px] font-semibold leading-none">{paper.length}</span>
-            <span className="text-[12px] text-ink-faint">题</span>
-            <span className="tnum text-[15px] font-semibold leading-none text-brand-ink">{score}</span>
-            <span className="text-[12px] text-ink-faint">分</span>
-            <span className={`ml-auto rounded-md px-1.5 py-[2px] text-[11.5px] font-medium ${
-              all ? 'bg-has-soft text-has' : 'bg-warn-soft text-warn'}`}>
-              有解析 {answered}/{paper.length}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-ink-faint">
-            {SECTION_LABEL.filter(([t]) => paper.some((x) => x.type === t)).map(([t, label]) => (
-              <span key={t} className="tnum">
-                {label.slice(0, 2)} <b className="text-ink-soft">{paper.filter((x) => x.type === t).length}</b>
-              </span>
-            ))}
-            {/* **一键清空**：挑卷子经常推倒重来，一道一道点 ✕ 太慢。
-                但这是手工挑出来的，误点代价大——所以第一次点只是变成
-                「确认清空？」，点第二下才真清，鼠标移开就收回。 */}
-            <button
-              onClick={() => { if (sureClear) { onSureClear(false); onClear() } else onSureClear(true) }}
-              onMouseLeave={() => onSureClear(false)}
-              className={`press ml-auto rounded-md border px-2 py-[3px] text-[11.5px] transition-colors ${
-                sureClear ? 'border-warn-line bg-warn-soft font-medium text-warn'
-                          : 'border-border text-ink-faint hover:border-warn-line hover:text-warn'}`}>
-              {sureClear ? '确认清空？' : '清空'}
-            </button>
-          </div>
-        </div>
-
+        {/* 题量/分数/有解析那一行**搬到卷子条上了**（题目栏顶部那条）——
+            两处都写一遍是重复，而且两处数字还可能不一致。 */}
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+          {/* 限宽：题目栏可能很宽，行拉满时标题和右侧的难度星会离成两截。
+              840px 是「一眼能扫完一行」的宽度。 */}
+          <div className="mx-auto w-full max-w-[840px] space-y-3">
           {SECTION_LABEL.map(([t, label]) => {
             const group = paper.filter((x) => x.type === t)
             if (!group.length) return null
@@ -700,16 +747,7 @@ function PaperPanel({ paper, score, answered, sureClear, onSureClear, onOpen, on
               </div>
             )
           })}
-        </div>
-
-        <div className="shrink-0 border-t border-border p-3">
-          <button onClick={onExport}
-            className="press flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-2.5
-                       text-[13px] font-semibold text-white shadow-[var(--shadow-brand)]
-                       transition-[filter] hover:brightness-105">
-            导出这份卷子
-            <kbd className="rounded border border-white/30 px-1 text-[10.5px] font-normal opacity-80">⌘↵</kbd>
-          </button>
+          </div>
         </div>
       </>)}
     </div>
