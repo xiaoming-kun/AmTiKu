@@ -20,6 +20,7 @@ const GROUPS: { title: string; rows: [string, string][] }[] = [
   {
     title: '找题与组卷',
     rows: [
+      ['⌘ K', '命令面板：什么都能干（推荐先记这个）'],
       ['/', '聚焦顶栏搜索框'],
       ['↑ ↓', '在题目列表里上下移动'],
       ['Enter', '把当前这道题加进卷子'],
@@ -38,6 +39,14 @@ const GROUPS: { title: string; rows: [string, string][] }[] = [
 export default function HelpButton() {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
+
+  // 命令面板里那条「查看键盘快捷键」要能把它打开。
+  // 用自定义事件解耦：CommandPalette 不必知道 HelpButton 的存在。
+  useEffect(() => {
+    const open = () => setOpen(true)
+    window.addEventListener('amtiku:help', open)
+    return () => window.removeEventListener('amtiku:help', open)
+  }, [])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {

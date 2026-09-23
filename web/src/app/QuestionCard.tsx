@@ -33,11 +33,14 @@ function answerPreview(ans: string): string {
 }
 
 export default function Card({
-  q, active, inPaper, inHandout, selectMode, checked,
+  q, active, inPaper, inHandout, selectMode, checked, dense,
   onOpen, onDetail, onAdd, onAddHandout, onToggle,
 }: {
   q: Q; active: boolean; inPaper: boolean; inHandout: boolean
   selectMode: boolean; checked: boolean
+  /** 紧凑模式：题干一行、不要选项预览、内边距收小。
+   *  挑题时要的是"一屏多扫几道"，读题时才需要宽松（Notion/Linear 同款开关）。 */
+  dense?: boolean
   onOpen: () => void; onDetail: () => void
   onAdd: () => void; onAddHandout: () => void; onToggle: () => void
 }) {
@@ -76,6 +79,8 @@ export default function Card({
   return (
     <article
       onClick={pick}
+      /* 键盘光标停在这一张上时，屏幕阅读器也该知道（↑↓ 移的是它，不是 DOM 焦点） */
+      aria-current={active ? 'true' : undefined}
       className={`card-lift group cursor-pointer overflow-hidden rounded-[var(--radius-card)]
                   border bg-surface shadow-[var(--shadow-card)] ${
         checked ? 'border-brand-line ring-2 ring-brand/25'
@@ -83,7 +88,7 @@ export default function Card({
                  : 'border-border'}`}>
 
       {/* ── ① 元信息 + 动作 ── */}
-      <div className="flex items-start gap-3 px-4 pt-3">
+      <div className={`flex items-start gap-3 ${dense ? 'px-3.5 pt-2.5' : 'px-4 pt-3'}`}>
         {selectMode && (
           <span
             className={`mt-[3px] grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[5px]
@@ -143,7 +148,7 @@ export default function Card({
       </div>
 
       {/* ── ② 标签行 ── */}
-      <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2">
+      <div className={`flex flex-wrap items-center gap-1.5 ${dense ? 'px-3.5 pt-1.5' : 'px-4 pt-2'}`}>
         <Tag>{q.type_label}</Tag>
         <Tag>{q.kind}题</Tag>
         {stars > 0 && (
@@ -164,12 +169,14 @@ export default function Card({
       </div>
 
       {/* ── ③ 题干 + 选项 ── */}
-      <div className="px-4 pt-2.5">
+      <div className={`${dense ? 'px-3.5 pt-2' : 'px-4 pt-2.5'}`}>
         <div className="q-stem q-compact text-[14.5px] text-ink">
-          <div className="q-clamp max-h-[4.6em]">{renderBlocks(q.blocks?.stem)}</div>
+          <div className={`q-clamp ${dense ? 'max-h-[1.7em]' : 'max-h-[4.6em]'}`}>
+            {renderBlocks(q.blocks?.stem)}
+          </div>
         </div>
 
-        {multi && (
+        {multi && !dense && (
           <div className="mt-2 grid grid-cols-1 gap-x-5 gap-y-0.5 sm:grid-cols-2">
             {q.options.slice(0, 6).map((o, i) => (
               <div key={o.label} className="q-options flex min-w-0 gap-1.5 text-[13.5px]">
@@ -187,8 +194,8 @@ export default function Card({
       <div className="mt-2.5 border-t border-border/70">
         <button
           onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
-          className="flex w-full items-center gap-2 px-4 py-2 text-left text-[12px]
-                     transition-colors hover:bg-muted/60">
+          className={`flex w-full items-center gap-2 text-left text-[12px] transition-colors
+                      hover:bg-muted/60 ${dense ? 'px-3.5 py-1.5' : 'px-4 py-2'}`}>
           <span className="shrink-0 font-semibold text-ink-faint">答案</span>
           {hasAns ? (
             ans
