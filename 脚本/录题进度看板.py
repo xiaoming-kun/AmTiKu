@@ -17,6 +17,10 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "数据/录题"
 OUT = SRC / "Qoder录题进度看板.md"
 
+# 客观题：答案栏本就该有值。解答题按口径留空（入库时 normalize 补「见解析」），不算缺口。
+OBJ_TYPES = {"single_choice", "multi_choice", "fill_in_blank"}
+EMPTY_EXPS = {"", "解析无", "解析无。", "无"}
+
 
 def read_json(p):
     return json.loads((SRC / p).read_text(encoding="utf-8"))
@@ -78,7 +82,17 @@ def main():
     left = todo + again
 
     files = sorted((SRC / "输出_v2").glob("*.成品.json"))
-    nq = sum(len(json.loads(f.read_text(encoding="utf-8"))) for f in files)
+    nq = 0
+    no_ans = no_exp = fld_ans = fld_exp = 0
+    for f in files:
+        recs = json.loads(f.read_text(encoding="utf-8"))
+        nq += len(recs)
+        a = [r for r in recs if r.get("题型") in OBJ_TYPES and not (r.get("答案") or "").strip()]
+        e = [r for r in recs if (r.get("解析") or "").strip().replace(" ", "") in EMPTY_EXPS]
+        no_ans += len(a); no_exp += len(e)
+        fld_ans += bool(a); fld_exp += bool(e)
+    n_side = sum(len(json.loads(f.read_text(encoding="utf-8")))
+                 for f in (SRC / "输出_v2").glob("*.解答.json"))
     pend = Counter()
     np_ = 0
     for f in (SRC / "输出_v2").glob("*.待复核.json"):
@@ -148,11 +162,24 @@ def main():
 
     L.append("## 挂起、需要人决定的\n")
     L.append("- **入库通道没开**：成品只落在 `数据/录题/输出_v2/`，一场都没进题库。"
-             "本机 `amti.solve` 在写库，规范要求同一时刻只允许一条链路写库；"
-             "等求解跑完再一次性 `preview → commit → accept 四层验收`。")
-    noans = [x for x in q if x["状态"] in ("todo", "待重解析-曾判撞车") and not x["答案"]]
-    L.append("- **无答案卷 %d 场**：按口径照录、答案/解析留空，入库后会成为待补题，"
-             "需要接「补欠」那条线。" % len(noans))
+             "规范要求同一时刻只允许一条链路写库，且用户口径是「全部解析完再一次性入库」；"
+             "入库要等用户批准，批前先 `preview`，再 `accept` 四层验收。")
+    noans_all = [x for x in q if not x["答案"]]
+    noans_parsed = sum(1 for x in noans_all if x["状态"] == "已解析-待入库")
+    noans_left = sum(1 for x in noans_all if x["状态"] in ("todo", "待重解析-曾判撞车"))
+    noans_other = "%s %d 场" % ("/".join(sorted({x["状态"] for x in noans_all
+                                                 if x["状态"] not in ("已解析-待入库", "todo", "待重解析-曾判撞车")})),
+                                len(noans_all) - noans_parsed - noans_left) \
+        if len(noans_all) - noans_parsed - noans_left else "无"
+    L.append("- **无答案卷 %d 场**（队列 `答案[]` 为空，其中 %d 场已解析、%d 场还没做、%s）："
+             "按口径照录、答案/解析留空。"
+             "入库闸 `_incomplete_errors()` 会整批拦，"
+             "要先定怎么处理（另寻答案卷 / 允许模型作答 / 开豁免口子）。"
+             % (len(noans_all), noans_parsed, noans_left, noans_other))
+    L.append("- **内容级实测**（只读扫 %d 份成品）：客观题答案栏为空 **%d 道 / %d 场**；"
+             "解析为空或写「解析无」**%d 道 / %d 场**，其中 `*.解答.json` 已备好待转录的 **%d 道**"
+             "（那份是 sidecar，入库只读 `.成品.json`，不转录就不进库）。"
+             % (len(files), no_ans, fld_ans, no_exp, fld_exp, n_side))
     L.append("- **%d 场早期只按文件名判的撞车**已退回 `待重解析-曾判撞车`，排在 todo 之后；"
              "另有 14 场已确认误判并恢复。" % again)
     L.append("")
