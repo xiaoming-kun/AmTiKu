@@ -5,16 +5,35 @@ r"""录题入库：成品 JSON → Question → preview → commit（走 ingest 
 不带 --commit 只干跑。preview 有 errors / problems / missing_images 时**拒绝入库**。
 `--force` = 库里已有同 key 且解析非空时，以手里这份为准（补录解析用）。
 """
-import json, sys
+import json, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from amti import record2 as R2, store, ingest
 
 
+def derive_year(label):
+    r"""卷名 → `meta.year`。**库内惯例是毕业届年份，不是卷面出现的第一个年份**。
+
+    原先只认 `label[:4]`，而 570 份成品里有 233 份（4036 题）把年份写在卷名中间
+    （「湖北荆门2026届高三…」）⇒ 入库后 `meta.year` 整个不写，这些题在年份筛选、
+    统计页的 by_year 里全部隐身。存量模拟题逐条对过：卷名前四位与 `meta.year`
+    一致 876／不一致 13，那 13 条全是「2025年11月…」按学年记成 2026，
+    所以「2025-2026学年」这种区段取**后一个**才是同一个口径。
+    """
+    rng = re.search(r"(?<!\d)(20\d\d)\s*[-—–~至]\s*(20\d\d)(?!\d)", label)
+    if rng:
+        return int(rng.group(2))
+    head = re.match(r"20\d\d(?!\d)", label)
+    if head:
+        return int(head.group())
+    m = re.search(r"(?<!\d)20\d\d(?!\d)", label)
+    return int(m.group()) if m else None
+
+
 def main(path, do_commit, force=False):
     recs = json.loads(Path(path).read_text(encoding="utf-8"))
     label = re_label(path)
-    year = int(label[:4]) if label[:4].isdigit() else None
+    year = derive_year(label)
     fixed = tidy(recs)
     if fixed:
         Path(path).write_text(json.dumps(recs, ensure_ascii=False, indent=1), encoding="utf-8")
