@@ -59,7 +59,9 @@ export default function CanvasEditor({ handoutQs }: { handoutQs: Q[] }) {
   const selBlock = blocks.find((b) => b.id === sel) || null
 
   return (
-    <div className="flex h-full min-h-0">
+    // 三栏骨架：左右是 bg-surface 的面板，中间画布区 bg-bg 暗一档，
+    // 画布上的白色纸张才浮得起来（分割一律用 border-border）。
+    <div className="flex h-full min-h-0 bg-bg">
       <PointDrawer
         handoutQs={handoutQs}
         q={q} setQ={setQ} searchResults={searchResults} topics={topics}

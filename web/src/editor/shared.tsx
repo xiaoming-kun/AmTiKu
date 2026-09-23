@@ -5,6 +5,7 @@
  *  这里都是**纯展示 / 纯函数**，不带状态 —— 状态在 CanvasEditor 里。
  */
 import { useMemo } from 'react'
+import { Plus } from 'lucide-react'
 import katex from 'katex'
 import { transformStem, transformOption } from '@/lib/qlatex'
 import type { Q } from '@/lib/types'
@@ -279,9 +280,15 @@ export function QuestionRow({ q, onAdd }: { q: Q; onAdd: () => void }) {
 
   return (
     <div onClick={onAdd} title="点击加入画布"
-      className="mb-1 cursor-pointer rounded-lg border border-border bg-bg px-2 py-1.5
-                 text-[11px] hover:border-brand/40 hover:bg-surface">
-      <div className="line-clamp-2 text-ink-soft">{label}</div>
+      className="group flex cursor-pointer items-start gap-1.5 rounded-lg border border-border
+                 bg-surface px-3 py-2 transition-colors
+                 hover:border-brand-line hover:bg-brand-soft/40">
+      <div className="line-clamp-2 min-w-0 flex-1 text-[12.5px] leading-[1.5] text-ink-soft
+                      transition-colors group-hover:text-ink">{label}</div>
+      {/* 动作提示：常驻会挤掉题干两行，只在悬停时浮出来 */}
+      <Plus size={12}
+        className="mt-[3px] shrink-0 text-brand opacity-0 transition-opacity duration-150
+                   group-hover:opacity-100" />
     </div>
   )
 }

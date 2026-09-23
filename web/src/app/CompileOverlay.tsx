@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { Check, Circle, CircleDot, Loader2 } from 'lucide-react'
 
 type Stage = [number, string]
 
@@ -47,40 +48,42 @@ export default function CompileOverlay({ since, label, stages = LATEX_STAGES, hi
   for (let i = 0; i < stages.length; i++) if (sec >= stages[i][0]) cur = i
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center
-                    bg-surface/85 backdrop-blur-[2px] anim-fade-in">
-      <div className="w-[400px] max-w-[88%] rounded-2xl border border-border bg-surface
-                      px-6 py-5 shadow-xl anim-pop">
-        <div className="mb-3 flex items-center gap-2.5">
+    <div className="anim-fade-in absolute inset-0 z-30 flex items-center justify-center
+                    bg-surface/80 backdrop-blur-[2px]">
+      <div className="pop-c w-[400px] max-w-[90%] rounded-[var(--radius-pop)] border border-border
+                      bg-surface px-5 py-4 shadow-[var(--shadow-pop)]">
+        <div className="flex items-center gap-2.5">
           {/* 转圈：表示"在动"；下面的进度条表示"到哪了" */}
-          <span className="inline-block h-4 w-4 shrink-0 rounded-full border-2
-                           border-brand-soft border-t-brand"
-            style={{ animation: 'spin .8s linear infinite' }} />
-          <span className="text-[13px] font-medium text-ink">{label}</span>
-          <span className="ml-auto font-mono text-[12px] tabular-nums text-ink-faint">
+          <Loader2 size={15} className="shrink-0 animate-spin text-brand" />
+          <span className="text-[13px] font-semibold tracking-tight text-ink">{label}</span>
+          {/* 秒表在跳，就说明进程还活着 */}
+          <span className="tnum ml-auto font-mono text-[11.5px] text-ink-faint">
             {sec.toFixed(1)}s
           </span>
         </div>
 
-        <div className="progress-track mb-3" />
+        {/* 不定长进度条：不假装知道百分比 */}
+        <div className="progress-track my-3.5" />
 
         {/* 阶段清单：走过的打勾，当前的高亮 —— 长等待里这是最有用的信息 */}
-        <ol className="space-y-1">
+        <ol className="space-y-1.5">
           {stages.map(([, text], i) => (
             <li key={text}
-              className={`flex items-center gap-2 text-[11.5px] ${
+              className={`flex items-center gap-2 text-[12px] ${
                 i < cur ? 'text-ink-faint'
                   : i === cur ? 'font-medium text-ink'
                     : 'text-ink-faint/60'}`}>
-              <span className="w-3 shrink-0 text-center">
-                {i < cur ? '✓' : i === cur ? '●' : '○'}
+              <span className="grid w-3.5 shrink-0 place-items-center">
+                {i < cur ? <Check size={12} strokeWidth={3} className="text-has" />
+                  : i === cur ? <CircleDot size={11} className="text-brand" />
+                    : <Circle size={8} className="text-border-strong" />}
               </span>
-              <span>{text}</span>
+              <span className="min-w-0 flex-1 truncate">{text}</span>
             </li>
           ))}
         </ol>
 
-        <div className="mt-3 text-[10.5px] leading-relaxed text-ink-faint">
+        <div className="mt-3.5 border-t border-border pt-2.5 text-[11px] leading-relaxed text-ink-faint">
           {hint || '中途不用重复点，生成完会自动出结果'}
         </div>
       </div>

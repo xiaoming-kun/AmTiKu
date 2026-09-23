@@ -78,8 +78,14 @@ export function useQuestionList() {
   const exitSelect = () => { setSelectMode(false); setChecked(new Set()) }
   const enterSelect = () => setSelectMode(true)
 
+  /** 「筛了几项」的**唯一算法**。
+   *
+   *  以前这个数在界面里被就地加了三遍（`activeFilters + missing.length + points.length`），
+   *  `activeFilters` 里本来就含 points，于是标出来的数字大于实际项数——
+   *  用户点「清除全部（7）」却发现只有 5 项。现在只在这里算，界面只读。 */
   const activeFilters =
-    has.length + points.length + diffs.length + years.length + (type ? 1 : 0) + (kind ? 1 : 0)
+    has.length + missing.length + points.length + diffs.length + years.length
+    + (type ? 1 : 0) + (kind ? 1 : 0)
 
   /** 当前选中的这批考点，是不是**正好等于**某一章／某一节？
    *
