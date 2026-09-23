@@ -119,7 +119,7 @@ def main():
     名 = {"figure": "带图题（不录正文）", "table": "带表题（不录正文）",
           "figure-in-solution": "题干已录、解析里印着图", "print-suspect": "原卷印刷疑点（照录未改）",
           "missing-option": "原卷缺整条选项（照录未补）"}
-    for k in ("figure", "table", "figure-in-solution", "print-suspect"):
+    for k in ("figure", "table", "figure-in-solution", "print-suspect", "missing-option"):
         if pend.get(k):
             L.append("- %s：%d 条" % (名.get(k, k), pend[k]))
     for k in pend:
