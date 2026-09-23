@@ -184,22 +184,24 @@ body {
 }
 .latex-err { color: oklch(0.55 0.2 25); font-size: 12px; }
 
-/* 列表卡里的题目：**封顶高度 + 渐隐**。
-   题干长短差十倍，不封顶的话一屏只看得到两道题；
-   封顶之后要能看出"下面还有"，所以配一条白色渐隐。
+/* 列表卡里的题目：**封顶高度 + 截断标记**。
+   题干长短差十倍，不封顶一屏只看得到两道题；封顶之后要能看出"下面还有"。
 
-   **渐隐只在真被截断时才画**（`data-over="1"`，由 JS 量 scrollHeight 决定）：
-   无条件画的话，一行就放得下的短题干也会被这 22px 盖住最后一行，
-   看起来就像"题目自带一层渐变"——那是 bug，不是设计。 */
+   这里**不用白色渐变**。渐变是我先前的主意，但它有两个毛病：
+   ① 画在文字上会被读成"题目自带一层雾"（用户提过两次）；
+   ② 它本身有 22px 高，短题干不截断时也会盖住唯一一行。
+   现在改成 line-clamp 那种**省略号**：右下角一个小「…」，只有真截断时才出现。
+   它是文字，不会被误认成渲染瑕疵。 */
 .q-clamp { position: relative; overflow: hidden; }
-.q-clamp::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 22px;
-  background: linear-gradient(to bottom, transparent, var(--color-surface));
-  pointer-events: none;
-  opacity: 0;                       /* 默认不画 */
-  transition: opacity 160ms var(--ease-soft);
+.q-clamp::after { content: none; }
+.q-clamp[data-over='1']::after {
+  content: '…';
+  position: absolute; right: 0; bottom: 0;
+  padding: 0 3px 0 6px;
+  background: var(--color-surface);
+  color: var(--color-ink-faint);
+  line-height: 1.5;
 }
-.q-clamp[data-over='1']::after { opacity: 1; }
 
 /* ══ 动效 ══════════════════════════════════════════════════════════
    库里两万多道题，筛选、翻页、编译都是几百毫秒到几十秒的事。

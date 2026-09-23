@@ -116,7 +116,11 @@ export default function Card({
       onClick={pick}
       /* 键盘光标停在这一张上时，屏幕阅读器也该知道（↑↓ 移的是它，不是 DOM 焦点） */
       aria-current={active ? 'true' : undefined}
-      className={`card-lift group cursor-pointer overflow-hidden rounded-[var(--radius-card)]
+      /* `@container`：下面选项要不要分两列，看**这张卡自己有多宽**，
+         不是看窗口多宽（列表栏宽度会被筛选面板/详情抽屉改来改去）。
+         以前用 `sm:grid-cols-2`（视口断点），栏很窄时两列挤成一团、
+         栏很宽时两列又离得老远。 */
+      className={`@container card-lift group cursor-pointer overflow-hidden rounded-[var(--radius-card)]
                   border bg-surface shadow-[var(--shadow-card)] ${
         checked ? 'border-brand-line ring-2 ring-brand/25'
         : active ? 'border-brand-line'
@@ -213,7 +217,7 @@ export default function Card({
         </div>
 
         {multi && !dense && (
-          <div className="mt-2 grid grid-cols-1 gap-x-5 gap-y-0.5 sm:grid-cols-2">
+          <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-0.5 @[600px]:grid-cols-2">
             {q.options.slice(0, 6).map((o, i) => (
               <div key={o.label} className="q-options flex min-w-0 gap-1.5 text-[13.5px]">
                 <span className="lbl shrink-0">{o.label}.</span>
