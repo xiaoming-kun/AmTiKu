@@ -341,7 +341,7 @@ def cover_plan(pool: list[Question], *, want: int, rng,
     # **按难度从易到难排**（同难度保持挑选顺序）
     picked.sort(key=lambda q: DIFF_ORDER.get(q.difficulty, 9))
     return {"keys": [q.key for q in picked], "covered": sorted(covered),
-            "short": short}
+            "short": short, "picked": picked}
 
 
 def generate_by_coverage(pool: list[Question], *, want: int = 19,
@@ -361,6 +361,15 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
     got, total = len(plan["covered"]), len(reachable)
     ratio = got / total if total else 0.0
 
+    # 整卷总分。**必须和 `paper.py` 印在卷面上的一致**（界面上的"多少分"
+    # 就是拿这个数报的）：解答题按位置取 `answer_scores()`，其余固定分。
+    # 早先这里不返回 score，界面只好自己拿一张"解答题 15 分一道"的假表去算，
+    # 一道 46 题的覆盖卷能报出 484 分，而卷面上只有 196 分。
+    counts: dict[str, int] = {}
+    for q in plan["picked"]:
+        counts[q.type] = counts.get(q.type, 0) + 1
+    score = total_score(counts)
+
     notes = ["目标覆盖 %.0f%%，实际覆盖 %.0f%%（%d/%d 个考点）"
              % (coverage * 100, ratio * 100, got, total)]
     if ratio < coverage:
@@ -372,7 +381,7 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
     if plan["short"]:
         notes.append("题型配额没满足：%s" % plan["short"])
 
-    return {"keys": plan["keys"], "covered": plan["covered"],
+    return {"keys": plan["keys"], "covered": plan["covered"], "score": score,
             "report": {"covered": got, "reachable": total, "ratio": round(ratio, 3),
                        "target": coverage, "notes": notes}}
 
@@ -401,6 +410,25 @@ def _selftest() -> int:
     check("解答题分值 13/15/15/17/17",
           [s.score for s in slots if s.type == "detailed_answer"] == [13, 15, 15, 17, 17],
           str([s.score for s in slots if s.type == "detailed_answer"]))
+
+    # ── 计分口径：**界面上报的"多少分"和卷面上印的是同一个数** ──────────
+    # 前端 `web/src/lib/paper.ts` 里有一份同样规则的 TS 实现（界面要实时算分，
+    # 不能每加一道题就请求一次后端）。这两条断言就是那份拷贝的"锚"：
+    # 改了这里的规则，这两条会红，提醒你回去改 TS。
+    check("解答题分值表加起来恒为 77（n=1..30）",
+          all(sum(answer_scores(n)) == 77 for n in range(1, 31)),
+          str([(n, sum(answer_scores(n))) for n in range(1, 31)
+               if sum(answer_scores(n)) != 77]))
+    check("标准高考卷 8+3+3+5 = 150 分",
+          total_score({"single_choice": 8, "multi_choice": 3,
+                       "fill_in_blank": 3, "detailed_answer": 5}) == 150,
+          str(total_score({"single_choice": 8, "multi_choice": 3,
+                           "fill_in_blank": 3, "detailed_answer": 5})))
+    check("覆盖卷 9+4+10+23 = 196 分（解答题只算 77，不是每道 15）",
+          total_score({"single_choice": 9, "multi_choice": 4,
+                       "fill_in_blank": 10, "detailed_answer": 23}) == 196,
+          str(total_score({"single_choice": 9, "multi_choice": 4,
+                           "fill_in_blank": 10, "detailed_answer": 23})))
     check("解答题板块顺序正确",
           [s.section for s in slots if s.type == "detailed_answer"] == ANSWER_ORDER,
           str([s.section for s in slots if s.type == "detailed_answer"]))

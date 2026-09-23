@@ -100,8 +100,13 @@ export default function Card({
    */
   const pick = () => { onOpen(); if (selectMode) onToggle() }
 
-  // 题干封顶后的渐隐只在**真截断**时才画（见 useClamped 的注释）
-  const [clampRef, clamped] = useClamped([q.key, dense])
+  /** 题干「展开全文」。截断是为了能扫，但**解答题常常有两问**，
+   *  只给两行会把第二问整个吃掉——所以给一个随时能看全的出口。
+   *  换一道题就自动收起来（不然翻页时一路都是展开的）。 */
+  const [stemOpen, setStemOpen] = useState(false)
+  useEffect(() => { setStemOpen(false) }, [q.key])
+  const [clampRef, over] = useClamped([q.key, dense, stemOpen])
+  const clamped = over && !stemOpen
 
   const ans = answerPreview(q.answer)
   const hasSol = !!q.flags['解析']
@@ -211,9 +216,19 @@ export default function Card({
       <div className={`${dense ? 'px-3.5 pt-2' : 'px-4 pt-2.5'}`}>
         <div className="q-stem q-compact text-[14.5px] text-ink">
           <div ref={clampRef} data-over={clamped ? '1' : '0'}
-            className={`q-clamp ${dense ? 'max-h-[1.7em]' : 'max-h-[4.6em]'}`}>
+            className={`q-clamp ${stemOpen ? '' : dense ? 'max-h-[1.7em]' : 'max-h-[10em]'}`}>
             {renderBlocks(q.blocks?.stem)}
           </div>
+          {/* 封顶高度是**折中**：不封顶的话一道三页的题就占满整屏。
+              实测 10em（约 5~6 行）能完整放下 87% 的题干，平均每张卡只比
+              4.6em 多 18px（一屏仍是 4 道）——剩下那 13% 用这个按钮兜。 */}
+          {(clamped || stemOpen) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setStemOpen((v) => !v) }}
+              className="press mt-1 text-[11.5px] font-medium text-brand-ink hover:underline">
+              {stemOpen ? '收起题干' : '展开题干全文'}
+            </button>
+          )}
         </div>
 
         {multi && !dense && (

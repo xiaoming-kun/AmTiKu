@@ -10,8 +10,8 @@ import {
 } from 'lucide-react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
-import { SCORE, SECTION_LABEL } from '@/lib/paper'
-import CompileOverlay, { LATEX_STAGES } from '@/app/CompileOverlay'
+import { SECTION_LABEL, questionScore, paperScore as totalScore } from '@/lib/paper'
+import CompileOverlay, { LATEX_STAGES, COVER_STAGES } from '@/app/CompileOverlay'
 
 /** 输入框的统一长相（左栏里到处都是，写一遍省得十处走样）。 */
 const INPUT = 'h-[32px] w-full rounded-lg border border-border bg-bg px-2.5 text-[12.5px] outline-none ' +
@@ -101,7 +101,12 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   const [sep, setSep] = useState('0.6em')
   const [blank, setBlank] = useState('4')
   const [layout, setLayoutRaw] = useState<'compact' | 'roomy'>('roomy')
-  const [busy, setBusy] = useState(false)
+  /** 忙什么。**必须分开**：组卷是"挑题"（几秒，没有 LaTeX 阶段），
+   *  编译是"跑两遍 xelatex"（几十秒，有阶段）。早先共用一个 `busy`，
+   *  于是点「按覆盖率组卷」也会弹出「正在编译 PDF」+ 一串 xelatex 阶段，
+   *  而且 roll() 没设 `busySince`，秒表直接显示 57 年。 */
+  const [busyKind, setBusyKind] = useState<'none' | 'gen' | 'compile'>('none')
+  const busy = busyKind !== 'none'
   const [res, setRes] = useState<ExportResult | null>(null)
   const [err, setErr] = useState('')
   const [genMsg, setGenMsg] = useState('')
@@ -121,7 +126,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   const [busySince, setBusySince] = useState(0)
 
   const answered = list.filter((q) => q.flags['解析']).length
-  const score = list.reduce((s, q) => s + (SCORE[q.type] || 0), 0)
+  const score = totalScore(list)
 
   // 卷面标题或卷型一变，默认文件名跟着变（前提是用户没自己改过，见 outEdited）
   useEffect(() => {
@@ -144,7 +149,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
 
   const run = () => {
     if (!list.length) { setRes(null); return }
-    setBusy(true); setBusySince(Date.now()); setErr('')
+    setBusyKind('compile'); setBusySince(Date.now()); setErr('')
     const keys = list.map((q) => q.key)
 
     // 没手改过文件名 → 把时间戳刷成「此刻」再导出。面板开着十几分钟才点导出，
@@ -153,9 +158,15 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
     const outNow = outEdited ? out : defaultOut(title, mode)
     if (!outEdited) setOut(outNow)
 
-    // 幻灯片讲义走独立端点（Slidev 渲染），其余三种走 LaTeX 导出
+    // **「组卷方案」和「卷面格式」是两回事，两个接口认的模式不是一套。**
+    // `/api/generate` 认 gaokao / test / coverage（怎么挑题），
+    // `/api/export`  只认 gaokao / test / handout（怎么排版）。
+    // 考点覆盖卷挑完题之后，卷面就该按**测试卷**排（小字列考点、每题标难度）——
+    // 它本来就是"考点专练"。早先直接把 `coverage` 透传给导出接口，
+    // 结果一点「导出」就 HTTP 400「未知卷型 'coverage'」，压根导不出来。
+    const renderMode = mode === 'coverage' ? 'test' : mode
     const call = api.export({
-          title, out: outNow, mode, show_answers: showAns, bottom_sep: sep,
+          title, out: outNow, mode: renderMode, show_answers: showAns, bottom_sep: sep,
           problem_blank_cm: Number(blank) || 0, compile: true,
           keys, answers_at_end: ansAtEnd, handout_font: handoutFont,
         })
@@ -163,7 +174,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
     call.then((d) => {
       if (d.detail) { setErr(String(d.detail)); setRes(null) }
       else setRes(d)
-    }).catch((e) => setErr(String(e))).finally(() => setBusy(false))
+    }).catch((e) => setErr(String(e))).finally(() => setBusyKind('none'))
   }
 
   // 这里以前挂着一个 800ms 防抖的自动重编 effect：只要 `compiled` 为真，
@@ -172,7 +183,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
 
   /** 随机组卷：`gaokao` 按卷面结构填位置；`coverage` 按考点覆盖率挑题。 */
   const roll = () => {
-    setBusy(true); setErr(''); setGenMsg('')
+    setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg('')
     api.generate({ ...filters, mode, seed: Math.floor(Math.random() * 1e9),
                    want: Number(want) || 19, coverage: Number(cov) || 0.9 })
       .then((d) => {
@@ -183,7 +194,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
           + (rep.unfilled?.length ? ` · ⚠ ${rep.unfilled.length} 个位置没填上` : '')
           + (rep.notes?.length ? ` · ${rep.notes[0]}` : ''))
       })
-      .catch((e) => setErr(String(e))).finally(() => setBusy(false))
+      .catch((e) => setErr(String(e))).finally(() => setBusyKind('none'))
   }
 
   /* ── 存档 / 合集 ──────────────────────────────────
@@ -194,7 +205,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   useEffect(() => { refreshSaved() }, [])
 
   const loadSaved = (name: string) => {
-    setBusy(true); setErr(''); setGenMsg('')
+    setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg('')
     fetch('/api/papers/' + encodeURIComponent(name)).then((r) => r.json())
       .then((d) => {
         if (!d || !d.keys) { setErr('没有这份存档'); return }
@@ -211,7 +222,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
           setGenMsg(`载入「${d.name}」 ${(q.items || []).length}/${d.keys.length} 题`)
         })
       })
-      .catch((e) => setErr(String(e))).finally(() => setBusy(false))
+      .catch((e) => setErr(String(e))).finally(() => setBusyKind('none'))
   }
 
   const saveCurrent = () => {
@@ -609,7 +620,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
               ) : SECTION_LABEL.map(([t, label]) => {
                 const items = list.filter((q) => q.type === t)
                 if (!items.length) return null
-                const sc = items.reduce((a, q) => a + (SCORE[q.type] || 0), 0)
+                const sc = totalScore(items)
                 return (
                   <div key={t} className="mb-4 last:mb-0">
                     <div className="mb-1.5 flex items-baseline gap-2 text-[11px]">
@@ -617,7 +628,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
                       <span className="tnum text-ink-faint">{items.length} 题 · {sc} 分</span>
                     </div>
                     <div className="space-y-1">
-                      {items.map((q) => {
+                      {items.map((q, qi) => {
                         const gi = list.indexOf(q)
                         return (
                           <div key={q.key}
@@ -636,7 +647,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
                               </div>
                             </div>
                             <span className="tnum shrink-0 text-[10.5px] text-ink-faint">
-                              {SCORE[q.type]}分
+                              {questionScore(q.type, qi, items.length)}分
                             </span>
                             <div className="flex shrink-0 flex-col opacity-0 transition-opacity
                                             group-hover:opacity-100">
@@ -674,9 +685,12 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
                   还分阶段说清楚到哪一步了。 */}
               {busy && (
                 <CompileOverlay since={busySince}
-                  label="正在编译 PDF"
-                  stages={LATEX_STAGES}
-                  hint={'两遍 xelatex，题越多越慢；中途不用重复点，编译完会自动出预览'} />
+                  label={busyKind === 'compile' ? '正在编译 PDF'
+                       : mode === 'coverage' ? '正在按覆盖率挑题' : '正在随机组卷'}
+                  stages={busyKind === 'compile' ? LATEX_STAGES : COVER_STAGES}
+                  hint={busyKind === 'compile'
+                    ? '两遍 xelatex，题越多越慢；中途不用重复点，编译完会自动出预览'
+                    : '在筛选出的题目里挑，几秒钟；中途不用重复点'} />
               )}
               {res?.pdf_abs ? (
                 <iframe key={res.pdf_abs}

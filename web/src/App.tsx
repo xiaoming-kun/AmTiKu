@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import type { Q, Base } from '@/lib/types'
 import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
-import { SCORE, SECTION_LABEL } from '@/lib/paper'
+import { SECTION_LABEL, scoreOf, paperScore as totalScore } from '@/lib/paper'
 import { DIFF_STARS } from '@/lib/display'
 import { useQuestionList } from '@/lib/useQuestionList'
 import { Flags, Grip, useWidth, useFlag } from '@/app/ui'
@@ -110,7 +110,7 @@ export default function App() {
   const [handoutMap, setHandoutMap] = useState<Map<string, Q>>(new Map())
   const paper = useMemo(() => [...paperMap.values()], [paperMap])
   const handout = useMemo(() => [...handoutMap.values()], [handoutMap])
-  const paperScore = paper.reduce((s, x) => s + (SCORE[x.type] || 0), 0)
+  const paperScore = totalScore(paper)
   const answered = paper.filter((x) => x.flags['解析']).length
   /** 往卷子里加东西时让卷子那条计数**跳一下**。
    *
@@ -1041,7 +1041,7 @@ function PaperPanel({ paper, onOpen, onRemove, onMove, onBack }: {
               <div key={t}>
                 <div className="mb-1.5 flex items-baseline gap-2 text-[11.5px] text-ink-faint">
                   <span className="font-semibold text-ink-soft">{label}</span>
-                  <span className="tnum">{group.length} 题 · {SCORE[t] * group.length} 分</span>
+                  <span className="tnum">{group.length} 题 · {scoreOf(t, group.length)} 分</span>
                 </div>
                 <ol className="space-y-1.5">
                   {group.map((it, i) => (

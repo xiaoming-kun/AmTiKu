@@ -22,6 +22,15 @@ export const LATEX_STAGES: Stage[] = [
   [28, '收尾：生成 PDF'],
 ]
 
+/** 组卷（按考点覆盖率挑题）。挑题是纯 CPU 的贪心，
+ *  46 道题要在两万道的池子里滚 46 轮，实测 4~5 秒——够慢到需要给个交代。 */
+export const COVER_STAGES: Stage[] = [
+  [0, '统计这批题能覆盖到的考点'],
+  [1, '贪心挑题：每轮取"带来新考点最多"的那道'],
+  [3, '按易 → 难排好'],
+  [6, '收尾：算出卷面总分'],
+]
+
 /** 讲义（Slidev：起 Chromium → 渲染 → 打印 PDF）。
  *
  *  第一次导出要冷启动浏览器内核，明显更慢；页数越多也越慢。 */
@@ -41,7 +50,10 @@ export default function CompileOverlay({ since, label, stages = LATEX_STAGES, hi
     const t = setInterval(() => setNow(Date.now()), 100)
     return () => clearInterval(t)
   }, [])
-  const sec = Math.max(0, (now - since) / 1000)
+  // `since` 没给对（0 或负数）时**兜一下底**：直接减会算出"已用 57 年"
+  // 这种荒唐数字（`Date.now()` 是 1970 年起的毫秒数，1.79e9 秒）。
+  // 调用方忘了传 `since` 是它的错，但浮层不该把荒唐数字甩给用户看。
+  const sec = since > 0 && since <= now ? (now - since) / 1000 : 0
 
   // 当前处在第几个阶段（取最后一个已达到的）
   let cur = 0
