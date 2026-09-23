@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
-import { SECTION_LABEL, questionScore, paperScore as totalScore } from '@/lib/paper'
+import { SECTION_LABEL, SHORT_NAME, questionScore, paperScore as totalScore } from '@/lib/paper'
 import CompileOverlay, { LATEX_STAGES, COVER_STAGES } from '@/app/CompileOverlay'
 
 /** 输入框的统一长相（左栏里到处都是，写一遍省得十处走样）。 */
@@ -114,6 +114,13 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   // 目标是「尽量用最少的题把考点铺满」，所以先定题量再谈覆盖率。
   const [want, setWant] = useState('46')
   const [cov, setCov] = useState('0.9')
+  /** 覆盖卷要不要保住高考卷面的题型比例。
+   *
+   *  不保的话贪心只认"考点个数"，实测 46 道题能挑出 23 道解答题——
+   *  因为解答题平均挂 2.34 个考点，比单选题的 1.74 高，对目标函数而言
+   *  它是"对的"，但那卷子没法用。保住的代价约 2.6 个百分点，
+   *  组卷说明里会把这个代价报出来（后端多跑一遍不限题型的）。 */
+  const [keepStruct, setKeepStruct] = useState(true)
   const [saved, setSaved] = useState<any[]>([])
   const [saveName, setSaveName] = useState('')
   const [saveKind, setSaveKind] = useState<'试卷' | '合集'>('试卷')
@@ -185,14 +192,26 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   const roll = () => {
     setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg('')
     api.generate({ ...filters, mode, seed: Math.floor(Math.random() * 1e9),
-                   want: Number(want) || 19, coverage: Number(cov) || 0.9 })
+                   want: Number(want) || 19, coverage: Number(cov) || 0.9,
+                   keep_structure: keepStruct })
       .then((d) => {
         if (d.detail) { setErr(String(d.detail)); return }
         setList(d.items || [])
         const rep = d.report || {}
-        setGenMsg(`${(d.items || []).length} 题 · ${d.score} 分`
-          + (rep.unfilled?.length ? ` · ⚠ ${rep.unfilled.length} 个位置没填上` : '')
-          + (rep.notes?.length ? ` · ${rep.notes[0]}` : ''))
+        const mixTxt = rep.mix
+          ? Object.entries(rep.mix).filter(([, n]) => n)
+              .map(([t, n]) => `${SHORT_NAME[t] || t}${n}`).join(' ')
+          : ''
+        // **不要再重复"多少题多少分"**——弹层头部左边已经算过一份了，
+        // 这里只说"怎么挑的、挑成什么样"。
+        setGenMsg([
+          mixTxt,
+          rep.ratio != null ? `覆盖 ${Math.round(rep.ratio * 100)}%（${rep.covered}/${rep.reachable}）` : '',
+          // 保结构的代价：**明说**，用户才知道这个开关值不值
+          rep.ratio_free ? `不限题型可到 ${Math.round(rep.ratio_free * 100)}%` : '',
+          rep.unfilled?.length ? `⚠ ${rep.unfilled.length} 个位置没填上` : '',
+          rep.note || '',
+        ].filter(Boolean).join(' · '))
       })
       .catch((e) => setErr(String(e))).finally(() => setBusyKind('none'))
   }
@@ -302,9 +321,27 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
                   <input value={cov} onChange={(e) => setCov(e.target.value)}
                     className={`${INPUT} tnum`} />
                 </label>
+                <label className={`press inline-flex cursor-pointer items-center gap-1.5 rounded-full
+                                   border px-2.5 py-[5px] text-[12.5px] font-medium transition-colors
+                                   focus-within:ring-2 focus-within:ring-brand/25 ${
+                  keepStruct ? 'border-brand bg-brand text-white'
+                             : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                  <input type="checkbox" checked={keepStruct}
+                    onChange={(e) => setKeepStruct(e.target.checked)} className="sr-only" />
+                  <Check size={12} strokeWidth={2.8}
+                    className={keepStruct ? 'shrink-0' : 'shrink-0 opacity-30'} />
+                  保持高考卷面比例
+                </label>
                 <div className="text-[11px] leading-relaxed text-ink-faint">
                   参考：19 题 ≈ 38%，46 题 ≈ 84%，60 题 ≈ 97%，80 题铺满。
                   覆盖率按当前筛选出的 {poolN} 道里能覆盖到的考点算。
+                </div>
+                <div className="text-[11px] leading-relaxed text-ink-faint">
+                  {keepStruct
+                    ? '题型按高考比例缩放（46 题 → 单选 20 · 多选 7 · 填空 7 · 解答 12）。'
+                      + '贪心只认考点个数，不约束的话会挑出一半解答题（解答题考点密度最高）。'
+                    : '⚠ 不限题型：能多覆盖约 2~3 个百分点的考点，但题型分布会失衡'
+                      + '（46 题实测挑出 23 道解答题）。'}
                 </div>
               </Group>
             )}

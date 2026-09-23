@@ -63,6 +63,12 @@ export function paperScore(qs: { type: string }[]): number {
   return Object.entries(n).reduce((s, [t, c]) => s + scoreOf(t, c), 0)
 }
 
+/** 题型短名（说明文字里用，和后端的 SHORT_NAME 一致） */
+export const SHORT_NAME: Record<string, string> = {
+  single_choice: '单选', multi_choice: '多选',
+  fill_in_blank: '填空', detailed_answer: '解答',
+}
+
 /** 卷面大题顺序与标题 */
 export const SECTION_LABEL: [string, string][] = [
   ['single_choice', '一、选择题'], ['multi_choice', '二、多选题'],

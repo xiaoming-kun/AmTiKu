@@ -72,6 +72,10 @@ MINOR_MAX_PER_TOPIC = 2
 ANSWER_SCORES = [13, 15, 15, 17, 17]
 MINOR_SCORE = {"single_choice": 5, "multi_choice": 6, "fill_in_blank": 5}
 
+# 题型的中文短名（说明文字里用）
+SHORT_NAME = {"single_choice": "单选", "multi_choice": "多选",
+              "fill_in_blank": "填空", "detailed_answer": "解答"}
+
 
 def answer_scores(n: int) -> list[int]:
     r"""解答题分值表。标准是 5 题；题数不是 5 时按 77 分同比例摊，
@@ -278,6 +282,36 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
 DIFF_ORDER = {"简单题": 0, "中档题": 1, "难题": 2}
 
 
+# 高考卷面的题型比例：8 单选 + 3 多选 + 3 填空 + 5 解答 = 19 题。
+# 顺序就是卷面顺序，也是下面摊余数时的平手次序。
+GAOKAO_MIX = (("single_choice", 8), ("multi_choice", 3),
+              ("fill_in_blank", 3), ("detailed_answer", 5))
+
+
+def gaokao_mix(want: int) -> dict[str, int]:
+    r"""把高考卷面的题型比例**按比例缩放到 `want` 道**。
+
+    和 `answer_scores()` 用同一套**最大余数法**：先按比例向下取整，
+    余数大的依次加一，保证加起来**正好等于 `want`**（不然贪心会少挑几道）。
+
+    为什么要这个：按覆盖率贪心只认"考点个数"，完全不管题型——
+    实测 `want=46` 时它会挑出 **23 道解答题**（因为解答题平均挂 2.34 个考点，
+    比单选题的 1.74 高，对目标函数而言是理性的）。但一半是解答题的卷子不能用。
+    加上配额只掉约 2.6 个百分点的覆盖率（85.5% → 82.9%），换一份能用的卷面，值。
+    """
+    if want <= 0:
+        return {}
+    base_total = sum(n for _, n in GAOKAO_MIX)
+    exact = [(t, want * n / base_total) for t, n in GAOKAO_MIX]
+    out = {t: int(v) for t, v in exact}
+    rest = want - sum(out.values())
+    # 余数大的先加；余数一样就按卷面次序（和 answer_scores 的稳定排序同理）
+    order = sorted(range(len(exact)), key=lambda i: -(exact[i][1] - int(exact[i][1])))
+    for i in order[:rest]:
+        out[exact[i][0]] += 1
+    return out
+
+
 def all_points_of(pool: list[Question]) -> set[str]:
     """这批题**能覆盖到的**考点集合。
 
@@ -346,10 +380,16 @@ def cover_plan(pool: list[Question], *, want: int, rng,
 
 def generate_by_coverage(pool: list[Question], *, want: int = 19,
                          coverage: float = 0.9, seed: int | None = None,
-                         type_mix: dict[str, int] | None = None) -> dict:
+                         type_mix: dict[str, int] | None = None,
+                         report_cost: bool = False) -> dict:
     r"""按**考点覆盖率**组一套卷。
 
     `coverage` 是目标覆盖率（0~1），对着**题库里能覆盖到的**考点算。
+    `type_mix` 给题型配额（如 `gaokao_mix(46)`），不传就不限题型。
+    `report_cost` 为真时**再跑一遍不限题型的**，好在说明里报出
+    "为保卷面结构，覆盖率从 X% 降到 Y%"——多花一遍贪心的钱（实测约 1 秒），
+    但这样用户才看得出这个开关值不值。
+
     返回 keys（已按易→难排好）和一份说明覆盖了多少。
     """
     rng = random.Random(seed)
@@ -360,6 +400,12 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
     plan = cover_plan(pool, want=want, rng=rng, type_mix=dict(type_mix or {}))
     got, total = len(plan["covered"]), len(reachable)
     ratio = got / total if total else 0.0
+
+    # 不限题型时的上限（只为了报"这个开关代价多大"）
+    base_ratio = None
+    if report_cost and type_mix:
+        base = cover_plan(pool, want=want, rng=random.Random(seed))
+        base_ratio = len(base["covered"]) / total if total else 0.0
 
     # 整卷总分。**必须和 `paper.py` 印在卷面上的一致**（界面上的"多少分"
     # 就是拿这个数报的）：解答题按位置取 `answer_scores()`，其余固定分。
@@ -378,12 +424,24 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
                      % (len(miss), "、".join(miss[:8]),
                         "…" if len(miss) > 8 else ""))
         notes.append("**要么加题量，要么题库里这些考点的题太少**")
+    if type_mix:
+        mix_txt = " · ".join(
+            "%s %d" % (SHORT_NAME.get(t, t), n) for t, n in
+            ((t, type_mix.get(t, 0)) for t, _ in GAOKAO_MIX) if n)
+        notes.insert(0, "题型按高考卷面比例分配：%s" % mix_txt)
+        if base_ratio is not None and base_ratio > ratio + 0.005:
+            notes.append("为保卷面结构，覆盖率从 %.0f%% 降到 %.0f%%（不限定题型时的最大覆盖是前者）"
+                         % (base_ratio * 100, ratio * 100))
     if plan["short"]:
-        notes.append("题型配额没满足：%s" % plan["short"])
+        notes.append("题型配额没满足：%s —— 这类题在筛选结果里不够" % plan["short"])
 
     return {"keys": plan["keys"], "covered": plan["covered"], "score": score,
             "report": {"covered": got, "reachable": total, "ratio": round(ratio, 3),
-                       "target": coverage, "notes": notes}}
+                       "target": coverage, "notes": notes,
+                       **({"mix": {t: type_mix.get(t, 0) for t, _ in GAOKAO_MIX}}
+                          if type_mix else {}),
+                       **({"ratio_free": round(base_ratio, 3)}
+                          if base_ratio is not None else {})}}
 
 
 # ── 自检 ──────────────────────────────────────────────────────────────
