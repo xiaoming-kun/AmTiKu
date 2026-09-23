@@ -13,13 +13,45 @@
  *  ④ 折叠的答案与解析：不展开也看得见"答案 C / 有解析"，
  *     展开才去拉全量（答案与解析的块 IR 列表接口不带，见 server.py 的说明）
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, BookPlus, Check, ChevronDown, Flame, TriangleAlert, Loader2, Maximize2 } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { renderBlocks } from '@/lib/render'
 import { api, reportErr } from '@/lib/api'
 import { DIFF_STARS } from '@/lib/display'
 import { Flags } from '@/app/ui'
+
+/** 题干到底有没有被截断。
+ *
+ *  封顶高度的渐隐**不能无条件画**：一行就放得下的短题干也会被那 22px 盖住，
+ *  看起来就像"题目自带一层渐变"。所以要真的量一下 scrollHeight。
+ *  依赖里带 `q.key` / `dense`：题换了、密度换了都得重算
+ *  （ResizeObserver 只在盒子尺寸变时触发，而"被截断"恰恰是不变尺寸的那种）。 */
+function useClamped(deps: unknown[]) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [over, setOver] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setOver(el.scrollHeight > el.clientHeight + 2)
+    check()
+
+    // **三件都要听**，少一件就会漏：
+    //  · ResizeObserver —— 窗口/面板宽度变了
+    //  · MutationObserver —— KaTeX 是**挂载之后**才把公式画进去的，
+    //    内容长高了但盒子被 max-height 钉死，ResizeObserver 根本不会响
+    //    （实测漏掉过：量出来 29 vs 26 该显示渐隐，却没显示）
+    //  · fonts.ready —— 字体到位后行高会再变一次
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    const mo = new MutationObserver(check)
+    mo.observe(el, { childList: true, subtree: true, characterData: true })
+    document.fonts?.ready.then(check).catch(() => {})
+    return () => { ro.disconnect(); mo.disconnect() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+  return [ref, over] as const
+}
 
 /** 答案的**纯文字**预览。只认两种情况，其余一律让用户展开看：
  *  选择题的字母（`C` / `ABD`）、解答题的「见解析」。
@@ -67,6 +99,9 @@ export default function Card({
    * 勾选和看题是两件事，不该互斥。
    */
   const pick = () => { onOpen(); if (selectMode) onToggle() }
+
+  // 题干封顶后的渐隐只在**真截断**时才画（见 useClamped 的注释）
+  const [clampRef, clamped] = useClamped([q.key, dense])
 
   const ans = answerPreview(q.answer)
   const hasSol = !!q.flags['解析']
@@ -171,7 +206,8 @@ export default function Card({
       {/* ── ③ 题干 + 选项 ── */}
       <div className={`${dense ? 'px-3.5 pt-2' : 'px-4 pt-2.5'}`}>
         <div className="q-stem q-compact text-[14.5px] text-ink">
-          <div className={`q-clamp ${dense ? 'max-h-[1.7em]' : 'max-h-[4.6em]'}`}>
+          <div ref={clampRef} data-over={clamped ? '1' : '0'}
+            className={`q-clamp ${dense ? 'max-h-[1.7em]' : 'max-h-[4.6em]'}`}>
             {renderBlocks(q.blocks?.stem)}
           </div>
         </div>
