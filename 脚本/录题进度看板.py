@@ -111,6 +111,11 @@ def main():
     files = sorted((SRC / "输出_v2").glob("*.成品.json"))
     nq = 0
     no_ans = no_exp = fld_ans = fld_exp = 0
+    # 按成品实测的两本账：答案栏填了多少、闸（`ingest._incomplete_errors`，只认字面空串）
+    # 会拦多少。队列 `答案[]` 是快照，登记不全 ≠ 磁盘上没有答案件（见下面「答案卷」那条）。
+    filled_by = {}
+    total_by = {}
+    blocked_by = {}
     for f in files:
         recs = json.loads(f.read_text(encoding="utf-8"))
         nq += len(recs)
@@ -118,6 +123,12 @@ def main():
         e = [r for r in recs if (r.get("解析") or "").strip().replace(" ", "") in EMPTY_EXPS]
         no_ans += len(a); no_exp += len(e)
         fld_ans += bool(a); fld_exp += bool(e)
+        seq = f.name.split("_", 1)[0]
+        g = [r for r in recs if not (r.get("解析") or "").strip()
+             or (r.get("题型") in OBJ_TYPES and not (r.get("答案") or "").strip())]
+        total_by[seq] = total_by.get(seq, 0) + len(recs)
+        filled_by[seq] = filled_by.get(seq, 0) + sum(1 for r in recs if (r.get("答案") or "").strip())
+        blocked_by[seq] = blocked_by.get(seq, 0) + len(g)
     n_side = sum(len(json.loads(f.read_text(encoding="utf-8")))
                  for f in (SRC / "输出_v2").glob("*.解答.json"))
     pend = Counter()
@@ -212,11 +223,26 @@ def main():
                                                  if x["状态"] not in ("已解析-待入库", "todo", "待重解析-曾判撞车")})),
                                 len(noans_all) - noans_parsed - noans_left) \
         if len(noans_all) - noans_parsed - noans_left else "无"
-    L.append("- **无答案卷 %d 场**（队列 `答案[]` 为空，其中 %d 场已解析、%d 场还没做、%s）："
-             "按口径照录、答案/解析留空。"
-             "入库闸 `_incomplete_errors()` 会整批拦，"
-             "要先定怎么处理（另寻答案卷 / 允许模型作答 / 开豁免口子）。"
-             % (len(noans_all), noans_parsed, noans_left, noans_other))
+    # 队列 `答案[]` 是**录入时的快照**，答案件常没登记进去（另存一个文件、或与卷面合在
+    # 同一个 PDF 里）⇒ 判「有没有答案」只能读成品答案栏，不能读这个字段。
+    def filled_of(x):
+        fs = [f for f in files if f.name.startswith("%d_" % x["序号"])]
+        return sum(filled_by.get(f.name.split("_", 1)[0], 0) for f in fs), len(fs)
+    dry = [x for x in noans_all if not filled_of(x)[0]]
+    dry_txt = "、".join("#%s %s%s" % (x["序号"], x["卷名"],
+                                      "" if filled_of(x)[1] else "（无成品）") for x in dry) or "无"
+    blk_n = sum(blocked_by.values())
+    blk_f = sum(1 for v in blocked_by.values() if v)
+    blk_all = sum(1 for k, v in blocked_by.items() if v and v == total_by.get(k))
+    L.append("- **答案卷**：队列 `答案[]` 为空的 **%d 场**（%d 场已解析、%d 场还没做、%s）是**快照口径**，"
+             "不等于磁盘上没有答案件——按成品答案栏实测，其中 **%d 场是取到答案的**；"
+             "**真的一道答案没取到的 %d 场**：%s。\n"
+             % (len(noans_all), noans_parsed, noans_left, noans_other,
+                len(noans_all) - len(dry), len(dry), dry_txt))
+    L.append("  入库闸 `_incomplete_errors()` 只认**字面空串**（写「解析无」的它放行），现读会拦 "
+             "**%d 道 / %d 场**（整场级 %d 场，其余 %d 场是零头题）；"
+             "闸按整批拒，所以怎么定仍要用户拍板（另寻答案卷 / 允许模型作答 / 开豁免口子）。"
+             % (blk_n, blk_f, blk_all, blk_f - blk_all))
     L.append("- **内容级实测**（只读扫 %d 份成品）：客观题答案栏为空 **%d 道 / %d 场**；"
              "解析为空或写「解析无」**%d 道 / %d 场**，其中 `*.解答.json` 已备好待转录的 **%d 道**"
              "（那份是 sidecar，入库只读 `.成品.json`，不转录就不进库）。"
