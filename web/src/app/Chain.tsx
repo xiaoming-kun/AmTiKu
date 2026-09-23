@@ -13,10 +13,9 @@
  *     写进 知识链路.json 就变成多人共用一个进度了。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Crosshair, Loader2, Lock, Orbit, Rows3, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { Crosshair, Loader2, Lock, Route, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { api, reportErr } from '@/lib/api'
 import { Chip, useFlag } from '@/app/ui'
-import { Galaxy } from '@/app/Galaxy'
 import { Ego } from '@/app/Ego'
 
 type GNode = {
@@ -38,8 +37,14 @@ const LS_KEY = 'amti.chain.mastered'
 const TOPIC_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#059669', '#d97706',
   '#dc2626', '#db2777', '#65a30d', '#4f46e5', '#0d9488']
 
-/* 布局常量。ROW 定 24 是因为最多的列（概率统计 20 个）要能塞进一屏高。 */
-const COL_W = 152, ROW = 24, NODE_W = 48, NODE_H = 18, PAD = 26, HEAD = 30
+/* 布局常量。
+ * 默认**只画 10 个章节卡片**，点开的章节才在它下面长出考点——这是「探索」的核心：
+ * 152 个考点 + 315 条边一次全铺出来必然是毛线球（用户截图里那团就是），
+ * 而一屏 10 个大节点永远清爽，关系靠「点开一层」逐级展开。 */
+const CHAP_W = 168, CHAP_W_OPEN = 186, GAP = 20, PAD = 24
+const ROW = 24, NODE_W = 48, NODE_H = 18, NODE_TOP = 92, HEAD = 50
+/** 章节卡片的高度；卡片排在下方，弧线往上画（弧图布局） */
+const CARD_H = 66, BASELINE = 300
 
 type Pos = { x: number; y: number; col: number }
 type View = { k: number; tx: number; ty: number }
@@ -50,14 +55,9 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
   const [sel, setSel] = useState('')
   const [hover, setHover] = useState('')
   const [hardOnly, setHardOnly] = useFlag('amti.chain.hardonly', false)
-  const [off, setOff] = useState<Set<string>>(new Set())   // 隐藏的大类
   const [view, setView] = useState<View>({ k: 1, tx: 0, ty: 0 })
+  const [fitNonce, setFitNonce] = useState(0)
   const [q, setQ] = useState('')
-  /** 视图模式：星系（默认，全局与氛围）/ 层级（按顺序精读、查覆盖）。
-   *  两种模式共用同一份数据、同一套筛选与进度，切换不丢状态。 */
-  const [galaxy, setGalaxy] = useFlag('amti.chain.galaxy', true)
-  const [resetNonce, setResetNonce] = useState(0)
-  const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null)
   const [audit, setAudit] = useState<any>(null)
   const [showAudit, setShowAudit] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
@@ -82,37 +82,122 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     return m
   }, [g])
 
-  const { cols, pos, W, H } = useMemo(() => {
-    const cols: { topic: string; color: string; nodes: GNode[] }[] = []
+  /** 展开的章节。默认空 = 只看 10 个大节点。 */
+  const [open, setOpen] = useState<Set<string>>(new Set())
+
+  const { chaps, pos, W, H, topicOf } = useMemo(() => {
+    const groups: { topic: string; color: string; nodes: GNode[] }[] = []
     for (const n of g?.nodes || []) {
-      let c = cols.find((x) => x.topic === n.topic)
-      if (!c) { c = { topic: n.topic, color: TOPIC_COLORS[cols.length % 10], nodes: [] }; cols.push(c) }
+      let c = groups.find((x) => x.topic === n.topic)
+      if (!c) { c = { topic: n.topic, color: TOPIC_COLORS[groups.length % 10], nodes: [] }; groups.push(c) }
       c.nodes.push(n)
     }
     // 列内先按 hard 深度（由浅到深），同深度保持知识点库原顺序：
-    // 这样「从上往下 = 越来越难」在每一列内也成立。
-    for (const c of cols) {
-      c.nodes = c.nodes
-        .map((n, i) => ({ n, i }))
-        .sort((a, b) => a.n.depth - b.n.depth || a.i - b.i)
-        .map((x) => x.n)
+    // 这样「从上往下 = 越来越浅→深」在章节内部也成立。
+    for (const c of groups) {
+      c.nodes = c.nodes.map((n, i) => ({ n, i }))
+        .sort((a, b) => a.n.depth - b.n.depth || a.i - b.i).map((x) => x.n)
     }
-    const pos = new Map<string, Pos>()
-    let maxRow = 0
-    cols.forEach((c, ci) => {
-      c.nodes.forEach((n, ri) => {
-        pos.set(n.id, { x: PAD + ci * COL_W + NODE_W / 2, y: PAD + HEAD + ri * ROW, col: ci })
-        maxRow = Math.max(maxRow, ri)
-      })
+    const maxRows = Math.max(0, ...groups.filter((c) => open.has(c.topic)).map((c) => c.nodes.length))
+    // 展开的章节要往下长，所以画布高度取「基线 + 最长的一列」和固定值里的较大者
+    const height = Math.max(BASELINE + CARD_H + 40, NODE_TOP + maxRows * ROW + 40)
+    let x = PAD
+    const chaps = groups.map((c) => {
+      const isOpen = open.has(c.topic)
+      const w = isOpen ? CHAP_W_OPEN : CHAP_W
+      const o = { topic: c.topic, color: c.color, nodes: c.nodes, open: isOpen, x, w,
+        // 卡片统一排在一条基线上，弧线一律往上画 —— 横排节点 + 上方弧线
+        // 是「弧图」的标准形态；早先把卡片竖直居中、弧线高度按条数硬加，
+        // 结果弧线各自冲向天空、互相穿插成一团。
+        y: BASELINE, questions: c.nodes.reduce((a, n) => a + n.n, 0) }
+      x += w + GAP
+      return o
     })
-    return { cols, pos, W: PAD * 2 + cols.length * COL_W, H: PAD * 2 + HEAD + (maxRow + 1) * ROW }
-  }, [g])
+    const pos = new Map<string, Pos>()
+    chaps.forEach((c, ci) => {
+      if (!c.open) return
+      c.nodes.forEach((n, ri) => pos.set(n.id, { x: c.x + NODE_W / 2 + 8, y: NODE_TOP + ri * ROW, col: ci }))
+    })
+    const topicOf = new Map<string, string>()
+    for (const n of g?.nodes || []) topicOf.set(n.id, n.topic)
+    return { chaps, pos, W: x - GAP + PAD, H: height, topicOf }
+  }, [g, open])
+
+  const chapOf = useMemo(() => new Map(chaps.map((c) => [c.topic, c])), [chaps])
+  const chapIdx = useCallback((t: string) => chaps.findIndex((c) => c.topic === t), [chaps])
+
+  const edges = useMemo(() => {
+    const all = g?.edges || []
+    return hardOnly ? all.filter((e) => e.strength === 'hard') : all
+  }, [g, hardOnly])
+
+  /** 关系按「两端是否展开」分三层：
+   *  ① 两端都收起 → **章节级聚合边**（一条弧 + 条数徽标）
+   *  ② 只有一端展开 → 细线连过去 + 卡片旁徽标（看得出"这一章有多少条通向那一章"）
+   *  ③ 两端都展开 → 节点级边（就是原来的画法）
+   *  这样无论展开到哪一层，屏幕上都不会出现一屏乱线。 */
+  const { agg, cross, nodeEdges } = useMemo(() => {
+    const aggM = new Map<string, { a: string; b: string; hard: number; soft: number }>()
+    const cross: { pre: string; post: string; strength: 'hard' | 'soft'; a: string; b: string }[] = []
+    const nodeEdges: Edge[] = []
+    for (const e of edges) {
+      const ta = topicOf.get(e.pre) || '', tb = topicOf.get(e.post) || ''
+      const oa = open.has(ta), ob = open.has(tb)
+      if (oa && ob) nodeEdges.push(e)
+      else if (!oa && !ob) {
+        const k = ta + '>' + tb
+        const cur = aggM.get(k) || { a: ta, b: tb, hard: 0, soft: 0 }
+        cur[e.strength === 'hard' ? 'hard' : 'soft'] += 1
+        aggM.set(k, cur)
+      } else cross.push({ pre: e.pre, post: e.post, strength: e.strength, a: ta, b: tb })
+    }
+    return { agg: [...aggM.values()], cross, nodeEdges }
+  }, [edges, open, topicOf])
+
+  /** 章节级的入/出条数：收起的卡片上直接写出来，不用点开就知道谁依赖谁 */
+  const chapDeg = useMemo(() => {
+    const m = new Map<string, { i: number; o: number }>()
+    for (const a of agg) {
+      const A = m.get(a.a) || { i: 0, o: 0 }, B = m.get(a.b) || { i: 0, o: 0 }
+      A.o += a.hard + a.soft; B.i += a.hard + a.soft
+      m.set(a.a, A); m.set(a.b, B)
+    }
+    return m
+  }, [agg])
+
+  /** 选中考点的**整条链路**（全部先修 + 全部后续）。
+   *  探索的关键：链路会穿过还没展开的章节，那些就画成高亮的聚合边——
+   *  顺着亮线点开对应章节，就是一步一步把这条链走出来。 */
+  const chain = useMemo(() => {
+    if (!sel) return null
+    const up = new Set([sel]), down = new Set([sel])
+    const walk = (dir: 'up' | 'down', acc: Set<string>) => {
+      const stack = [sel]
+      while (stack.length) {
+        const cur = stack.pop()!
+        for (const e of g?.edges || []) {
+          const nxt = dir === 'up' ? (e.post === cur ? e.pre : '') : (e.pre === cur ? e.post : '')
+          if (nxt && !acc.has(nxt)) { acc.add(nxt); stack.push(nxt) }
+        }
+      }
+    }
+    walk('up', up); walk('down', down)
+    const upE = new Set<string>(), downE = new Set<string>()
+    for (const e of g?.edges || []) {
+      const k = e.pre + '>' + e.post
+      if (up.has(e.pre) && up.has(e.post)) upE.add(k)
+      if (down.has(e.pre) && down.has(e.post)) downE.add(k)
+    }
+    const topics = new Set<string>()
+    for (const id of [...up, ...down]) { const t = topicOf.get(id); if (t) topics.add(t) }
+    return { up, down, upE, downE, topics }
+  }, [sel, g, topicOf])
 
   const topicColor = useMemo(() => {
     const m = new Map<string, string>()
-    for (const c of cols) m.set(c.topic, c.color)
+    for (const c of chaps) m.set(c.topic, c.color)
     return m
-  }, [cols])
+  }, [chaps])
 
   /* 适配画布大小。
    *
@@ -138,9 +223,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     }))
     ro.observe(el)
     return () => ro.disconnect()
-    // 依赖里必须有 galaxy：切回「层级」时那个 div 才刚挂上，
-    // 不重跑的话 wrap.current 还是 null，适配一次都不会发生（首屏会偏）。
-  }, [W, H, galaxy])
+  }, [W, H, fitNonce])
 
   /** 硬性前置没全点亮 → 未解锁。这是 math-tree 那个解锁机制的等价物，
    *  只是在浏览器里算，不动数据。 */
@@ -161,11 +244,6 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     return s
   }, [focus, g])
 
-  const edges = useMemo(() => {
-    const all = g?.edges || []
-    return hardOnly ? all.filter((e) => e.strength === 'hard') : all
-  }, [g, hardOnly])
-
   const hit = useMemo(() => {
     const s = q.trim()
     if (!s) return []
@@ -173,13 +251,19 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
   }, [q, g])
 
   /* ── 视图操作 ───────────────────────────────────────── */
-  const centerOn = useCallback((id: string) => {
-    const el = wrap.current
-    setJump((f) => ({ id, nonce: (f?.nonce || 0) + 1 }))      // 星系模式认这个
-    const q = pos.get(id)                                      // 层级模式自己挪
+  const [pendingFocus, setPendingFocus] = useState('')
+  const centerOn = (id: string) => {
+    const t = g?.nodes.find((n) => n.id === id)?.topic
+    if (t) setOpen((st) => { const x = new Set(st); x.add(t); return x })
+    setPendingFocus(id)
+  }
+  useEffect(() => {
+    if (!pendingFocus) return
+    const q = pos.get(pendingFocus), el = wrap.current
     if (!q || !el) return
     setView((v) => ({ k: v.k, tx: el.clientWidth / 2 - q.x * v.k, ty: el.clientHeight / 2 - q.y * v.k }))
-  }, [pos])
+    setPendingFocus('')
+  }, [pendingFocus, pos])
 
   // 滚轮缩放：**必须挂原生监听并 passive:false** —— React 的 onWheel 是被动的，
   // 在里面 preventDefault 会被浏览器忽略，页面会跟着一起滚。
@@ -197,7 +281,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [g, galaxy])
+  }, [g])
 
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null)
   const onDown = (e: React.PointerEvent) => {
@@ -276,26 +360,14 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
             )}
           </span>
           <span className="min-w-0 flex-1" />
-          {/* 两种模式共用同一份数据、筛选与进度：星系负责「看全局、有感觉」，
-              层级负责「按顺序读、查覆盖」。默认星系。 */}
-          <span className="flex items-center gap-1 rounded-full border border-border bg-surface-2 p-[2px]">
-            <button onClick={() => setGalaxy(true)}
-              title="径向星空：角度=大类、半径=由浅入深；适合看全局与找位置"
-              className={`flex items-center gap-1 rounded-full px-2 py-[3px] text-[11.5px] ${galaxy
-                ? 'bg-brand text-white' : 'text-ink-soft hover:text-brand-ink'}`}>
-              <Orbit size={11} /> 星系
-            </button>
-            <button onClick={() => setGalaxy(false)}
-              title="分层图：横轴=大类、纵轴=层级；适合按顺序精读与查覆盖"
-              className={`flex items-center gap-1 rounded-full px-2 py-[3px] text-[11.5px] ${!galaxy
-                ? 'bg-brand text-white' : 'text-ink-soft hover:text-brand-ink'}`}>
-              <Rows3 size={11} /> 层级
-            </button>
-          </span>
+          <Chip size="sm" on={false} onClick={() => setOpen(new Set(chaps.map((c) => c.topic)))}
+            title="一次看全 152 个考点——关系会显得很密，适合查覆盖，不适合读链路">
+            展开全部</Chip>
+          <Chip size="sm" on={false} onClick={() => setOpen(new Set())}
+            title="回到 10 个大章节的目录视图">收起全部</Chip>
           <Chip size="sm" on={hardOnly} onClick={() => setHardOnly(!hardOnly)}
             title="软性前置只是「有帮助」，画上会显得链路很密">只看硬性前置</Chip>
-          <Chip size="sm" on={false}
-            onClick={() => { setResetNonce((v) => v + 1); setView({ k: 1, tx: 0, ty: 0 }) }}
+          <Chip size="sm" on={false} onClick={() => setFitNonce((v) => v + 1)}
             title="缩放和平移回到初始状态">复位</Chip>
           <Chip size="sm" on={false} onClick={openAudit}
             title="环路 / 悬空 / 无理由边 / 待补清单">
@@ -312,102 +384,164 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
           </span>
         </div>
 
-        {/* 画布 */}
-        {galaxy ? (
-          <Galaxy nodes={g.nodes} edges={g.edges} mastered={mastered} locked={locked}
-            sel={sel} onSelect={setSel} onToggleMastered={toggleMastered}
-            hardOnly={hardOnly} off={off}
-            onToggleTopic={(t) => setOff((x) => {
-              const n = new Set(x); n.has(t) ? n.delete(t) : n.add(t); return n
-            })}
-            resetNonce={resetNonce} focus={jump} />
-        ) : (
+        {/* 画布。**只有这一种视图**：径向星空试过，放弃了——
+            与浅色主题不搭、常驻 60fps 重绘白耗电，而精读仍旧要靠侧栏的局部链路图
+            （决策与证据见 设计/知识链路.md「视图选型」）。 */}
         <div ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
           className="relative min-h-0 flex-1 cursor-grab overflow-hidden bg-surface-2 active:cursor-grabbing">
           <svg width="100%" height="100%" className="select-none">
             <g transform={`translate(${view.tx},${view.ty}) scale(${view.k})`}>
-              {/* 列头：点一下隐藏/显示这个大类的节点（**布局不动**，
-                  只压暗——重排会让整张图跳一下，用户会迷路） */}
-              {cols.map((c) => {
-                const x = PAD + (pos.get(c.nodes[0].id)?.col || 0) * COL_W
-                const hidden = off.has(c.topic)
+              {/* 章节卡片：默认只有它。点一下展开/收起它的考点。 */}
+              {chaps.map((c) => {
+                const hidden = false
+                const deg2 = chapDeg.get(c.topic) || { i: 0, o: 0 }
+                const h = c.open ? HEAD - 6 : 60
                 return (
-                  <g key={c.topic} data-node
-                    onClick={() => setOff((s) => {
-                      const t = new Set(s); t.has(c.topic) ? t.delete(c.topic) : t.add(c.topic); return t
-                    })}
-                    className="cursor-pointer">
-                    <rect x={x} y={PAD} width={COL_W - 12} height={HEAD - 8} rx={6}
-                      fill={hidden ? '#f1f5f9' : c.color + '18'} stroke={hidden ? '#e2e8f0' : c.color + '55'} />
-                    <text x={x + 8} y={PAD + 15} fontSize={11.5} fontWeight={600}
+                  <g key={c.topic} data-node className="cursor-pointer"
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      setOpen((st) => { const t = new Set(st); t.has(c.topic) ? t.delete(c.topic) : t.add(c.topic); return t })
+                    }}>
+                    <rect x={c.x} y={c.y} width={c.w} height={h} rx={8}
+                      fill={hidden ? '#f8fafc' : c.color + '14'}
+                      stroke={hidden ? '#e2e8f0' : c.color + (c.open ? '99' : '55')}
+                      strokeWidth={c.open ? 1.6 : 1.2} />
+                    <text x={c.x + 10} y={c.y + 18} fontSize={12.5} fontWeight={700}
                       fill={hidden ? '#94a3b8' : c.color}>
-                      {c.topic.replace(/^[一二三四五六七八九十]+、/, '')}
+                      {(c.open ? '▾ ' : '▸ ') + c.topic.replace(/^[一二三四五六七八九十]+、/, '')}
                     </text>
-                    <text x={x + COL_W - 20} y={PAD + 15} fontSize={10} fill="#94a3b8"
-                      textAnchor="end">{c.nodes.length}</text>
+                    <text x={c.x + c.w - 10} y={c.y + 18} fontSize={10.5} textAnchor="end" fill="#94a3b8"
+                      className="tnum">{c.nodes.length} 考点</text>
+                    {!c.open && (
+                      <>
+                        <text x={c.x + 10} y={c.y + 36} fontSize={10.5} fill="#64748b" className="tnum">
+                          {c.questions} 道题
+                        </text>
+                        {/* 章节级的入/出条数：不点开也知道它跟谁有牵连 */}
+                        <text x={c.x + 10} y={c.y + 51} fontSize={10.5} fill="#94a3b8" className="tnum">
+                          入 {deg2.i} · 出 {deg2.o}
+                        </text>
+                      </>
+                    )}
                   </g>
                 )
               })}
 
-              {/* 边。**先画边后画节点**，否则线会盖在节点上。 */}
-              {edges.map((e, i) => {
-                const a = pos.get(e.pre), b = pos.get(e.post)
-                if (!a || !b) return null
-                const dim = off.has(g.nodes.find((n) => n.id === e.pre)?.topic || '')
-                  || off.has(g.nodes.find((n) => n.id === e.post)?.topic || '')
-                const lit = near && (near.has(e.pre) && near.has(e.post))
-                const hot = focus && lit
-                const x1 = a.x + NODE_W / 2, x2 = b.x - NODE_W / 2
-                let d: string
-                if (b.col > a.col) {
-                  const dx = Math.max(18, (x2 - x1) * 0.45)
-                  d = `M ${x1} ${a.y} C ${x1 + dx} ${a.y}, ${x2 - dx} ${b.y}, ${x2} ${b.y}`
-                } else if (b.col === a.col) {
-                  // 同列相邻（如「集合运算 → 新题型」）：从右侧绕一个小弧，
-                  // 直线会正好压在节点之间，看不出方向。
-                  const r = 16 + Math.abs(b.y - a.y) * 0.25
-                  d = `M ${x1} ${a.y} C ${x1 + r} ${a.y}, ${x1 + r} ${b.y}, ${x1} ${b.y}`
-                } else {
-                  const r = 40
-                  d = `M ${x1} ${a.y} C ${x1 + r} ${a.y + 26}, ${x2 - r} ${b.y + 26}, ${x2} ${b.y}`
-                }
+              {/* 边。**先画边后画节点**，否则线会盖在节点上。分三层画：
+                  聚合 → 跨层细线 → 节点级，越靠下的越具体。 */}
+              {/* ① 章节级聚合边：弧图（arc diagram）。
+                  节点横排一行，关系画成上方的弧，**弧高按跨了几列递增**：
+                  相邻章是小拱、首尾章是大拱，彼此嵌套而不打架。
+                  早先按"条数"定弧高 → 所有弧都往天上冲、交叉成一团。 */}
+              {[...agg].sort((p1, p2) =>
+                (chapIdx(p1.a) - chapIdx(p1.b)) ** 2 - (chapIdx(p2.a) - chapIdx(p2.b)) ** 2
+                || p1.a.localeCompare(p2.a)).map((a2) => {
+                const A = chapOf.get(a2.a), B = chapOf.get(a2.b)
+                if (!A || !B) return null
+                const n = a2.hard + a2.soft
+                const i = chapIdx(a2.a), j = chapIdx(a2.b)
+                const span = Math.abs(i - j)
+                const x1 = A.x + A.w / 2, x2 = B.x + B.w / 2
+                const y = BASELINE
+                const h = 34 + span * 20
+                const mx = (x1 + x2) / 2, my = y - h
+                const litUp = chain && chain.up.has(a2.a) && chain.up.has(a2.b)
+                const litDown = chain && chain.down.has(a2.a) && chain.down.has(a2.b)
+                const hot = litUp || litDown
+                const col = litUp ? '#0e7490' : litDown ? '#db2777' : a2.hard ? '#94a3b8' : '#cbd5e1'
                 return (
-                  <path key={i} d={d} fill="none"
-                    stroke={hot ? '#db2777' : e.strength === 'hard' ? '#94a3b8' : '#cbd5e1'}
-                    strokeWidth={hot ? 2 : e.strength === 'hard' ? 1.4 : 1}
-                    strokeDasharray={e.strength === 'soft' && !hot ? '3 2.5' : undefined}
-                    markerEnd={hot ? 'url(#ah)' : e.strength === 'hard' ? 'url(#ah)' : undefined}
-                    opacity={dim ? 0.06 : hover ? (lit ? 1 : 0.15) : sel && !lit ? 0.5 : 1} />
+                  <g key={a2.a + '>' + a2.b} className="transition-opacity duration-200"
+                    opacity={hot ? 1 : chain ? 0.25 : n === 1 ? 0.45 : 0.9}>
+                    <path d={`M ${x1} ${y} Q ${mx} ${y - h * 2}, ${x2} ${y}`} fill="none"
+                      stroke={col} strokeWidth={hot ? 2.6 : 0.9 + Math.sqrt(n) * 0.75}
+                      strokeDasharray={!a2.hard ? '4 3' : undefined} markerEnd="url(#ahg)" />
+                    {/* 徽标只在条数 ≥2 时画：40 多条边全挂数字，数字本身就成了噪声 */}
+                    {n >= 2 && (
+                      <g transform={`translate(${mx},${my - 9})`}>
+                        <rect x={-13} y={-9} width={26} height={17} rx={8.5} fill="#fff"
+                          stroke={col} strokeWidth={hot ? 1.6 : 1} />
+                        <text x={0} y={3.5} fontSize={10.5} textAnchor="middle" className="tnum"
+                          fill={litUp ? '#0e7490' : litDown ? '#be185d' : '#64748b'}>{n}</text>
+                      </g>
+                    )}
+                  </g>
                 )
               })}
 
-              {/* 节点 */}
+              {/* ② 一端展开、一端收起：细线连过去。看得出"这一章的哪些考点通向那一章" */}
+              {cross.map((e, i) => {
+                const p1 = pos.get(e.pre), p2 = pos.get(e.post)
+                const A = chapOf.get(e.a), B = chapOf.get(e.b)
+                if (!A || !B) return null
+                const from = p1 ? { x: p1.x + NODE_W / 2, y: p1.y } : { x: A.x + A.w, y: A.y + 30 }
+                const to = p2 ? { x: p2.x - NODE_W / 2, y: p2.y } : { x: B.x, y: B.y + 30 }
+                const lit = chain && (chain.upE.has(e.pre + '>' + e.post) || chain.downE.has(e.pre + '>' + e.post))
+                const hidden = false
+                return (
+                  <path key={'x' + i} fill="none" className="transition-opacity duration-200"
+                    d={`M ${from.x} ${from.y} C ${(from.x + to.x) / 2} ${from.y}, ` +
+                       `${(from.x + to.x) / 2} ${to.y}, ${to.x} ${to.y}`}
+                    stroke={lit ? (chain!.upE.has(e.pre + '>' + e.post) ? '#0e7490' : '#db2777')
+                      : e.strength === 'hard' ? '#cbd5e1' : '#e2e8f0'}
+                    strokeWidth={lit ? 2 : 1}
+                    strokeDasharray={e.strength === 'soft' && !lit ? '3 2.5' : undefined}
+                    opacity={hidden ? 0.04 : lit ? 1 : chain ? 0.12 : 0.5} />
+                )
+              })}
+
+              {/* ③ 两端都展开：节点级边（原来的画法） */}
+              {nodeEdges.map((e, i) => {
+                const p1 = pos.get(e.pre), p2 = pos.get(e.post)
+                if (!p1 || !p2) return null
+                const lit = chain && (chain.upE.has(e.pre + '>' + e.post) || chain.downE.has(e.pre + '>' + e.post))
+                const hot = hover && near && near.has(e.pre) && near.has(e.post)
+                const x1 = p1.x + NODE_W / 2, x2 = p2.x - NODE_W / 2
+                let d: string
+                if (p2.col === p1.col) {
+                  const r = 16 + Math.abs(p2.y - p1.y) * 0.25
+                  d = `M ${x1} ${p1.y} C ${x1 + r} ${p1.y}, ${x1 + r} ${p2.y}, ${x1} ${p2.y}`
+                } else {
+                  const dx = Math.max(18, (x2 - x1) * 0.45)
+                  d = `M ${x1} ${p1.y} C ${x1 + dx} ${p1.y}, ${x2 - dx} ${p2.y}, ${x2} ${p2.y}`
+                }
+                return (
+                  <path key={i} d={d} fill="none" className="transition-opacity duration-200"
+                    stroke={lit ? (chain!.upE.has(e.pre + '>' + e.post) ? '#0e7490' : '#db2777')
+                      : hot ? '#db2777' : e.strength === 'hard' ? '#94a3b8' : '#cbd5e1'}
+                    strokeWidth={lit || hot ? 2.2 : e.strength === 'hard' ? 1.4 : 1}
+                    strokeDasharray={e.strength === 'soft' && !lit && !hot ? '3 2.5' : undefined}
+                    markerEnd={lit || hot || e.strength === 'hard' ? 'url(#ah)' : undefined}
+                    opacity={chain && !lit ? 0.12 : hover && !hot && !lit ? 0.2 : 1} />
+                )
+              })}
+
+              {/* ④ 节点：只在展开的章节里出现 */}
               {g.nodes.map((n) => {
                 const p = pos.get(n.id)
                 if (!p) return null
                 const c = topicColor.get(n.topic) || '#64748b'
                 const lk = locked(n.id), mk = mastered.has(n.id)
-                // 压暗**只在悬停时**做（临时聚焦）；选中是"停在这儿看"的持久状态，
-                // 那时把 150 个节点压成灰的，整页会显得像坏了。
-                const dim = off.has(n.topic) || (hover && near && !near.has(n.id))
+                const inChain = chain ? (chain.up.has(n.id) || chain.down.has(n.id)) : true
+                const dim = chain ? !inChain : hover && near ? !near.has(n.id) : false
                 const isSel = sel === n.id
                 return (
                   <g key={n.id} data-node transform={`translate(${p.x - NODE_W / 2},${p.y - NODE_H / 2})`}
-                    opacity={dim ? 0.3 : 1} className="cursor-pointer"
+                    opacity={dim ? (chain ? 0.16 : 0.3) : 1}
+                    className="cursor-pointer transition-opacity duration-200"
                     onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover('')}
                     onClick={(ev) => { ev.stopPropagation(); setSel(n.id) }}>
                     <title>{`${n.id} ${n.title}\n★${n.stars} · ${n.difficulty} · ${n.n} 道题`}</title>
                     <rect width={NODE_W} height={NODE_H} rx={5}
                       fill={mk ? c : lk ? '#f1f5f9' : '#ffffff'}
-                      stroke={isSel ? '#db2777' : mk ? c : lk ? '#e2e8f0' : c}
-                      strokeWidth={isSel ? 2.2 : 1.2} />
+                      stroke={isSel ? '#db2777' : chain && chain.up.has(n.id) ? '#0e7490'
+                        : chain && chain.down.has(n.id) ? '#db2777' : mk ? c : lk ? '#e2e8f0' : c}
+                      strokeWidth={isSel ? 2.4 : 1.2} />
                     <text x={NODE_W / 2} y={12.5} fontSize={10.5} textAnchor="middle"
                       className="tnum" fill={mk ? '#fff' : lk ? '#94a3b8' : '#334155'}>
                       {n.id}
                     </text>
                     {lk && <circle cx={NODE_W - 4} cy={4} r={3} fill="#cbd5e1" />}
-                    <text x={NODE_W + 5} y={12.5} fontSize={9.5}
-                      fill={lk ? '#a8b3c2' : '#64748b'}>
+                    <text x={NODE_W + 5} y={12.5} fontSize={9.5} fill={lk ? '#a8b3c2' : '#64748b'}>
                       {n.title.length > 9 ? n.title.slice(0, 9) + '…' : n.title}
                     </text>
                   </g>
@@ -419,12 +553,16 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                 markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                 <path d="M 0 0 L 8 4 L 0 8 z" fill="#db2777" />
               </marker>
+              <marker id="ahg" viewBox="0 0 8 8" refX="7" refY="4"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 8 4 L 0 8 z" fill="#94a3b8" />
+              </marker>
             </defs>
           </svg>
 
           <div className="pointer-events-none absolute bottom-2.5 left-3 flex items-center gap-3
                           rounded-lg bg-surface/85 px-2.5 py-1 text-[10.5px] text-ink-faint">
-            <span>拖拽平移 · 滚轮缩放 · 点节点看详情 · 点列头隐藏大类</span>
+            <span>点章节卡片展开它的考点 · 点考点看右侧局部链路 · 拖拽平移 · 滚轮缩放</span>
             <span className="flex items-center gap-1">
               <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#94a3b8" strokeWidth="1.6" /></svg>
               硬性前置
@@ -441,13 +579,14 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
             实心 = 已点亮 · 灰底 <Lock size={9} className="inline" /> = 硬性前置还没点亮
           </div>
         </div>
-        )}
       </div>
 
       {/* ── 右：详情 ───────────────────────────────── */}
       {sel && <Detail id={sel} onPick={onPickPoint} onJump={(id) => { setSel(id); centerOn(id) }}
         mastered={mastered.has(sel)} onToggle={() => toggleMastered(sel)}
-        onClose={() => setSel('')} locked={locked(sel)} />}
+        onClose={() => setSel('')} locked={locked(sel)}
+        nChap={chain ? chain.topics.size : 1}
+        onExpand={() => chain && setOpen((st) => new Set([...st, ...chain.topics]))} />}
 
       {/* ── 体检抽屉 ───────────────────────────────── */}
       {showAudit && (
@@ -460,9 +599,11 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
 
 /* ══ 侧栏详情 ══════════════════════════════════════ */
 
-function Detail({ id, onPick, onJump, mastered, onToggle, onClose, locked }: {
+function Detail({ id, onPick, onJump, mastered, onToggle, onClose, locked, onExpand, nChap }: {
   id: string; onPick: (pid: string, title: string) => void; onJump: (pid: string) => void
   mastered: boolean; onToggle: () => void; onClose: () => void; locked: boolean
+  /** 展开这条链路经过的所有章节（探索的入口：把路径一次铺出来） */
+  onExpand: () => void; nChap: number
 }) {
   const [d, setD] = useState<any>(null)
   const [open, setOpen] = useState(true)
@@ -529,6 +670,13 @@ function Detail({ id, onPick, onJump, mastered, onToggle, onClose, locked }: {
                   : 'border border-has-line bg-has-soft text-has hover:bg-has/10'}`}>
                 <Sparkles size={11} className="mr-1 inline" />
                 {mastered ? '取消点亮' : '点亮（我掌握了）'}
+              </button>
+              <button onClick={onExpand}
+                title="把这条先修链经过的章节全部展开，一次看清整条路径"
+                className="press rounded-lg border border-border bg-surface px-2.5 py-[4px]
+                           text-[12px] font-medium text-ink-soft hover:border-brand-line hover:text-brand-ink">
+                <Route size={11} className="mr-1 inline" />
+                展开整条链路（{nChap} 章）
               </button>
             </div>
 

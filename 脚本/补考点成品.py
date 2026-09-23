@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+r"""给**还没入库的成品**补考点标签（难度随之派生，不用单独做）。
+
+## 为什么不能直接用 脚本/补考点入库.py
+
+`补考点入库.py` 是给**库里已有的题**补标签的：它的输入 key 是库内 key，
+写库走 `store.rewrite_all()`。而这 571 份成品还没入库，两件事都对不上：
+key 还不存在，而且入库后再补要触发全库重写，风险高得多。
+
+所以这里的做法是：**入库前就把考点算好，入库时随 `ingest` 一起带进去**，
+一次落定、不需要 rewrite_all。
+
+## 难度不用单独做
+
+`schema.Question.difficulty` 是派生的：`meta["difficulty"]` 有值就用，
+否则取 `knowledge.difficulty_of(points[0])`（`amti/knowledge.py`）。
+考点库 152 个考点的难度是齐的 ⇒ **补了 points，难度自动来**。
+
+## 三个子命令
+
+    python3 脚本/补考点成品.py split      # 出题：成品 → batches/bNNN.json（每批 40 题）
+    python3 脚本/补考点成品.py merge      # 收结果：r*.json → 成品标签.json（带校验）
+    python3 脚本/补考点成品.py stat       # 覆盖率与缺口
+
+分类由模型会话做：读 `batches/bNNN.json` + `考点表.txt`，
+把结果写 `batches/rNNN.json`，格式 `[{"key":"…","points":["1.1.3"]}, …]`。
+
+## 校验（merge 时硬拦，不合格的一律不进标签文件）
+
+- 考点 id 必须在 `知识点.json` 里存在
+- 每题 1–3 个，去重
+- **一题多考点时，第一个必须是主考点**（难度按它派生）
+- key 撞车要报出来：`label` 取自文件名，历史上 #32×#53、#219×#223 跨场撞过 37 个 key，
+  静默覆盖会让两道不同的题共用一套标签
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from amti import knowledge, record2  # noqa: E402
+
+V2 = ROOT / "数据/录题/输出_v2"
+WORK = ROOT / ".tobias/分类/成品"
+BATCH = WORK / "batches"
+CATALOG = WORK / "考点表.txt"
+LABELS = ROOT / ".tobias/分类/成品标签.json"
+SIZE = 40
+
+
+def _label_of(path: Path) -> str:
+    """成品文件名 → 将来的库 source_label（与 录题入库.py 的 re_label 同一条规则）。"""
+    n = path.name
+    for suf in (".成品.json", ".解答.json", ".待复核.json"):
+        if n.endswith(suf):
+            return n[:-len(suf)]
+    return n
+
+
+def _key_of(label: str, no) -> str:
+    return "%s#%s" % (label, no)
+
+
+def _valid_ids() -> set:
+    return {p["id"] for p in knowledge.all_points()}
+
+
+def _empty_sol(s: str) -> bool:
+    s = (s or "").strip()
+    return (not s) or s == "解析无"
+
+
+def split() -> None:
+    """出分类输入。带选项和解析摘要——只看题干常常定不准考点。"""
+    BATCH.mkdir(parents=True, exist_ok=True)
+    if not CATALOG.exists():
+        lines = []
+        for p in sorted(knowledge.all_points(), key=lambda x: x["id"]):
+            lines.append("%s\t%s\t%s" % (p["id"], knowledge.difficulty_of(p["id"]),
+                                         knowledge.title_of(p["id"])))
+        CATALOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print("写了考点表 %s（%d 个考点）" % (CATALOG.relative_to(ROOT), len(lines)))
+
+    items, seen = [], defaultdict(list)
+    for p in sorted(V2.glob("*.成品.json")):
+        label = _label_of(p)
+        for r in json.loads(p.read_text(encoding="utf-8")):
+            k = _key_of(label, r["题号"])
+            seen[k].append(p.name)
+            opts = "；".join((o.get("text") if isinstance(o, dict) else str(o)) or ""
+                             for o in (r.get("选项") or {}).values())
+            items.append({"i": len(items), "key": k, "type": r["题型"],
+                          "stem": (r.get("题干") or "")[:600],
+                          "opts": opts[:400],
+                          # 解析能显著提高考点判定准确率，但只给摘要，省 token
+                          "sol_hint": (r.get("解析") or "")[:200]})
+    dup = {k: v for k, v in seen.items() if len(v) > 1}
+    n = 0
+    for i in range(0, len(items), SIZE):
+        n += 1
+        (BATCH / ("b%03d.json" % n)).write_text(
+            json.dumps(items[i:i + SIZE], ensure_ascii=False, indent=1), encoding="utf-8")
+    print("成品 %d 题 → %d 批（每批 ≤%d）" % (len(items), n, SIZE))
+    if dup:
+        print("⚠️ 有 %d 个 key 被多份成品共用（label 取自文件名导致的跨场撞车），"
+              "merge 时不能静默覆盖：%s" % (len(dup), list(dup)[:5]))
+        (WORK / "撞车key.json").write_text(json.dumps(dup, ensure_ascii=False, indent=1),
+                                           encoding="utf-8")
+
+
+def merge() -> None:
+    ids = _valid_ids()
+    by_key = {}
+    bad = []
+    files = sorted(BATCH.glob("r*.json"))
+    if not files:
+        sys.exit("还没有 r*.json 结果文件（先让模型跑 batches/）")
+    for f in files:
+        try:
+            rows = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as e:
+            bad.append((f.name, "读不了：%s" % e))
+            continue
+        for r in rows:
+            k = r.get("key")
+            pts = list(dict.fromkeys(str(x) for x in (r.get("points") or [])))
+            if not k:
+                bad.append((f.name, "缺 key"))
+                continue
+            if not pts:
+                bad.append((k, "没给考点"))
+                continue
+            if len(pts) > 3:
+                bad.append((k, "考点多于 3 个：%s" % pts)); continue
+            unk = [x for x in pts if x not in ids]
+            if unk:
+                bad.append((k, "考点 id 不存在：%s" % unk)); continue
+            if k in by_key and by_key[k]["points"] != pts:
+                bad.append((k, "同一 key 两份不同标签，需人工裁决：%s ≠ %s"
+                            % (by_key[k]["points"], pts)))
+                continue
+            by_key[k] = {"key": k, "points": pts, "source": r.get("source") or "llm"}
+
+    need = set()
+    for p in sorted(V2.glob("*.成品.json")):
+        label = _label_of(p)
+        for r in json.loads(p.read_text(encoding="utf-8")):
+            need.add(_key_of(label, r["题号"]))
+    got = set(by_key)
+    out = [{"key": k, "points": v["points"], "source": v["source"]} for k, v in sorted(by_key.items())]
+    LABELS.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    print("结果文件 %d 份 → 合格标签 %d 条，写入 %s" % (len(files), len(out), LABELS.relative_to(ROOT)))
+    print("覆盖成品 %d / %d 题（%.1f%%）" % (len(got & need), len(need), 100 * len(got & need) / max(1, len(need))))
+    miss = sorted(need - got)
+    if miss:
+        (WORK / "未覆盖.json").write_text(json.dumps(miss, ensure_ascii=False, indent=1) + "\n",
+                                          encoding="utf-8")
+        print("未覆盖 %d 题 → %s" % (len(miss), (WORK / "未覆盖.json").relative_to(ROOT)))
+    extra = sorted(got - need)
+    if extra:
+        print("⚠️ 标签里有 %d 个 key 在成品中找不到（多半是场名变了）：%s" % (len(extra), extra[:5]))
+    if bad:
+        (WORK / "不合格.json").write_text(json.dumps([{"key": a, "原因": b} for a, b in bad],
+                                                     ensure_ascii=False, indent=1) + "\n",
+                                          encoding="utf-8")
+        print("⛔ 不合格 %d 条 → %s" % (len(bad), (WORK / "不合格.json").relative_to(ROOT)))
+        for k, why in bad[:5]:
+            print("   %s：%s" % (k, why))
+
+
+def stat() -> None:
+    need = set()
+    for p in sorted(V2.glob("*.成品.json")):
+        label = _label_of(p)
+        for r in json.loads(p.read_text(encoding="utf-8")):
+            need.add(_key_of(label, r["题号"]))
+    got = {}
+    if LABELS.exists():
+        got = {x["key"]: x for x in json.loads(LABELS.read_text(encoding="utf-8"))}
+    done = len(set(got) & need)
+    print("成品题数 %d | 已有考点标签 %d | 缺 %d" % (len(need), done, len(need) - done))
+    b = BATCH / "b001.json"
+    if b.exists():
+        n = len(list(BATCH.glob("b*.json")))
+        r = len(list(BATCH.glob("r*.json")))
+        print("批次：出 %d 批，回收 %d 批" % (n, r))
+    if got:
+        c = Counter(x["points"][0] for x in got.values())
+        print("主考点分布 top8：", ", ".join("%s×%d" % (k, v) for k, v in c.most_common(8)))
+        noq = [k for k, v in got.items() if not knowledge.difficulty_of(v["points"][0])]
+        print("派生不出难度的：%d" % len(noq))
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("act", choices=["split", "merge", "stat"])
+    a = ap.parse_args()
+    {"split": split, "merge": merge, "stat": stat}[a.act]()
