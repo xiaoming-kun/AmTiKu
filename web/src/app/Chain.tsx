@@ -13,9 +13,11 @@
  *     写进 知识链路.json 就变成多人共用一个进度了。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Crosshair, Loader2, Lock, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { Crosshair, Loader2, Lock, Orbit, Rows3, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { api, reportErr } from '@/lib/api'
 import { Chip, useFlag } from '@/app/ui'
+import { Galaxy } from '@/app/Galaxy'
+import { Ego } from '@/app/Ego'
 
 type GNode = {
   id: string; title: string; stars: number; difficulty: string
@@ -51,6 +53,11 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
   const [off, setOff] = useState<Set<string>>(new Set())   // 隐藏的大类
   const [view, setView] = useState<View>({ k: 1, tx: 0, ty: 0 })
   const [q, setQ] = useState('')
+  /** 视图模式：星系（默认，全局与氛围）/ 层级（按顺序精读、查覆盖）。
+   *  两种模式共用同一份数据、同一套筛选与进度，切换不丢状态。 */
+  const [galaxy, setGalaxy] = useFlag('amti.chain.galaxy', true)
+  const [resetNonce, setResetNonce] = useState(0)
+  const [jump, setJump] = useState<{ id: string; nonce: number } | null>(null)
   const [audit, setAudit] = useState<any>(null)
   const [showAudit, setShowAudit] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
@@ -131,7 +138,9 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     }))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [W, H])
+    // 依赖里必须有 galaxy：切回「层级」时那个 div 才刚挂上，
+    // 不重跑的话 wrap.current 还是 null，适配一次都不会发生（首屏会偏）。
+  }, [W, H, galaxy])
 
   /** 硬性前置没全点亮 → 未解锁。这是 math-tree 那个解锁机制的等价物，
    *  只是在浏览器里算，不动数据。 */
@@ -165,9 +174,11 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
 
   /* ── 视图操作 ───────────────────────────────────────── */
   const centerOn = useCallback((id: string) => {
-    const p = pos.get(id); const el = wrap.current
-    if (!p || !el) return
-    setView((v) => ({ k: v.k, tx: el.clientWidth / 2 - p.x * v.k, ty: el.clientHeight / 2 - p.y * v.k }))
+    const el = wrap.current
+    setJump((f) => ({ id, nonce: (f?.nonce || 0) + 1 }))      // 星系模式认这个
+    const q = pos.get(id)                                      // 层级模式自己挪
+    if (!q || !el) return
+    setView((v) => ({ k: v.k, tx: el.clientWidth / 2 - q.x * v.k, ty: el.clientHeight / 2 - q.y * v.k }))
   }, [pos])
 
   // 滚轮缩放：**必须挂原生监听并 passive:false** —— React 的 onWheel 是被动的，
@@ -186,7 +197,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [g])
+  }, [g, galaxy])
 
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null)
   const onDown = (e: React.PointerEvent) => {
@@ -265,9 +276,26 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
             )}
           </span>
           <span className="min-w-0 flex-1" />
+          {/* 两种模式共用同一份数据、筛选与进度：星系负责「看全局、有感觉」，
+              层级负责「按顺序读、查覆盖」。默认星系。 */}
+          <span className="flex items-center gap-1 rounded-full border border-border bg-surface-2 p-[2px]">
+            <button onClick={() => setGalaxy(true)}
+              title="径向星空：角度=大类、半径=由浅入深；适合看全局与找位置"
+              className={`flex items-center gap-1 rounded-full px-2 py-[3px] text-[11.5px] ${galaxy
+                ? 'bg-brand text-white' : 'text-ink-soft hover:text-brand-ink'}`}>
+              <Orbit size={11} /> 星系
+            </button>
+            <button onClick={() => setGalaxy(false)}
+              title="分层图：横轴=大类、纵轴=层级；适合按顺序精读与查覆盖"
+              className={`flex items-center gap-1 rounded-full px-2 py-[3px] text-[11.5px] ${!galaxy
+                ? 'bg-brand text-white' : 'text-ink-soft hover:text-brand-ink'}`}>
+              <Rows3 size={11} /> 层级
+            </button>
+          </span>
           <Chip size="sm" on={hardOnly} onClick={() => setHardOnly(!hardOnly)}
             title="软性前置只是「有帮助」，画上会显得链路很密">只看硬性前置</Chip>
-          <Chip size="sm" on={false} onClick={() => setView({ k: 1, tx: 0, ty: 0 })}
+          <Chip size="sm" on={false}
+            onClick={() => { setResetNonce((v) => v + 1); setView({ k: 1, tx: 0, ty: 0 }) }}
             title="缩放和平移回到初始状态">复位</Chip>
           <Chip size="sm" on={false} onClick={openAudit}
             title="环路 / 悬空 / 无理由边 / 待补清单">
@@ -285,6 +313,15 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
         </div>
 
         {/* 画布 */}
+        {galaxy ? (
+          <Galaxy nodes={g.nodes} edges={g.edges} mastered={mastered} locked={locked}
+            sel={sel} onSelect={setSel} onToggleMastered={toggleMastered}
+            hardOnly={hardOnly} off={off}
+            onToggleTopic={(t) => setOff((x) => {
+              const n = new Set(x); n.has(t) ? n.delete(t) : n.add(t); return n
+            })}
+            resetNonce={resetNonce} focus={jump} />
+        ) : (
         <div ref={wrap} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
           className="relative min-h-0 flex-1 cursor-grab overflow-hidden bg-surface-2 active:cursor-grabbing">
           <svg width="100%" height="100%" className="select-none">
@@ -404,6 +441,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
             实心 = 已点亮 · 灰底 <Lock size={9} className="inline" /> = 硬性前置还没点亮
           </div>
         </div>
+        )}
       </div>
 
       {/* ── 右：详情 ───────────────────────────────── */}
@@ -497,6 +535,9 @@ function Detail({ id, onPick, onJump, mastered, onToggle, onClose, locked }: {
             <div className="mb-2.5 text-[11px] text-ink-faint">
               {d.topic} · {d.section}
             </div>
+
+            {/* 精读入口：星空负责全局，这张局部图负责「我该先补什么」 */}
+            <Ego id={id} pre={d.pre} post={d.post} onJump={onJump} />
 
             <Block title={`前置（先学，${d.pre.length}）`} empty="没有前置 —— 这是链路起点">
               {d.pre.map((e: any) => <Row key={e.pre} e={e} dir="pre" />)}
