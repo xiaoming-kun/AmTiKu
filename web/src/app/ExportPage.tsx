@@ -41,6 +41,38 @@ function pickCls(on: boolean) {
     : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`
 }
 
+type Mode = 'gaokao' | 'test' | 'coverage' | 'handout'
+
+/** 卷型对应的默认卷面标题。和上面那两个 placeholder 是同一套说法。 */
+const MODE_TITLE: Record<Mode, string> = {
+  gaokao: '数学试卷', test: '考点测试', coverage: '考点测试', handout: '讲义',
+}
+
+/** 时间戳 `20260923_2034`。
+ *
+ *  和后端 `amti/export.py` 的 `%Y%m%d_%H%M` **必须一致**——界面上的默认名
+ *  就是把后端那条「留空则用 标题_时间戳」的规则**提前显示出来**，
+ *  两边格式不一样的话，用户看到的和落盘的就是两个名字。
+ *  用本地时间：老师看的是自己表上的时间。 */
+function stamp(d = new Date()) {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`
+}
+
+/** 默认文件名 = 「卷面标题（没写就用卷型的默认名）+ 时间戳」。 */
+function defaultOut(title: string, mode: Mode) {
+  return `${title.trim() || MODE_TITLE[mode]}_${stamp()}`
+}
+
+/** 后端那行 `re.sub(r"[^\w\u4e00-\u9fff\-]+", "_", out).strip("_")` 的**预览版**。
+ *
+ *  只用来在界面上提前显示「会存成什么名字」，**落盘的名字以后端为准**
+ *  （响应里的 `res.name` 才是真的）。之所以要在前端也算一遍：文件名里有
+ *  斜杠、冒号这类字符时，用户得在点导出**之前**就知道它会被换掉。 */
+function safeName(out: string) {
+  return out.replace(/[^\w\u4e00-\u9fff-]+/g, '_').replace(/^_+|_+$/g, '') || '试卷'
+}
+
 export default function ExportPage({ init, pool, from, filters, onClose }: {
   init: Q[]; pool: Q[]; from: string
   filters: Record<string, string>; onClose: () => void
@@ -48,8 +80,17 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   const [list, setList] = useState<Q[]>(init)
   const poolN = pool.length
   const [title, setTitle] = useState('')
-  const [out, setOut] = useState('')
-  const [mode, setMode] = useState<'gaokao' | 'test' | 'coverage' | 'handout'>('gaokao')
+  // **导出文件名默认就填好**（卷面标题_时间戳），不用先去别处想名字。
+  // 老规矩「留空则用 标题_时间戳」还留着：清空这个框，后端照旧兜底。
+  const [out, setOut] = useState(() => defaultOut('', 'gaokao'))
+  /** 用户**手动改过**文件名没有。
+   *
+   *  没有 → 标题/卷型一变，文件名跟着变（默认名是派生的，就该跟着走）；
+   *  改过 → 一切以他写的为准，程序不再插手（只在旁边留一个「恢复默认」）。
+   *  这就是「给了默认值、又支持就地改」的分寸：默认值不能像个幽灵
+   *  一样在你改完之后又把你的输入覆盖掉。 */
+  const [outEdited, setOutEdited] = useState(false)
+  const [mode, setMode] = useState<Mode>('gaokao')
   // **答案与解析放不放卷末**。真高考卷是"卷面只有题，答案另附"，
   // 所以留空版（学生做）时默认勾上，讲义版（要看解析）时自动取消。
   const [ansAtEnd, setAnsAtEnd] = useState(true)
@@ -82,6 +123,11 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   const answered = list.filter((q) => q.flags['解析']).length
   const score = list.reduce((s, q) => s + (SCORE[q.type] || 0), 0)
 
+  // 卷面标题或卷型一变，默认文件名跟着变（前提是用户没自己改过，见 outEdited）
+  useEffect(() => {
+    if (!outEdited) setOut(defaultOut(title, mode))
+  }, [title, mode, outEdited])
+
   /**
    * 版式预设。两个数是**起点**，选完还能在上面单独调。
    *
@@ -101,9 +147,15 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
     setBusy(true); setBusySince(Date.now()); setErr('')
     const keys = list.map((q) => q.key)
 
+    // 没手改过文件名 → 把时间戳刷成「此刻」再导出。面板开着十几分钟才点导出，
+    // 不该落一个十几分钟前的名字。刷新的同时更新输入框，
+    // 保证**屏幕上显示的就是将要落盘的**。
+    const outNow = outEdited ? out : defaultOut(title, mode)
+    if (!outEdited) setOut(outNow)
+
     // 幻灯片讲义走独立端点（Slidev 渲染），其余三种走 LaTeX 导出
     const call = api.export({
-          title, out, mode, show_answers: showAns, bottom_sep: sep,
+          title, out: outNow, mode, show_answers: showAns, bottom_sep: sep,
           problem_blank_cm: Number(blank) || 0, compile: true,
           keys, answers_at_end: ansAtEnd, handout_font: handoutFont,
         })
@@ -278,8 +330,33 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
             </Group>
 
             <Group title="导出文件名">
-              <input value={out} onChange={(e) => setOut(e.target.value)}
-                placeholder="留空用「标题_时间戳」" className={INPUT} />
+              {/* **默认就填好，随时可以就地改。**
+                  以前这里是个空框 + 一句 placeholder「留空用 标题_时间戳」，
+                  等于让用户先自己猜一个名字，或者干脆不管、导完再去找文件。
+                  现在默认名直接摆在这儿：想用就往下点，想改就当场打字。 */}
+              <div className="flex items-center gap-1.5">
+                <input value={out}
+                  onChange={(e) => { setOut(e.target.value); setOutEdited(true) }}
+                  placeholder={`留空用「${MODE_TITLE[mode]}_时间戳」`}
+                  className={`${INPUT} flex-1`} />
+                {outEdited && (
+                  <button onClick={() => { setOutEdited(false); setOut(defaultOut(title, mode)) }}
+                    title="改回「卷面标题_时间戳」的默认名"
+                    className="press icon-btn h-8 w-8 shrink-0 border border-border">
+                    <RefreshCw size={13} />
+                  </button>
+                )}
+              </div>
+              {/* 文件名里的 `/ \ : *` 这些字符后端会换成下划线——**提前告诉他**，
+                  不要等导完在文件夹里找不到。斜杠还会被当成子目录。 */}
+              <div className="flex items-baseline gap-1.5 text-[10.5px] text-ink-faint">
+                <span className="shrink-0">存为</span>
+                <code className="min-w-0 flex-1 truncate font-mono text-ink-soft"
+                  title={`试卷/${safeName(out)}.pdf`}>
+                  试卷/{safeName(out)}.pdf
+                </code>
+                {outEdited && <span className="shrink-0 text-brand-ink">已手改</span>}
+              </div>
             </Group>
 
             {/* 讲义模式说明：把「讲义印成什么样」一次讲清楚 */}
