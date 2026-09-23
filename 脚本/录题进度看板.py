@@ -26,17 +26,33 @@ def read_json(p):
     return json.loads((SRC / p).read_text(encoding="utf-8"))
 
 
+def completed_rows(prog):
+    """每场只留最后一次记账。一场会被记多行（首解析＋补解析／订正各一行），
+    按行计数的话同一场会被数成好几场；锚点按规范用卷名。"""
+    by_book = {}
+    for p in prog:
+        if p.get("状态") in ("已解析-待入库", "done"):
+            by_book[p["卷名"]] = p
+    return list(by_book.values())
+
+
 def rate_hours(n_todo, span_min):
     """按最近 span_min 分钟内做了多少场，估还剩多少小时。"""
     prog = [json.loads(l) for l in (SRC / "Qoder录题进度.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     cut = time.time() - span_min * 60
-    done_recent = [p for p in prog
-                   if p.get("状态") in ("已解析-待入库", "done")
-                   and time.mktime(time.strptime(p["时间"], "%Y-%m-%d %H:%M")) > cut]
+    done_recent = [p for p in completed_rows(prog)
+                   if time.mktime(time.strptime(p["时间"], "%Y-%m-%d %H:%M")) > cut]
     if not done_recent:
         return None, 0
     per_hour = len(done_recent) / (span_min / 60.0)
     return (n_todo / per_hour if per_hour else None), len(done_recent)
+
+
+def eta_text(n_todo, est):
+    # 「做了 0 场」与「做了 N 场但剩余 0」是两回事，别拿估时的真假去判有没有活
+    if not n_todo:
+        return "（剩余待解析 0 场 ⇒ 不必再估时）"
+    return " → 照这个速度约 **%.0f 小时**（%.1f 天）跑完" % (est, est / 24)
 
 
 def commit_board(msg):
@@ -107,7 +123,7 @@ def main():
                           capture_output=True, text=True).stdout.strip()
 
     prog = [json.loads(l) for l in (SRC / "Qoder录题进度.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
-    recent = [p for p in prog if p.get("状态") in ("已解析-待入库", "done")][-12:]
+    recent = sorted(completed_rows(prog), key=lambda p: p["时间"])[-12:]
 
     L = []
     L.append("# 录题进度看板\n")
@@ -121,12 +137,13 @@ def main():
     L.append("累计成品 **%d 份 / %d 题**；待复核登记 **%d 条**。\n" % (len(files), nq, np_))
 
     L.append("## 速度\n")
-    if est_a:
-        L.append("- 最近 1 小时做了 %d 场 → 照这个速度约 **%.0f 小时**（%.1f 天）跑完" % (cnt_a, est_a, est_a / 24))
-    if est_b:
-        L.append("- 最近 10 小时做了 %d 场 → 照这个速度约 **%.0f 小时**（%.1f 天）跑完" % (cnt_b, est_b, est_b / 24))
-    if not (est_a or est_b):
+    if not (cnt_a or cnt_b):
         L.append("- 最近 10 小时没有新完成的场次，速度暂时算不出来（看下面「并发锁」）")
+    else:
+        if cnt_a:
+            L.append("- 最近 1 小时做了 %d 场%s" % (cnt_a, eta_text(left, est_a)))
+        if cnt_b:
+            L.append("- 最近 10 小时做了 %d 场%s" % (cnt_b, eta_text(left, est_b)))
     L.append("")
 
     L.append("## 待复核都登记了什么\n")
@@ -141,7 +158,7 @@ def main():
             L.append("- %s：%d 条" % (k, pend[k]))
     L.append("")
 
-    L.append("## 最近完成的 12 场\n")
+    L.append("## 最近完成的 %d 场（一场多行的只留最后一次记账）\n" % len(recent))
     L.append("| 时间 | 卷名 | 状态 | 待复核 |")
     L.append("|---|---|---|---|")
     for p in recent:
