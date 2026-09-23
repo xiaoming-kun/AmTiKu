@@ -31,9 +31,9 @@
 |---|---|
 | ![章节与考点](docs/screenshots/02-topics.png) | ![组卷导出](docs/screenshots/05-export.png) |
 
-| 知识链路（考点之间的先修关系） |
-|---|
-| ![知识链路](docs/screenshots/06-chain.png) |
+| 知识链路 · 目录（默认 10 个大章节） | 知识链路 · 选中后整条链路高亮 |
+|---|---|
+| ![知识链路·目录](docs/screenshots/06-chain.png) | ![知识链路·链路](docs/screenshots/07-chain-trace.png) |
 
 * **左栏**是**全局导航**：工作流（工作台 / 录入 / 知识点 / 知识链路 / 质量中心）+
   组卷输出（智能组卷 / 试卷管理 / 讲义编辑 / 回收站 / 变更记录），每项都挂一个单键快捷键

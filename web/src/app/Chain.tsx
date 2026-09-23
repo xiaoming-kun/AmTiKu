@@ -41,10 +41,15 @@ const TOPIC_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#059669', '#d97706',
  * 默认**只画 10 个章节卡片**，点开的章节才在它下面长出考点——这是「探索」的核心：
  * 152 个考点 + 315 条边一次全铺出来必然是毛线球（用户截图里那团就是），
  * 而一屏 10 个大节点永远清爽，关系靠「点开一层」逐级展开。 */
-const CHAP_W = 168, CHAP_W_OPEN = 186, GAP = 20, PAD = 24
-const ROW = 24, NODE_W = 48, NODE_H = 18, NODE_TOP = 92, HEAD = 50
-/** 章节卡片的高度；卡片排在下方，弧线往上画（弧图布局） */
+const CHAP_W = 168, CHAP_W_OPEN = 186, GAP = 44, PAD = 24
+/** 底部总线：跨多列的长边走它，而不是斜着从别的节点身上碾过去 */
+const BUS_GAP = 34
+const ROW = 24, NODE_W = 48, NODE_H = 18, HEAD = 50
+/** 章节卡片的高度；卡片排在一条基线上，**关系弧画在基线上方、展开的考点长在下方**。
+ *  早先把展开的列从 y=92 往下排、卡片却钉在 y=300，列直接穿过卡片（用户说的"穿模"）。 */
 const CARD_H = 66, BASELINE = 300
+/** 深度分层之间留一点空隙：同一深度是一"带"，带与带之间断开，深度才读得出来 */
+const BAND_GAP = 9
 
 type Pos = { x: number; y: number; col: number }
 type View = { k: number; tx: number; ty: number }
@@ -85,7 +90,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
   /** 展开的章节。默认空 = 只看 10 个大节点。 */
   const [open, setOpen] = useState<Set<string>>(new Set())
 
-  const { chaps, pos, W, H, topicOf } = useMemo(() => {
+  const { chaps, pos, W, H, topicOf, busY } = useMemo(() => {
     const groups: { topic: string; color: string; nodes: GNode[] }[] = []
     for (const n of g?.nodes || []) {
       let c = groups.find((x) => x.topic === n.topic)
@@ -99,28 +104,73 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
         .sort((a, b) => a.n.depth - b.n.depth || a.i - b.i).map((x) => x.n)
     }
     const maxRows = Math.max(0, ...groups.filter((c) => open.has(c.topic)).map((c) => c.nodes.length))
-    // 展开的章节要往下长，所以画布高度取「基线 + 最长的一列」和固定值里的较大者
-    const height = Math.max(BASELINE + CARD_H + 40, NODE_TOP + maxRows * ROW + 40)
+    const height = Math.max(BASELINE + CARD_H + 40,
+      BASELINE + CARD_H + 24 + maxRows * ROW + maxRows * BAND_GAP + BUS_GAP + 30)
     let x = PAD
     const chaps = groups.map((c) => {
       const isOpen = open.has(c.topic)
       const w = isOpen ? CHAP_W_OPEN : CHAP_W
       const o = { topic: c.topic, color: c.color, nodes: c.nodes, open: isOpen, x, w,
-        // 卡片统一排在一条基线上，弧线一律往上画 —— 横排节点 + 上方弧线
-        // 是「弧图」的标准形态；早先把卡片竖直居中、弧线高度按条数硬加，
-        // 结果弧线各自冲向天空、互相穿插成一团。
         y: BASELINE, questions: c.nodes.reduce((a, n) => a + n.n, 0) }
       x += w + GAP
       return o
     })
+
+    /* ── 层内排序：交叉最小化（Sugiyama 三件套里的第二件）──
+     *  规则：**深度仍是主序**（"纵向 = 由浅入深"是这张图的读图约定，不能被优化掉），
+     *  同一深度内的先后则用**邻居位置的中位数**决定，来回扫描几轮。
+     *  这一步盯的是「同一深度带里谁上谁下」——原来用知识点库顺序，
+     *  等于没做交叉最小化，边只能互相穿。
+     *  参考：Sugiyama 高效实现（Healy & Nikolov）/ dagre 的 ordering 阶段 / d3-dag 的 decross。 */
+    const idx = new Map<string, number>()
+    for (const c of chaps) for (const n of c.nodes) idx.set(n.id, chaps.indexOf(c))
+    const adj = new Map<string, string[]>()
+    for (const e of (g?.edges || [])) {
+      if (!adj.has(e.pre)) adj.set(e.pre, [])
+      if (!adj.has(e.post)) adj.set(e.post, [])
+      adj.get(e.pre)!.push(e.post)
+      adj.get(e.post)!.push(e.pre)
+    }
+    const rank = new Map<string, number>()          // 节点在它所在列里的序号
+    for (const c of chaps) c.nodes.forEach((n, i) => rank.set(n.id, i))
+    const medianOf = (id: string) => {
+      const ns = (adj.get(id) || []).filter((t) => (idx.get(t) ?? -1) !== idx.get(id))
+      if (!ns.length) return null
+      const v = ns.map((t) => rank.get(t) ?? 0).sort((a, b) => a - b)
+      const m = v.length >> 1
+      return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
+    }
+    for (let sweep = 0; sweep < 6; sweep++) {
+      for (const c of [...chaps].sort((a, b) => sweep % 2 ? b.x - a.x : a.x - b.x)) {
+        c.nodes = c.nodes.map((n, i) => ({ n, i,
+          k: [n.depth, medianOf(n.id) ?? Number.MAX_SAFE_INTEGER, i] as (number | string)[] }))
+          .sort((a, b) => (a.k[0] as number) - (b.k[0] as number)
+            || (a.k[1] as number) - (b.k[1] as number) || (a.i - b.i))
+          .map((o) => o.n)
+        c.nodes.forEach((n, i) => rank.set(n.id, i))
+      }
+    }
+
+    let maxBand = 0
+    for (const c of chaps) maxBand = Math.max(maxBand, new Set(c.nodes.map((n) => n.depth)).size)
     const pos = new Map<string, Pos>()
+    let lowest = 0
     chaps.forEach((c, ci) => {
       if (!c.open) return
-      c.nodes.forEach((n, ri) => pos.set(n.id, { x: c.x + NODE_W / 2 + 8, y: NODE_TOP + ri * ROW, col: ci }))
+      let lastDepth = -1, band = 0
+      c.nodes.forEach((n, ri) => {
+        if (n.depth !== lastDepth) { band += 1; lastDepth = n.depth }
+        const y = BASELINE + CARD_H + 24 + (ri + band) * ROW + band * BAND_GAP
+        lowest = Math.max(lowest, y)
+        pos.set(n.id, { x: c.x + NODE_W / 2 + 8, y, col: ci })
+      })
     })
+    // 底部总线的高度：所有展开列的最底端再往下一点。
+    // 长边全部走这条线，并按边序分 5 条车道错开（同一条线上会互相盖住）。
+    const busY = lowest + BUS_GAP
     const topicOf = new Map<string, string>()
     for (const n of g?.nodes || []) topicOf.set(n.id, n.topic)
-    return { chaps, pos, W: x - GAP + PAD, H: height, topicOf }
+    return { chaps, pos, W: x - GAP + PAD, H: height, topicOf, busY }
   }, [g, open])
 
   const chapOf = useMemo(() => new Map(chaps.map((c) => [c.topic, c])), [chaps])
@@ -131,39 +181,39 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     return hardOnly ? all.filter((e) => e.strength === 'hard') : all
   }, [g, hardOnly])
 
-  /** 关系按「两端是否展开」分三层：
-   *  ① 两端都收起 → **章节级聚合边**（一条弧 + 条数徽标）
-   *  ② 只有一端展开 → 细线连过去 + 卡片旁徽标（看得出"这一章有多少条通向那一章"）
-   *  ③ 两端都展开 → 节点级边（就是原来的画法）
-   *  这样无论展开到哪一层，屏幕上都不会出现一屏乱线。 */
-  const { agg, cross, nodeEdges } = useMemo(() => {
-    const aggM = new Map<string, { a: string; b: string; hard: number; soft: number }>()
-    const cross: { pre: string; post: string; strength: 'hard' | 'soft'; a: string; b: string }[] = []
+  /** 关系数据。渲染策略是**分级显示**（ELK 的 long-edge 策略同理）：
+   *  ① 章节弧：永远画——它是这张图的骨架，也是"这一章和那一章有几条关系"的答案；
+   *  ② 同一章内部的节点级边：展开就画（那是用户点开这一章想看的东西）；
+   *  ③ **跨章的节点级边：默认不画**。它们原来就是"斜着掠过 7 列"的元凶；
+   *     悬停/选中某个考点时，只把它自己的那些边单独画出来。
+   *  结果是：无论展开多少章，屏幕上的线永远是一小把，而不是 315 条。 */
+  const { pairAgg, nodeEdges, crossEdges } = useMemo(() => {
+    const m = new Map<string, { a: string; b: string; hard: number; soft: number }>()
     const nodeEdges: Edge[] = []
+    const crossEdges: (Edge & { a: string; b: string })[] = []
     for (const e of edges) {
       const ta = topicOf.get(e.pre) || '', tb = topicOf.get(e.post) || ''
       const oa = open.has(ta), ob = open.has(tb)
+      const k = ta + '>' + tb
+      const cur = m.get(k) || { a: ta, b: tb, hard: 0, soft: 0 }
+      cur[e.strength === 'hard' ? 'hard' : 'soft'] += 1
+      m.set(k, cur)
       if (oa && ob) nodeEdges.push(e)
-      else if (!oa && !ob) {
-        const k = ta + '>' + tb
-        const cur = aggM.get(k) || { a: ta, b: tb, hard: 0, soft: 0 }
-        cur[e.strength === 'hard' ? 'hard' : 'soft'] += 1
-        aggM.set(k, cur)
-      } else cross.push({ pre: e.pre, post: e.post, strength: e.strength, a: ta, b: tb })
+      else if (oa || ob) crossEdges.push({ ...e, a: ta, b: tb })
     }
-    return { agg: [...aggM.values()], cross, nodeEdges }
+    return { pairAgg: [...m.values()], nodeEdges, crossEdges }
   }, [edges, open, topicOf])
 
   /** 章节级的入/出条数：收起的卡片上直接写出来，不用点开就知道谁依赖谁 */
   const chapDeg = useMemo(() => {
     const m = new Map<string, { i: number; o: number }>()
-    for (const a of agg) {
+    for (const a of pairAgg) {
       const A = m.get(a.a) || { i: 0, o: 0 }, B = m.get(a.b) || { i: 0, o: 0 }
       A.o += a.hard + a.soft; B.i += a.hard + a.soft
       m.set(a.a, A); m.set(a.b, B)
     }
     return m
-  }, [agg])
+  }, [pairAgg])
 
   /** 选中考点的**整条链路**（全部先修 + 全部后续）。
    *  探索的关键：链路会穿过还没展开的章节，那些就画成高亮的聚合边——
@@ -192,6 +242,16 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
     for (const id of [...up, ...down]) { const t = topicOf.get(id); if (t) topics.add(t) }
     return { up, down, upE, downE, topics }
   }, [sel, g, topicOf])
+
+  /** 要点名画出来的跨章边：悬停/选中的那一跳，以及选中考点的整条链路 */
+  const incident = useMemo(() => {
+    const s2 = new Set<string>()
+    if (chain) { for (const k of chain.upE) s2.add(k); for (const k of chain.downE) s2.add(k) }
+    const f = hover || sel
+    if (f) for (const e of edges) if (e.pre === f || e.post === f) s2.add(e.pre + '>' + e.post)
+    return s2
+  }, [chain, hover, sel, edges])
+
 
   const topicColor = useMemo(() => {
     const m = new Map<string, string>()
@@ -433,7 +493,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                   节点横排一行，关系画成上方的弧，**弧高按跨了几列递增**：
                   相邻章是小拱、首尾章是大拱，彼此嵌套而不打架。
                   早先按"条数"定弧高 → 所有弧都往天上冲、交叉成一团。 */}
-              {[...agg].sort((p1, p2) =>
+              {[...pairAgg].sort((p1, p2) =>
                 (chapIdx(p1.a) - chapIdx(p1.b)) ** 2 - (chapIdx(p2.a) - chapIdx(p2.b)) ** 2
                 || p1.a.localeCompare(p2.a)).map((a2) => {
                 const A = chapOf.get(a2.a), B = chapOf.get(a2.b)
@@ -469,12 +529,13 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
               })}
 
               {/* ② 一端展开、一端收起：细线连过去。看得出"这一章的哪些考点通向那一章" */}
-              {cross.map((e, i) => {
+              {crossEdges.map((e, i) => {
+                if (!incident.has(e.pre + '>' + e.post)) return null
                 const p1 = pos.get(e.pre), p2 = pos.get(e.post)
                 const A = chapOf.get(e.a), B = chapOf.get(e.b)
                 if (!A || !B) return null
-                const from = p1 ? { x: p1.x + NODE_W / 2, y: p1.y } : { x: A.x + A.w, y: A.y + 30 }
-                const to = p2 ? { x: p2.x - NODE_W / 2, y: p2.y } : { x: B.x, y: B.y + 30 }
+                const from = p1 ? { x: p1.x + NODE_W / 2, y: p1.y } : { x: A.x + A.w / 2, y: A.y + 34 }
+                const to = p2 ? { x: p2.x - NODE_W / 2, y: p2.y } : { x: B.x + B.w / 2, y: B.y + 34 }
                 const lit = chain && (chain.upE.has(e.pre + '>' + e.post) || chain.downE.has(e.pre + '>' + e.post))
                 const hidden = false
                 return (
@@ -493,16 +554,42 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
               {nodeEdges.map((e, i) => {
                 const p1 = pos.get(e.pre), p2 = pos.get(e.post)
                 if (!p1 || !p2) return null
+                // 同章内部：展开就给看。跨章：只有被点名（悬停/选中/链路）才画
+                const sameChap = p1.col === p2.col
+                if (!sameChap && !incident.has(e.pre + '>' + e.post)) return null
                 const lit = chain && (chain.upE.has(e.pre + '>' + e.post) || chain.downE.has(e.pre + '>' + e.post))
                 const hot = hover && near && near.has(e.pre) && near.has(e.post)
-                const x1 = p1.x + NODE_W / 2, x2 = p2.x - NODE_W / 2
+                const right = p2.col >= p1.col
+                const sameCol = p2.col === p1.col
+                // 同列的边**一律从左侧出、往左鼓**：左侧是列间空隙（GAP 44），
+                // 右侧是标签文字区。早先这里漏了同列的情形——从左边起笔却往右鼓，
+                // 弧线等于横穿自己的节点框（探针把起始点判在框边界上才发现）。
+                const x1 = sameCol ? p1.x - NODE_W / 2 : p1.x + (right ? NODE_W / 2 : -NODE_W / 2)
+                const x2 = sameCol ? p2.x - NODE_W / 2 : p2.x + (right ? -NODE_W / 2 : NODE_W / 2)
                 let d: string
-                if (p2.col === p1.col) {
-                  const r = 16 + Math.abs(p2.y - p1.y) * 0.25
+                const A2 = chaps[p1.col], B2 = chaps[p2.col]
+                const span = Math.abs(p2.col - p1.col)
+                if (sameCol) {
+                  const r = -(14 + Math.abs(p2.y - p1.y) * 0.22)     // 负号 = 往左鼓
                   d = `M ${x1} ${p1.y} C ${x1 + r} ${p1.y}, ${x1 + r} ${p2.y}, ${x1} ${p2.y}`
-                } else {
+                } else if (span === 1) {
+                  // 相邻两列：直接走，跨不过任何别的列
                   const dx = Math.max(18, (x2 - x1) * 0.45)
                   d = `M ${x1} ${p1.y} C ${x1 + dx} ${p1.y}, ${x2 - dx} ${p2.y}, ${x2} ${p2.y}`
+                } else {
+                  /* **跨两列以上：走底部总线**（正交走线 + 圆角）。
+                     直线/斜贝塞尔会从中间那些列的节点身上碾过去 —— 那就是"穿模"。
+                     走廊取本列右侧的间隙，竖直段因此也不压同列的其它节点。 */
+                  const right = p2.col > p1.col
+                  const gA = right ? A2.x + A2.w + GAP * 0.4 : A2.x - GAP * 0.4
+                  const gB = right ? B2.x - GAP * 0.4 : B2.x + B2.w + GAP * 0.4
+                  const lane = busY + (i % 5) * 7
+                  const r0 = 9
+                  d = `M ${x1} ${p1.y} L ${gA - r0} ${p1.y} Q ${gA} ${p1.y} ${gA} ${p1.y + r0}` +
+                    ` L ${gA} ${lane - r0} Q ${gA} ${lane} ${gA + r0} ${lane}` +
+                    ` L ${gB - r0} ${lane} Q ${gB} ${lane} ${gB} ${lane - r0}` +
+                    ` L ${gB} ${p2.y + r0} Q ${gB} ${p2.y} ${gB - r0} ${p2.y}` +
+                    ` L ${x2} ${p2.y}`
                 }
                 return (
                   <path key={i} d={d} fill="none" className="transition-opacity duration-200"
