@@ -6,7 +6,7 @@ r"""生成录题进度看板：数据/录题/Qoder录题进度看板.md
 
 用法：python3 脚本/录题进度看板.py
 只读不写题库；写出来的 md 也在 数据/录题/ 下，不碰 题目/。
-生成后单独 git 提交这一个文件（绝不 git add -A），每次都留痕。
+`数据/` 自 2026-09-21 起进了 .gitignore ⇒ 本文件不再由 commit 保护，别 `git add -f`。
 """
 import json, subprocess, sys, time
 from collections import Counter
@@ -102,6 +102,8 @@ def main():
     again = st.get("待重解析-曾判撞车", 0)
     parsed = st.get("已解析-待入库", 0)
     ingested = st.get("done", 0)
+    # 这一列只有 done 档能当入库账：非 done 的那批把成品题数误填了进来（A97 实测其卷名在库里 0 命中）
+    ingested_q = sum(int(x.get("入库题数") or 0) for x in q if x["状态"] == "done")
     skipped = st.get("跳过-已在库", 0)
     dupfile = sum(v for k, v in st.items() if k.startswith("跳过-与"))
     left = todo + again
@@ -198,9 +200,11 @@ def main():
     L.append("- %s\n" % lock)
 
     L.append("## 挂起、需要人决定的\n")
-    L.append("- **入库通道没开**：成品只落在 `数据/录题/输出_v2/`，一场都没进题库。"
+    L.append("- **入库通道开过 %d 场 / %d 题**（队列里 `done` 那批，题数已与库里同名 label 逐场对平）："
+             "其余 %d 场成品只落在 `数据/录题/输出_v2/`，一道都没进题库。"
              "规范要求同一时刻只允许一条链路写库，且用户口径是「全部解析完再一次性入库」；"
-             "入库要等用户批准，批前先 `preview`，再 `accept` 四层验收。")
+             "入库要等用户批准，批前先 `preview`，再 `accept` 四层验收。"
+             % (ingested, ingested_q, parsed))
     noans_all = [x for x in q if not x["答案"]]
     noans_parsed = sum(1 for x in noans_all if x["状态"] == "已解析-待入库")
     noans_left = sum(1 for x in noans_all if x["状态"] in ("todo", "待重解析-曾判撞车"))
@@ -217,8 +221,11 @@ def main():
              "解析为空或写「解析无」**%d 道 / %d 场**，其中 `*.解答.json` 已备好待转录的 **%d 道**"
              "（那份是 sidecar，入库只读 `.成品.json`，不转录就不进库）。"
              % (len(files), no_ans, fld_ans, no_exp, fld_exp, n_side))
-    L.append("- **%d 场早期只按文件名判的撞车**已退回 `待重解析-曾判撞车`，排在 todo 之后；"
-             "另有 14 场已确认误判并恢复。" % again)
+    if again:
+        L.append("- **%d 场早期只按文件名判的撞车**已退回 `待重解析-曾判撞车`，排在 todo 之后；"
+                 "另有 14 场已确认误判并恢复。" % again)
+    else:
+        L.append("- 早期「只按文件名判撞车」那批已全部处理完（`待重解析-曾判撞车` 现 0 场）。")
     L.append("")
 
     OUT.write_text("\n".join(L), encoding="utf-8")
