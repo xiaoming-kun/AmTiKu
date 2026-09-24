@@ -144,6 +144,68 @@ def build_slots(mode: str = "gaokao") -> list[Slot]:
     return out
 
 
+# ── 双向细目表（命题蓝图）────────────────────────────────────────────
+#
+# 「双向」= **内容维度 × 难度维度**，这是教育测量学里命题的标准工具
+# （「双向细目表」/ table of specifications）。一份好卷子不是"凑够 19 道题"，
+# 而是**每个位置要什么难度、每个章节出几道**都事先定好，组完再拿实际值对账。
+#
+# 以前这里只有一条"章节别重复"的软规则，**难度完全不参与挑选**——
+# 卷面的难度只是渲染时按位置标上去的一个标签，跟题目实际难度毫无关系。
+# 于是所谓"难度适宜"全靠运气。
+
+# 每个位置的**目标难度**。一行一个题型，第 i 个字就是该题型第 i 题的目标：
+#     易 = 简单题，中 = 中档题，难 = 难题
+#
+# 这个形状是**算出来的**，不是拍的：在 8+3+3+5 的卷面上枚举所有
+# 「易→难单调不减」的难度分配，加上真实卷面的形状约束
+# （单选至少 3 易 2 中、最多 2 难；多选/填空各至少 1 中 1 难；
+#   解答题不含简单题、至少 2 中 2 难），再取最接近标准「易:中:难 = 3:5:2」的那个。
+#
+# 结果落在 **易 36 分 : 中 69 分 : 难 45 分 = 24% : 46% : 30%**，
+# 离 3:5:2 的 45/75/30 差 30 分——而且**这是结构性的**：
+# 容易题最多只能来自「单选前 5 + 多选 1 + 填空 1」= 36 分，
+# 解答题一道都不可能算容易（近五年真题里解答题只有 4.5% 标简单题）。
+# 所以 45 分容易题在这个卷面上做不到，36 分就是天花板。
+_DIFF_SHAPE: dict[str, str] = {
+    "single_choice":   "易易易易易中中中",     # 1–5 易，6–8 中
+    "multi_choice":    "易中难",               # 9 / 10 / 11
+    "fill_in_blank":   "易中难",               # 12 / 13 / 14
+    "detailed_answer": "中中中难难",           # 15–17 中，18–19 难
+}
+_DIFF_CHAR = {"易": "简单题", "中": "中档题", "难": "难题"}
+
+# 小题（14 道）的**章节配额**，照**近五年高考真题实测**的占比缩放：
+# 2021 年起的真题里，小题各章占比 解析几何 14.4% / 概率统计 13.9% /
+# 函数 13.1% / 平面向量与复数 12.9% / 三角函数 11.0% / 立体几何 10.3% /
+# 集合与逻辑 9.1% / 数列 6.5% / 不等式 5.1% / 导数 3.7%。
+# 用最大余数法缩放到 14 道（和 `answer_scores`/`gaokao_mix` 同一套办法）。
+#
+# 表里没有的章节按 3% 算（约等于表里最小的那一档）——课标以后加章也不会
+# 被完全排除在外；这份占比是**量出来的**，不是编的。
+MINOR_TOPIC_WEIGHT: dict[str, float] = {
+    "五、解析几何": 0.144, "九、概率统计": 0.139, "三、函数": 0.131,
+    "八、平面向量与复数": 0.129, "六、三角函数与解三角形": 0.110,
+    "十、立体几何与空间向量": 0.103, "一、集合与逻辑": 0.091,
+    "七、数列": 0.065, "二、不等式": 0.051, "四、导数": 0.037,
+}
+UNKNOWN_TOPIC_WEIGHT = 0.03
+
+
+def topic_quota(n_minor: int, topics: list[str]) -> dict[str, int]:
+    """把实测占比缩放成"这 N 道小题里每章出几道"。最大余数法，合计正好 N。"""
+    if n_minor <= 0:
+        return {}
+    exact = [(t, n_minor * MINOR_TOPIC_WEIGHT.get(t, UNKNOWN_TOPIC_WEIGHT))
+             for t in topics]
+    out = {t: int(v) for t, v in exact}
+    rest = n_minor - sum(out.values())
+    order = sorted(range(len(exact)), key=lambda i: -(exact[i][1] - int(exact[i][1])))
+    for i in order[:rest]:
+        out[exact[i][0]] += 1
+    return out
+
+
 # ── 抽取 ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -157,43 +219,59 @@ class PickReport:
                 "notes": self.notes}
 
 
-def _pick_pass(cands: list[Question], used: set[str], counter: dict[str, int],
-               max_per_topic: int, rng: random.Random, *, strict: bool):
-    best, best_score = None, -1e9
-    for q in cands:
-        if q.key in used:
-            continue
-        tp = topic_of(q)
-        n = counter.get(tp, 0)
-        if strict and n >= max_per_topic:
-            continue
-        s = 3.0 if n == 0 else 1.0
-        s += rng.random()                      # 同分随机，避免每次组出同一套
-        if s > best_score:
-            best, best_score = q, s
-    return best
+def _blueprint_diff(slot: "Slot") -> str:
+    """这个位置**要**什么难度（细目表说的）。"""
+    shape = _DIFF_SHAPE.get(slot.type, "")
+    return _DIFF_CHAR.get(shape[slot.index] if slot.index < len(shape) else "中", "中档题")
 
 
 def _pick(cands: list[Question], used: set[str], counter: dict[str, int],
-          *, max_per_topic: int, rng: random.Random) -> tuple[Question | None, bool]:
-    """从候选里挑一道。返回 `(题目, 是否放宽了章节上限)`。
+          *, want_diff: str, quota: dict[str, int] | None,
+          rng: random.Random) -> tuple[Question | None, str]:
+    r"""从候选里挑一道。返回 `(题目, 放宽到哪一级)`。
 
-    打分（高分先选，同分随机）：
-      +3  这一档里该章节还没出现过（鼓励覆盖不同章节）
-      +1  出现过但没到上限
+    **按细目表挑**，而不是"随便挑一道不重复的"：
 
-    ⚠️ `counter` 必须**分档独立**：小题的章节计数和解答题的分开。
-    早先共用一个计数器，于是小题把某章节用满两次后，
-    解答题里属于该章节的题全被挡掉——实测组出来的卷子只有 15 题。
+    | 级别 | 条件 | 说明 |
+    |---|---|---|
+    | ①  | 难度对 + 章节还有配额 | 最理想，什么都不欠 |
+    | ②  | 难度对（章节配额用完） | 记一笔"某章超配" |
+    | ③  | 章节还有配额（难度不对） | 记一笔"这一档题不够" |
+    | ④  | 都不满足 | 记一笔"只能退而求其次" |
 
-    ⚠️ 严格按上限挑不到时**放宽上限**再挑一次：
-    **题量是硬的，章节分布是软的**。题库小的时候，宁可某一章出现三次，
-    也不能让卷面空一个位置——那看起来像程序坏了。放宽了会记进报告。
+    级内打分：**本章还没出现过**的优先（+3），同分随机——
+    随机是为了同 seed 之外每次组出的卷子不完全一样。
+
+    ⚠️ 为什么难度要参与挑选：`q.difficulty` 是**考点派生**的（内容难度），
+    而位置难度是卷面设计。两者以前毫无联系，于是"第 1 题"有可能是道压轴难度的题，
+    卷子的实际难度全凭运气。这一版把它们对上了。
     """
-    q = _pick_pass(cands, used, counter, max_per_topic, rng, strict=True)
-    if q is not None:
-        return q, False
-    return _pick_pass(cands, used, counter, max_per_topic, rng, strict=False), True
+    def rank(q: Question) -> float:
+        tp = topic_of(q)
+        return (3.0 if counter.get(tp, 0) == 0 else 1.0) + rng.random()
+
+    def pool_by(level: int) -> list[Question]:
+        out = []
+        for q in cands:
+            if q.key in used:
+                continue
+            tp = topic_of(q)
+            ok_diff = (q.difficulty == want_diff)
+            ok_topic = (quota is None) or (counter.get(tp, 0) < quota.get(tp, 0))
+            if level == 1 and not (ok_diff and ok_topic):
+                continue
+            if level == 2 and not ok_diff:
+                continue
+            if level == 3 and not ok_topic:
+                continue
+            out.append(q)
+        return out
+
+    for level, name in ((1, "ok"), (2, "章节超配"), (3, "难度不匹配"), (4, "只能退而求其次")):
+        pool = pool_by(level)
+        if pool:
+            return max(pool, key=rank), name
+    return None, "无题可用"
 
 
 def generate(pool: list[Question], *, mode: str = "gaokao",
@@ -216,15 +294,22 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
     for q in pool:
         by_type.setdefault(q.type, []).append(q)
 
+    # 细目表：小题的章节配额（照近五年真题量的占比缩放）
+    n_minor = sum(1 for sl in slots if sl.type != "detailed_answer")
+    topics_in_pool = sorted({topic_of(q) for q in pool if topic_of(q)})
+    quota = topic_quota(n_minor, topics_in_pool)
+
     used: set[str] = set()
     # 小题与解答题**分开计数**（见 _pick 的说明）
     minor_topics: dict[str, int] = {}
     answer_topics: dict[str, int] = {}
     rep = PickReport()
+    relaxed: dict[str, int] = {}
     out: list[dict] = []
 
     for slot in slots:
         cands = by_type.get(slot.type, [])
+        want_diff = _blueprint_diff(slot)
         if slot.type == "detailed_answer" and slot.section:
             want = SECTION_TOPICS.get(slot.section, set())
             same = [q for q in cands if topic_of(q) in want]
@@ -235,22 +320,21 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
                 same = cands
             # 解答题**五个板块互不重复**：本板块已用过就换别的板块的题
             fresh = [q for q in same if answer_topics.get(topic_of(q), 0) == 0]
-            cands, counter, max_per = (fresh or same), answer_topics, 1
+            cands, counter, sl_quota = (fresh or same), answer_topics, None
         else:
-            counter, max_per = minor_topics, MINOR_MAX_PER_TOPIC
+            counter, sl_quota = minor_topics, quota
 
-        q, relaxed = _pick(cands, used, counter, max_per_topic=max_per, rng=rng)
-        if relaxed and q is not None:
-            rep.notes.append(
-                f"{slot.type} 第 {slot.index + 1} 题：题库里够分的章节都用满了，"
-                f"放宽了「同章节最多 {max_per} 道」的限制")
+        q, level = _pick(cands, used, counter, want_diff=want_diff,
+                         quota=sl_quota, rng=rng)
+        if q is not None and level != "ok":
+            relaxed[level] = relaxed.get(level, 0) + 1
         if q is None:
             rep.unfilled.append(
                 f"{slot.type} 第 {slot.index + 1} 题"
                 + (f"（{slot.section}）" if slot.section else ""))
             out.append({"key": "", "type": slot.type, "score": slot.score,
                         "section": slot.section, "index": slot.index,
-                        "total": slot.total})
+                        "total": slot.total, "want_diff": want_diff, "got_diff": ""})
             continue
         used.add(q.key)
         tp = topic_of(q)
@@ -258,15 +342,60 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
         rep.filled.append(q.key)
         out.append({"key": q.key, "type": slot.type, "score": slot.score,
                     "section": slot.section, "index": slot.index,
-                    "total": slot.total})
+                    "total": slot.total, "want_diff": want_diff,
+                    "got_diff": q.difficulty, "topic": tp})
 
     score = sum(s["score"] for s in out if s["key"])
     if rep.unfilled:
         rep.notes.append(
             f"题库不足，有 {len(rep.unfilled)} 个位置空着。"
             "把更多题加进筛选结果，或先导入更多题目。")
+
+    # ── 细目表达成度：目标 vs 实际 ──
+    # 这是这份卷子"难不难、知识面均不均"的唯一凭据，直接给老师看。
+    bp = _blueprint_report(out, quota)
+
+    # 放宽了就要说清楚，别让用户以为卷子是完全按蓝图出的
+    if relaxed.get("章节超配"):
+        bp["notes"].append(
+            f"有 {relaxed['章节超配']} 个位置的章节配额用完了，那一章多出了一两道")
+    if relaxed.get("难度不匹配"):
+        bp["notes"].append(
+            f"有 {relaxed['难度不匹配']} 个位置**没能在目标难度上找到题**"
+            f"（该档题不够），换成了别的难度")
+    if relaxed.get("只能退而求其次"):
+        bp["notes"].append(
+            f"有 {relaxed['只能退而求其次']} 个位置难度和章节都没对上——题库这块太空了")
+    d = rep.as_dict()
+    d["blueprint"] = bp
+    d["relaxed"] = relaxed
     return {"keys": [s["key"] for s in out if s["key"]],
-            "slots": out, "report": rep.as_dict(), "score": score}
+            "slots": out, "report": d, "score": score}
+
+
+def _blueprint_report(out: list[dict], quota: dict[str, int]) -> dict:
+    """把实际组出来的卷子跟细目表对账。
+
+    · **难度按分值**比（难度该看分，不是看题数），全部 19 个位置都算
+    · **章节按题量**比，只算**小题**——解答题的章节是由「第几题考哪个板块」
+      定死的（不是按占比挑的），拿它来跟"目标占比"对比是循环论证
+    """
+    tgt_d: dict[str, int] = {}
+    act_d: dict[str, int] = {}
+    act_t: dict[str, int] = {}
+    for s in out:
+        sc = s["score"] if s["key"] else 0
+        tgt_d[s["want_diff"]] = tgt_d.get(s["want_diff"], 0) + sc
+        if s["key"] and s.get("got_diff"):
+            act_d[s["got_diff"]] = act_d.get(s["got_diff"], 0) + sc
+        if s["type"] == "detailed_answer":
+            continue                      # 见上面：解答题不参与章节对账
+        tp = s.get("topic") or ""
+        if s["key"] and tp:
+            act_t[tp] = act_t.get(tp, 0) + 1
+    return {"diff_target": tgt_d, "diff_actual": act_d,
+            "topic_target": dict(quota), "topic_actual": act_t,
+            "notes": []}
 
 
 # ── 组卷方案：按**考点覆盖**组卷 ──────────────────────────────────────
@@ -446,6 +575,9 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
 
 # ── 自检 ──────────────────────────────────────────────────────────────
 
+_RANK = {"易": 0, "中": 1, "难": 2}
+
+
 def _selftest() -> int:
     from .schema import Option
 
@@ -482,6 +614,25 @@ def _selftest() -> int:
                        "fill_in_blank": 3, "detailed_answer": 5}) == 150,
           str(total_score({"single_choice": 8, "multi_choice": 3,
                            "fill_in_blank": 3, "detailed_answer": 5})))
+    # ── 双向细目表的锚 ──────────────────────────────────────────
+    # 这三个数（36/69/45）是"算出来的"，改动 _DIFF_SHAPE 就会变，所以钉住它：
+    # 它是"容易题在 8+3+3+5 上最多只占 36 分"这个结论的具体体现。
+    _shape_scores = {"易": 0, "中": 0, "难": 0}
+    for _t, _scores in STRUCTURE:
+        _sh = _DIFF_SHAPE.get(_t, "")
+        for _i, _sc in enumerate(_scores):
+            if _i < len(_sh):
+                _shape_scores[_sh[_i]] += _sc
+    check("细目表难度分值 = 易36/中69/难45（3:5:2 在本题型结构上到不了 45/75/30）",
+          (_shape_scores["易"], _shape_scores["中"], _shape_scores["难"]) == (36, 69, 45),
+          str(_shape_scores))
+    check("难度形状在每个题型内单调不减（易→难）",
+          all(all(_RANK[_sh[i]] <= _RANK[_sh[i + 1]] for i in range(len(_sh) - 1))
+              for _sh in _DIFF_SHAPE.values()),
+          str(_DIFF_SHAPE))
+    _q14 = topic_quota(14, list(MINOR_TOPIC_WEIGHT))
+    check("小题章节配额合计正好 14 道", sum(_q14.values()) == 14, str(_q14))
+
     check("覆盖卷 9+4+10+23 = 196 分（解答题只算 77，不是每道 15）",
           total_score({"single_choice": 9, "multi_choice": 4,
                        "fill_in_blank": 10, "detailed_answer": 23}) == 196,

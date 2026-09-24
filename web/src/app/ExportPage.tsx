@@ -33,6 +33,90 @@ function Group({ title, hint, className = '', children }: {
   )
 }
 
+/** 细目表达成度：**这份卷子难度对不对、知识面均不均**。
+ *
+ *  这是「组一套好模拟卷」唯一看得见的凭据——组完拿实际值跟蓝图对账，
+ *  差在哪儿直接标出来。没有它，用户只能自己数 19 道题。 */
+function Blueprint({ bp }: { bp: any }) {
+  if (!bp) return null
+  const D = ['简单题', '中档题', '难题']
+  const SHORT: Record<string, string> = { 简单题: '易', 中档题: '中', 难题: '难' }
+  const dt = bp.diff_target || {}, da = bp.diff_actual || {}
+  const diffOk = D.every((d) => (dt[d] || 0) === (da[d] || 0))
+  const tt = bp.topic_target || {}, ta = bp.topic_actual || {}
+  const keys = Object.keys(tt)
+  const badTopics = keys.filter((t) => (tt[t] || 0) !== (ta[t] || 0))
+  const total = D.reduce((s, d) => s + (dt[d] || 0), 0) || 1
+
+  return (
+    <div className="rounded-[var(--radius-card)] border border-border bg-bg p-3 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-semibold tracking-[0.08em] text-ink-faint">
+          细目表达成度
+        </span>
+        <span className={`ml-auto rounded-full px-1.5 py-[1px] text-[10.5px] font-medium ${
+          diffOk && !badTopics.length ? 'bg-has-soft text-has' : 'bg-warn-soft text-warn'}`}>
+          {diffOk && !badTopics.length ? '✓ 全部达标'
+            : `${(diffOk ? 0 : 1) + badTopics.length} 处没达标`}
+        </span>
+      </div>
+
+      {/* 难度：**按分值**比。一条三段的横条，上排目标、下排实际 */}
+      <div>
+        <div className="mb-1 flex items-baseline gap-1.5 text-[10.5px] text-ink-faint">
+          <span>难度</span><span className="opacity-70">按分值</span>
+        </div>
+        <div className="flex h-[6px] w-full overflow-hidden rounded-full bg-muted">
+          {D.map((d, i) => (
+            <span key={d} title={`目标 ${SHORT[d]} ${dt[d] || 0} 分`}
+              className={['bg-has', 'bg-brand', 'bg-danger'][i] + ' opacity-45'}
+              style={{ width: `${(dt[d] || 0) / total * 100}%` }} />
+          ))}
+        </div>
+        <div className="mt-1 flex h-[6px] w-full overflow-hidden rounded-full bg-muted">
+          {D.map((d, i) => (
+            <span key={d} title={`实际 ${SHORT[d]} ${da[d] || 0} 分`}
+              className={['bg-has', 'bg-brand', 'bg-danger'][i]}
+              style={{ width: `${(da[d] || 0) / total * 100}%` }} />
+          ))}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10.5px]">
+          {D.map((d) => (
+            <span key={d} className={(dt[d] || 0) === (da[d] || 0)
+              ? 'text-ink-faint' : 'font-medium text-warn'}>
+              {SHORT[d]} {(da[d] || 0)}/{dt[d] || 0} 分
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* 章节：只列**没达标**的；都达标就一句话 */}
+      <div>
+        <div className="mb-1 flex items-baseline gap-1.5 text-[10.5px] text-ink-faint">
+          <span>小题章节</span><span className="opacity-70">按题量，照近五年真题占比</span>
+        </div>
+        {badTopics.length === 0 ? (
+          <div className="text-[10.5px] text-ink-faint">
+            {keys.length} 个章节都按真题占比出满了
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {badTopics.map((t) => (
+              <span key={t} className="rounded bg-warn-soft px-1.5 py-[1px] text-[10.5px] text-warn">
+                {t} {ta[t] || 0}/{tt[t] || 0}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(bp.notes || []).map((n: string) => (
+        <div key={n} className="text-[10.5px] leading-relaxed text-warn">⚠ {n}</div>
+      ))}
+    </div>
+  )
+}
+
 /** 一排选项（卷型 / 版式 / 存档种类）：选中的实心胶囊，未选的白底描边。 */
 function pickCls(on: boolean) {
   return `press inline-flex items-center justify-center gap-1 rounded-full border px-2.5 py-[5px]
@@ -120,6 +204,8 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   const [res, setRes] = useState<ExportResult | null>(null)
   const [err, setErr] = useState('')
   const [genMsg, setGenMsg] = useState('')
+  /** 组卷后的**细目表达成度**（目标 vs 实际）。只有 gaokao 模式会给。 */
+  const [bp, setBp] = useState<any>(null)
   // 组卷方案（`coverage`）：**要几道题、想覆盖多少考点**。
   // 目标是「尽量用最少的题把考点铺满」，所以先定题量再谈覆盖率。
   const [want, setWant] = useState('46')
@@ -205,7 +291,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
 
   /** 随机组卷：`gaokao` 按卷面结构填位置；`coverage` 按考点覆盖率挑题。 */
   const roll = () => {
-    setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg('')
+    setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg(''); setBp(null)
     api.generate({ ...filters, mode, seed: Math.floor(Math.random() * 1e9),
                    want: Number(want) || 19, coverage: Number(cov) || 0.9,
                    keep_structure: keepStruct })
@@ -213,6 +299,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
         if (d.detail) { setErr(String(d.detail)); return }
         setList(d.items || [])
         const rep = d.report || {}
+        setBp(rep.blueprint || null)
         const mixTxt = rep.mix
           ? Object.entries(rep.mix).filter(([, n]) => n)
               .map(([t, n]) => `${SHORT_NAME[t] || t}${n}`).join(' ')
@@ -239,7 +326,7 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   useEffect(() => { refreshSaved() }, [])
 
   const loadSaved = (name: string) => {
-    setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg('')
+    setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg(''); setBp(null)
     fetch('/api/papers/' + encodeURIComponent(name)).then((r) => r.json())
       .then((d) => {
         if (!d || !d.keys) { setErr('没有这份存档'); return }
@@ -385,6 +472,8 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
                   : '测试题不做结构约束，用当前筛选到的题目'}
               </div>
             </div>
+
+            <Blueprint bp={bp} />
 
             <Group title="卷面标题">
               <div className="flex items-center gap-1.5">
