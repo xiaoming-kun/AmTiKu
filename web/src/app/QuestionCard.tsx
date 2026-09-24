@@ -142,27 +142,27 @@ export default function Card({
           </span>
         )}
         {/* 元信息行。
-            **考点是这条的主信息**——找题时扫的就是它，所以给它一个浅底胶囊、
-            放在最前面；来源退成灰字，两者之间用间距分开（不再是「·」串成一句）。
+            **考点全部列出来**，样式与详情抽屉里那排**完全一致**
+            （主考点粉色标「主」，其余灰色）——同一个东西在两个界面长得一样，
+            不用重新认一遍。多考点就换行，`flex-wrap` 兜住。
 
             顺手去掉两处冗余：
             · 「来源：」前缀——`source_label` 本身就是「2024年新高考II卷」，
               谁都看得出这是出处，前缀纯占地方；
             · **重复的年份**——实测 82% 的题 source_label 里已经含年份，
               原来会写成「2024年新高考II卷 · 2024 年」，同一个年份说两遍。 */}
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-[11.5px] leading-5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]">
           {q.point_titles?.length ? (
-            <span
-              className="flex min-w-0 shrink items-center gap-1 rounded-md bg-brand-soft px-1.5
-                         py-[2px] font-medium text-brand-ink"
-              title={q.point_titles.join('、')}>
-              <span className="min-w-0 truncate">{q.point_titles[0]}</span>
-              {q.point_titles.length > 1 && (
-                <span className="tnum shrink-0 opacity-60">+{q.point_titles.length - 1}</span>
-              )}
-            </span>
+            q.point_titles.map((t, i) => (
+              <span key={i} title={q.point_titles.join('、')}
+                className={`shrink-0 rounded-full px-1.5 py-[1px] text-[11px] font-medium ${
+                  i === 0 ? 'bg-brand-soft text-brand-ink' : 'bg-muted text-ink-soft'}`}>
+                {i === 0 && <span className="mr-0.5 text-[9.5px] font-normal opacity-70">主</span>}
+                {t}
+              </span>
+            ))
           ) : (
-            <span className="shrink-0 rounded-md bg-warn-soft px-1.5 py-[2px] text-[11px]
+            <span className="shrink-0 rounded-full bg-warn-soft px-1.5 py-[1px] text-[11px]
                              font-medium text-warn">无考点</span>
           )}
           {src && (
@@ -172,7 +172,7 @@ export default function Card({
             <span className="shrink-0 text-ink-faint">{year} 年</span>
           )}
           {!!q.used && (
-            <span className="ml-auto flex shrink-0 items-center gap-0.5 text-warn"
+            <span className="ml-auto flex shrink-0 items-center gap-0.5 pl-2 text-warn"
               title={`已被导出 ${q.used} 次，是道常考题`}>
               <Flame size={11} />{q.used}
             </span>
