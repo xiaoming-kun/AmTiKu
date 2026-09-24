@@ -117,7 +117,7 @@ def merge() -> None:
     ids = _valid_ids()
     by_key = {}
     bad = []
-    files = sorted(BATCH.glob("r*.json"))
+    files = sorted(BATCH.glob("r*.json")) + sorted(WORK.glob("r*.json"))
     if not files:
         sys.exit("还没有 r*.json 结果文件（先让模型跑 batches/）")
     for f in files:

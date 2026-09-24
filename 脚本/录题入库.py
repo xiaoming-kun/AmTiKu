@@ -11,6 +11,48 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from amti import record2 as R2, store, ingest
 
+# 入库前就算好的考点标签（`脚本/补考点成品.py merge` 产出）。
+# 为什么不在入库后再补：那要走 `store.rewrite_all()` 全库重写，
+# 而 `points` 不参与 content_hash，入库时一次带进去是零风险的。
+LABELS = Path(__file__).resolve().parent.parent / ".tobias/分类/成品标签.json"
+_points_cache = None
+
+
+def lab_key(path, no):
+    r"""成品文件 + 题号 → 标签文件里的 key。
+
+    **保留 `<序号>_` 前缀**：`re_label` 会把它剥掉，而队列里确实有重名卷
+    （不同序号、同一卷名），剥掉前缀两道不同的题就共用一套标签了。
+    """
+    return "%s#%s" % (Path(path).name[: -len(".成品.json")], no)
+
+
+def load_points():
+    global _points_cache
+    if _points_cache is None:
+        _points_cache = {}
+        if LABELS.exists():
+            for r in json.loads(LABELS.read_text(encoding="utf-8")):
+                _points_cache[r["key"]] = list(r.get("points") or [])
+    return _points_cache
+
+
+def attach_points(path, recs, qs):
+    r"""把考点挂到 `Question` 上。**难度、星级随之派生**
+    （`schema.Question.difficulty` 取 `knowledge.difficulty_of(points[0])`），
+    所以不用单独补难度。
+    """
+    lab = load_points()
+    n = 0
+    for r, q in zip(recs, qs):
+        pts = lab.get(lab_key(path, r["题号"]))
+        if not pts:
+            continue
+        q.points = list(pts)
+        q.meta["point_source"] = "llm"      # 与库里既有的 17679 道同一个口径
+        n += 1
+    return n
+
 
 def derive_year(label):
     r"""卷名 → `meta.year`。**库内惯例是毕业届年份，不是卷面出现的第一个年份**。
@@ -89,6 +131,10 @@ def main(path, do_commit, force=False):
     if orphan:
         print("⚠️ sidecar 里有 %d 个题号在成品中不存在，已跳过：%s" % (len(orphan), orphan))
     qs = [R2.rec_to_question(r, label) for r in recs]
+    n_pt = attach_points(path, recs, qs)
+    if n_pt != len(recs):
+        print("⚠️ 考点标签只覆盖 %d/%d 道 —— 漏的那几道入库后考点为空，"
+              "界面按考点筛会找不到它们" % (n_pt, len(recs)))
     # 模型补的解析要在库里可辨识：meta.solved_by 不参与指纹（不改 content_hash），
     # 界面 Detail.tsx 会据此挂「AI 求解」角标，供人工复核。
     filled_set = set(filled)
