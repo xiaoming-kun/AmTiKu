@@ -262,8 +262,35 @@ def todo() -> None:
     print("连续区间：" + " ".join("%d" % a if a == b else "%d-%d" % (a, b) for a, b in spans))
 
 
+def check() -> None:
+    r"""标签账本本身的体检——**别拿「某个 r 文件第 N 行」当「第 N 题」**。
+
+    起因：有复核用「i=4161 落在第 105 批 ⇒ 应该去看 r042 的第 N 行」这种位置算法
+    去对账，得出「b001—b072 整段串题、要重跑 2880 题」。实测 i=4161 属于 `b105`
+    （`336_…皖北协作区#16`，一道椭圆题），标签 `5.3.3/5.2.1/5.3.1` 对得上题干。
+    批次的 `i` **不是连续的 40 个一组对齐文件号的**，跨场切分时一场会占两批、
+    一批会含多场，所以只能按 `i` 的取值范围查，不能按行号推算。
+    """
+    idx = _index_map()
+    in_batch = set(idx.values())
+    if not LABELS.exists():
+        sys.exit("还没有 %s" % LABELS.relative_to(ROOT))
+    lab = json.loads(LABELS.read_text(encoding="utf-8"))
+    ks = [x["key"] for x in lab]
+    over = [x for x in lab if len(x["points"]) > 3]
+    ghost = sorted(set(ks) - in_batch)
+    dup = len(ks) - len(set(ks))
+    print("标签 %d 条 | 考点多于 3 个 %d | 不属于任何批次的 key %d | 重复 key %d"
+          % (len(ks), len(over), len(ghost), dup))
+    for x in over[:3]:
+        print("   超量：", x["key"], x["points"])
+    for g in ghost[:3]:
+        print("   幽灵：", g)
+    print("结论：%s" % ("✅ 账本自洽" if not (over or ghost or dup) else "⛔ 账本有问题，先修再入库"))
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("act", choices=["split", "merge", "stat", "todo"])
+    ap.add_argument("act", choices=["split", "merge", "stat", "todo", "check"])
     a = ap.parse_args()
-    {"split": split, "merge": merge, "stat": stat, "todo": todo}[a.act]()
+    {"split": split, "merge": merge, "stat": stat, "todo": todo, "check": check}[a.act]()
