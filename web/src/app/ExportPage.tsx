@@ -43,9 +43,12 @@ function pickCls(on: boolean) {
 
 type Mode = 'gaokao' | 'test' | 'coverage' | 'handout'
 
-/** 卷型对应的默认卷面标题。和上面那两个 placeholder 是同一套说法。 */
+/** 卷型对应的默认卷面标题。
+ *
+ *  这个名字会**印在卷面上**，也是导出文件名的前缀，所以每种卷型给一个
+ *  说得清自己的名字——而不是四种卷型混用同一个。 */
 const MODE_TITLE: Record<Mode, string> = {
-  gaokao: '数学试卷', test: '考点测试', coverage: '考点测试', handout: '讲义',
+  gaokao: '数学试卷', test: '测试卷', coverage: '考点覆盖卷', handout: '讲义',
 }
 
 /** 时间戳 `20260923_2034`。
@@ -79,10 +82,17 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
 }) {
   const [list, setList] = useState<Q[]>(init)
   const poolN = pool.length
-  const [title, setTitle] = useState('')
+  /** 卷面标题：**默认就填好**（和下面的文件名同一套规矩）。
+   *
+   *  以前这里是空的 + 一句 placeholder「留空用…」，而文件名却有默认值——
+   *  两栏不对称，用户还得先自己给卷子起个名。现在打开就是
+   *  「数学试卷 / 测试卷 / 考点覆盖卷 / 讲义」，想改就地改。 */
+  const [title, setTitle] = useState(MODE_TITLE.gaokao)
+  /** 用户手改过卷面标题没有。没改 → 换卷型时标题跟着换；改了 → 一切以他写的为准。 */
+  const [titleEdited, setTitleEdited] = useState(false)
   // **导出文件名默认就填好**（卷面标题_时间戳），不用先去别处想名字。
   // 老规矩「留空则用 标题_时间戳」还留着：清空这个框，后端照旧兜底。
-  const [out, setOut] = useState(() => defaultOut('', 'gaokao'))
+  const [out, setOut] = useState(() => defaultOut(MODE_TITLE.gaokao, 'gaokao'))
   /** 用户**手动改过**文件名没有。
    *
    *  没有 → 标题/卷型一变，文件名跟着变（默认名是派生的，就该跟着走）；
@@ -134,6 +144,11 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
 
   const answered = list.filter((q) => q.flags['解析']).length
   const score = totalScore(list)
+
+  // 换卷型时，没手改过的卷面标题跟着换
+  useEffect(() => {
+    if (!titleEdited) setTitle(MODE_TITLE[mode])
+  }, [mode, titleEdited])
 
   // 卷面标题或卷型一变，默认文件名跟着变（前提是用户没自己改过，见 outEdited）
   useEffect(() => {
@@ -372,9 +387,23 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
             </div>
 
             <Group title="卷面标题">
-              <input value={title} onChange={(e) => setTitle(e.target.value)}
-                placeholder={mode === 'gaokao' ? '留空用「数学试卷」' : '留空用「考点测试」'}
-                className={INPUT} />
+              <div className="flex items-center gap-1.5">
+                <input value={title}
+                  onChange={(e) => { setTitle(e.target.value); setTitleEdited(true) }}
+                  placeholder={`留空用「${MODE_TITLE[mode]}」`}
+                  className={`${INPUT} flex-1`} />
+                {titleEdited && (
+                  <button onClick={() => { setTitleEdited(false); setTitle(MODE_TITLE[mode]) }}
+                    title="改回这个卷型的默认标题"
+                    className="press icon-btn h-8 w-8 shrink-0 border border-border">
+                    <RefreshCw size={13} />
+                  </button>
+                )}
+              </div>
+              {/* 这个名字会**印在卷面第一行**，也是文件名的前缀——说清它去哪了 */}
+              <div className="text-[10.5px] text-ink-faint">
+                印在卷面上（含答案页）；导出文件名也用它做前缀
+              </div>
             </Group>
 
             <Group title="导出文件名">
