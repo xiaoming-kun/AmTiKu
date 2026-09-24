@@ -132,6 +132,20 @@ app = FastAPI(title="AmTiKu")
 
 
 @app.middleware("http")
+async def _count_inflight(request, call_next):
+    """进出各加减一次，给看门狗判断"现在有没有活没干完"。
+
+    数**所有**请求而不是只数导出：除了导出，录入、统计、讲义生成
+    也都是几秒到几十秒的长活，中途被 `os._exit` 砍掉一样会留半成品。
+    """
+    _INFLIGHT[0] += 1
+    try:
+        return await call_next(request)
+    finally:
+        _INFLIGHT[0] -= 1
+
+
+@app.middleware("http")
 async def _same_origin_only(request, call_next):
     r"""只接受本机来源的请求。
 
@@ -1539,6 +1553,14 @@ _LAST_PING = [0.0]
 _PING_SEEN = [False]
 EXIT_IDLE_SEC = 25.0
 
+# **正在处理的请求数**。看门狗靠它避免"活干到一半被退出"。
+#
+# 起因：用户点「导出并保存」（两遍 xelatex，几十秒），期间页面关闭
+# （或者别的什么发了 `/api/gone`），看门狗 2 秒内就 `os._exit(0)`——
+# 编译被拦腰砍断，用户看到的是 fetch 失败 →「连不上题库服务」，
+# 而真正的原因是**服务把自己退了**。半成品 .tex/.pdf 也留在磁盘上。
+_INFLIGHT = [0]
+
 
 @app.post("/api/alive")
 def alive() -> dict:
@@ -1563,11 +1585,17 @@ def gone() -> dict:
 
 
 def _watchdog() -> None:
-    """没 ping 了就退出。只在 `--exit-with-browser` 下起。"""
+    """没 ping 了就退出。只在 `--exit-with-browser` 下起。
+
+    **有请求在跑就不退**：导出要几十秒，退在这儿等于把活砍一半。
+    等它跑完，下一轮（2 秒后）再看，那时没 ping 就正常退出。
+    """
     while True:
         time.sleep(2.0)
         if not _PING_SEEN[0]:
             continue                       # 页面还没打开过，不算
+        if _INFLIGHT[0] > 0:
+            continue                       # 有请求在跑，等它干完
         if time.monotonic() - _LAST_PING[0] > EXIT_IDLE_SEC:
             print("页面已关闭，题库服务退出")
             os._exit(0)
