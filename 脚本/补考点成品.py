@@ -113,11 +113,27 @@ def split() -> None:
                                            encoding="utf-8")
 
 
+def _index_map() -> dict:
+    r"""`i` → key。让 worker 只回填序号，卷名由这里对上——
+    实测有 worker 手打卷名把 `213_2026年2月上虞区高三期末` 写成
+    「213_2026届四川省内江市…」，35 条挂到成品里不存在的 key 上。
+    """
+    m = {}
+    for f in sorted(BATCH.glob("b[0-9][0-9][0-9].json")):
+        for it in json.loads(f.read_text(encoding="utf-8")):
+            m[it["i"]] = it["key"]
+    return m
+
+
 def merge() -> None:
     ids = _valid_ids()
+    idx = _index_map()
     by_key = {}
     bad = []
-    files = sorted(BATCH.glob("r*.json")) + sorted(WORK.glob("r*.json"))
+    by_i = 0
+    fixed_pos = []
+    files = (sorted(BATCH.glob("r*.json")) + sorted(WORK.glob("r*.json"))
+             + sorted((BATCH / "27b").glob("r*.json")))
     if not files:
         sys.exit("还没有 r*.json 结果文件（先让模型跑 batches/）")
     for f in files:
@@ -126,11 +142,32 @@ def merge() -> None:
         except Exception as e:
             bad.append((f.name, "读不了：%s" % e))
             continue
+        # **按位置校正 key**：worker 手打卷名会打错（实测把 `213_…上虞区高三期末`
+        # 写成「213_…四川省内江市…」、把 237 写成另一所学校的名字），
+        # 挂到成品里不存在的 key 上就等于这几道题没标签。
+        # 条数与批次文件相同 ⇒ 逐条按批次的 key 覆盖回来；不同就仍信它自己写的。
+        twin = (BATCH / ("b%s.json" % f.stem[1:]))
+        if twin.exists() and rows:
+            want = [it["key"] for it in json.loads(twin.read_text(encoding="utf-8"))]
+            if len(want) == len(rows):
+                typed = sum(1 for r, w in zip(rows, want) if r.get("key") != w)
+                if typed:
+                    fixed_pos.append((f.name, typed))
+                for r, w in zip(rows, want):
+                    r["key"] = w
         for r in rows:
-            k = r.get("key")
             pts = list(dict.fromkeys(str(x) for x in (r.get("points") or [])))
+            # key 一律以 `i` 为准；没有 `i` 才信它自己写的 key（旧格式）
+            if r.get("i") is not None and r["i"] in idx:
+                k = idx[r["i"]]
+                by_i += 1
+            else:
+                k = r.get("key")
+                if r.get("i") is not None:
+                    bad.append((str(r.get("i")), "序号在批次里不存在，key 又不认：%s" % k))
+                    continue
             if not k:
-                bad.append((f.name, "缺 key"))
+                bad.append((f.name, "既没 key 也没序号"))
                 continue
             if not pts:
                 bad.append((k, "没给考点"))
@@ -155,6 +192,12 @@ def merge() -> None:
     out = [{"key": k, "points": v["points"], "source": v["source"]} for k, v in sorted(by_key.items())]
     LABELS.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print("结果文件 %d 份 → 合格标签 %d 条，写入 %s" % (len(files), len(out), LABELS.relative_to(ROOT)))
+    if by_i:
+        print("   其中 %d 条是按序号 `i` 对上的" % by_i)
+    if fixed_pos:
+        print("   按位置校正过 worker 手打错的 key：%d 个文件 %d 条 %s"
+              % (len(fixed_pos), sum(n for _, n in fixed_pos),
+                 ", ".join("%s×%d" % (a, b) for a, b in fixed_pos[:6])))
     print("覆盖成品 %d / %d 题（%.1f%%）" % (len(got & need), len(need), 100 * len(got & need) / max(1, len(need))))
     miss = sorted(need - got)
     if miss:
@@ -196,8 +239,26 @@ def stat() -> None:
         print("派生不出难度的：%d" % len(noq))
 
 
+def todo() -> None:
+    r"""还缺哪几批 —— 派活时按这个切区间，别靠记忆。"""
+    missing = [int(f.stem[1:]) for f in BATCH.glob("b*.json")
+               if not (BATCH / ("r%s.json" % f.stem[1:])).exists()
+               and not (WORK / ("r%s.json" % f.stem[1:])).exists()
+               and not (BATCH / "27b" / ("r%s.json" % f.stem[1:])).exists()]
+    missing.sort()
+    spans = []
+    for n in missing:
+        if spans and n == spans[-1][1] + 1:
+            spans[-1][1] = n
+        else:
+            spans.append([n, n])
+    print("缺 %d/%d 批（%d 题）" % (len(missing), len(list(BATCH.glob("b*.json"))),
+                                    len(missing) * SIZE))
+    print("连续区间：" + " ".join("%d" % a if a == b else "%d-%d" % (a, b) for a, b in spans))
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("act", choices=["split", "merge", "stat"])
+    ap.add_argument("act", choices=["split", "merge", "stat", "todo"])
     a = ap.parse_args()
-    {"split": split, "merge": merge, "stat": stat}[a.act]()
+    {"split": split, "merge": merge, "stat": stat, "todo": todo}[a.act]()
