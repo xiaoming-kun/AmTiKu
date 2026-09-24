@@ -388,14 +388,21 @@ export function OptionBody({ text }: { text: string }) {
   )
 }
 
-export function CBlockView({ b, qmap, fs, showSource = true }:
-  { b: CBlock; qmap: Map<string, Q>; fs: number; showSource?: boolean }) {
+export function CBlockView({ b, qmap, fs, withAnswers = false }:
+  { b: CBlock; qmap: Map<string, Q>; fs: number; withAnswers?: boolean }) {
   const lh = b.lineHeight ?? DEFAULT_LH
   const q = b.type === 'question' ? qmap.get(b.key || '') : undefined
 
   // 转换结果记忆化：LaTeX→markdown 是几十条正则的流水线，
   // 原来**每次渲染都重算**（画布每块 + 离屏探针各一遍，审查报告 PERF-1）
-  const stemText = useMemo(() => (q ? transformStem(q.stem || '') : ''), [q])
+  /** 「显示答案」**必须传进 `transformStem` 的第二参**，不能事后补。
+   *
+   *  `transformStem(stem, withAnswers=false)` 内部就是
+   *  `withAnswers ? showAnswers(t) : stripAnswers(t)`——**默认那一支会把答案剥掉**。
+   *  所以先 `transformStem(…)`（答案已经没了）再 `showAnswers(…)` 是白搭：
+   *  宏早被吃掉，后面找不到任何东西。这就是「勾了没反应」的真正原因。 */
+  const stemText = useMemo(
+    () => (q ? transformStem(q.stem || '', withAnswers) : ''), [q, withAnswers])
   const optTexts = useMemo(
     () => (q?.options || []).map((o) => transformOption(o.text || '')),
     [q])
@@ -455,7 +462,8 @@ export function CBlockView({ b, qmap, fs, showSource = true }:
     // 关键：必须走 transformStem/transformOption —— 题库是 LaTeX + newtxmath，
     // 原始题干里的 \paren[A]、\symbfit、enumerate 等 KaTeX 不认，
     // 直接渲染会显示成源码（前端包必须重新构建才生效）
-    const lab = (b.showSource ?? showSource) ? sourceLabel(q) : ''
+    // 出处**一律标**（用户：所有题目都有出处，这个没有关掉的必要）
+    const lab = sourceLabel(q)
     // 出处**并进题干同一行**（用户要求：括号 + 与题目同排）。
     // ⚠️ 必须是纯文本，不能用 <span>：MarkdownBody 不解析 HTML，
     //    用 span 会变成"预览有、导出没有"（本项目最忌讳的不一致）。

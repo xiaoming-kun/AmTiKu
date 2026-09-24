@@ -28,12 +28,10 @@ export function useHandoutIo(params: {
   bodyFont: string
   setBodyFont: (s: string) => void
   fits: Record<string, number>
-  showSource: boolean
-  setShowSource: (b: boolean) => void
 }) {
   const { pages, setPages, setCur, setSel, title, setTitle, name, setName,
           ratio, setRatio, withAns, setWithAns, titleFont, setTitleFont,
-          bodyFont, setBodyFont, fits, showSource, setShowSource } = params
+          bodyFont, setBodyFont, fits } = params
 
   const [busy, setBusy] = useState(false)
   // 生成开始的时间戳：进度浮层用它显示已用时间/当前阶段
@@ -59,7 +57,10 @@ export function useHandoutIo(params: {
     send('/api/export/slidev-canvas', 'POST', {
       title, out: name, pages: clean, ratio, with_answers: withAns,
       compile: true, title_font: titleFont, body_font: bodyFont,
-      show_source: showSource,
+      // 出处**一律标**（用户：所有题目都有出处，没有关掉的必要）。
+      // 后端仍留着这个参数（`测试/讲义测试.py` 覆盖了关掉的情形），
+      // 只是界面上不再给开关。
+      show_source: true,
     })
       .then(setRes)
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
@@ -69,7 +70,7 @@ export function useHandoutIo(params: {
   const doSave = () => {
     send('/api/canvas/save', 'POST', {
       name, title, pages: serialize(), ratio, with_answers: withAns,
-      title_font: titleFont, body_font: bodyFont, show_source: showSource,
+      title_font: titleFont, body_font: bodyFont, show_source: true,
     })
       .then(loadList)
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
@@ -86,7 +87,6 @@ export function useHandoutIo(params: {
       setRatio(h.ratio || '16:9'); setWithAns(!!h.with_answers)
       setTitleFont(h.title_font || DEFAULT_TITLE_FONT)
       setBodyFont(h.body_font || DEFAULT_BODY_FONT)
-      setShowSource(h.show_source !== false)      // 默认开
     }).catch((e) => setErr(e instanceof Error ? e.message : String(e)))
   }
 

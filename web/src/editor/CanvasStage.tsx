@@ -28,7 +28,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
   titleFont, setTitleFont, bodyFont, setBodyFont, run, busy, busySince, doSave, err, res,
   canvasRef, aspect, pages, cur, setCur, setPages, blocks, sel, setSel,
   fits, overflowed, startDrag, measRef, probeRef, blockQs,
-  addBlock, fontCss, showSource }: {
+  addBlock, fontCss, withAns }: {
   title: string; setTitle: Dispatch<SetStateAction<string>>
   name: string; setName: Dispatch<SetStateAction<string>>
   titleFont: string; setTitleFont: Dispatch<SetStateAction<string>>
@@ -51,7 +51,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
   blockQs: Map<string, Q>
   addBlock: (b: Partial<CBlock>) => void
   fontCss: string
-  showSource: boolean
+  withAns: boolean
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -147,7 +147,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
               <div ref={(el) => { measRef.current[b.id] = el }}
                 style={{ zoom: fits[b.id] || 1 }}>
                 <CBlockView b={b} qmap={blockQs}
-                  fs={blockFontSize(b)} showSource={showSource} />
+                  fs={blockFontSize(b)} withAnswers={withAns} />
               </div>
               {overflowed.has(b.id) && (
                 <div title="内容超出框高，拖右下角放大，或在右侧调大「高 %」"
@@ -182,42 +182,56 @@ export default function CanvasStage({ title, setTitle, name, setName,
               <div key={`probe-${b.id}`}
                 ref={(el) => { probeRef.current[b.id] = el }}
                 style={{ width: '100%', lineHeight: b.lineHeight ?? DEFAULT_LH }}>
-                <CBlockView b={b} qmap={blockQs} fs={blockFontSize(b)} showSource={showSource} />
+                {/* 离屏量尺寸**必须和可见的那份同参数**，否则算出的缩放系数
+                    跟实际内容对不上（答案开着时题干更长）。 */}
+                <CBlockView b={b} qmap={blockQs} fs={blockFontSize(b)} withAnswers={withAns} />
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* ── 页面条 ── */}
-      <div className="flex shrink-0 items-center gap-1.5 border-t border-border bg-surface
+      {/* ── 页面条 ──
+          **分成三组**，各组之间用竖线隔开：
+            ① 翻页（只看，不改）——收进一个带边框的小控件里，不再是三个散件
+            ② 加页（改结构）
+            ③ 右侧：块数 / 溢出 / 错误 / 保存结果，最右边单独放**删本页**
+
+          以前「加页」紧贴着 `>` 箭头，翻页翻快一点就可能点到它；
+          「删本页」又紧挨着「加页」，一个手滑就把刚排好的一页删了（而且没有撤销）。
+          把"看"和"改"分开、把删除孤立到最右，是这一条的两个目的。 */}
+      <div className="flex shrink-0 items-center gap-2 border-t border-border bg-surface
                       px-3.5 py-2 text-[11.5px] text-ink-faint">
-        <button onClick={() => setCur((c) => Math.max(0, c - 1))} disabled={cur === 0}
-          title="上一页" className="icon-btn h-6 w-6 disabled:pointer-events-none disabled:opacity-30">
-          <ChevronLeft size={14} />
-        </button>
-        <span className="tnum px-0.5 text-ink-soft">第 {cur + 1} / {pages.length} 页</span>
-        <button onClick={() => setCur((c) => Math.min(pages.length - 1, c + 1))}
-          disabled={cur >= pages.length - 1}
-          title="下一页" className="icon-btn h-6 w-6 disabled:pointer-events-none disabled:opacity-30">
-          <ChevronRight size={14} />
-        </button>
+        {/* ① 翻页 */}
+        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-bg p-[2px]">
+          <button onClick={() => setCur((c) => Math.max(0, c - 1))} disabled={cur === 0}
+            title="上一页"
+            className="icon-btn h-6 w-6 disabled:pointer-events-none disabled:opacity-30">
+            <ChevronLeft size={14} />
+          </button>
+          <span className="tnum min-w-[68px] text-center text-ink-soft">
+            第 {cur + 1} / {pages.length} 页
+          </span>
+          <button onClick={() => setCur((c) => Math.min(pages.length - 1, c + 1))}
+            disabled={cur >= pages.length - 1}
+            title="下一页"
+            className="icon-btn h-6 w-6 disabled:pointer-events-none disabled:opacity-30">
+            <ChevronRight size={14} />
+          </button>
+        </div>
+
+        <span className="h-4 w-px shrink-0 bg-border" />
+
+        {/* ② 加页 */}
         <button onClick={() => { setPages((p) => [...p, { blocks: [] }]); setCur(pages.length) }}
-          className="press ml-1 inline-flex items-center gap-1 rounded-lg border border-border
-                     bg-surface px-2 py-[3px] text-[11.5px] text-ink-soft transition-colors
-                     hover:border-border-strong hover:text-ink">
+          title="在当前页后面加一页"
+          className="press inline-flex items-center gap-1 rounded-lg border border-border
+                     bg-surface px-2.5 py-[4px] text-[11.5px] font-medium text-ink-soft
+                     transition-colors hover:border-brand-line hover:bg-brand-soft
+                     hover:text-brand-ink">
           <Plus size={12} />加页
         </button>
-        {pages.length > 1 && (
-          <button onClick={() => {
-            setPages((p) => p.filter((_, i) => i !== cur))
-            setCur((c) => Math.max(0, c - 1))
-          }} className="press inline-flex items-center gap-1 rounded-lg border border-border
-                        bg-surface px-2 py-[3px] text-[11.5px] text-ink-faint transition-colors
-                        hover:border-danger/40 hover:bg-danger-soft hover:text-danger">
-            <TriangleAlert size={12} />删本页
-          </button>
-        )}
+
         {overflowed.size > 0 && (
           <span className="inline-flex items-center gap-1 rounded-md bg-danger-soft px-1.5 py-[2px]
                            text-[11px] font-medium text-danger">
@@ -230,6 +244,24 @@ export default function CanvasStage({ title, setTitle, name, setName,
           <span className="inline-flex items-center gap-1 text-has">
             <Check size={12} strokeWidth={2.6} />{res.saved_hint}
           </span>
+        )}
+
+        {/* ③ 删本页：**孤立在最右**，离「加页」隔开一整条。
+            它没有撤销，手滑就没了——所以不给它挨着"加页"的机会。 */}
+        {pages.length > 1 && (
+          <>
+            <span className="h-4 w-px shrink-0 bg-border" />
+            <button onClick={() => {
+              setPages((p) => p.filter((_, i) => i !== cur))
+              setCur((c) => Math.max(0, c - 1))
+            }} title="删掉当前这一页（没有撤销）"
+              className="press inline-flex shrink-0 items-center gap-1 rounded-lg border
+                         border-border bg-surface px-2.5 py-[4px] text-[11.5px] text-ink-faint
+                         transition-colors hover:border-danger/40 hover:bg-danger-soft
+                         hover:text-danger">
+              <TriangleAlert size={12} />删本页
+            </button>
+          </>
         )}
       </div>
     </div>
