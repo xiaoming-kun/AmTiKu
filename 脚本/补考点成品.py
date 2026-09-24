@@ -150,7 +150,8 @@ def merge() -> None:
         if twin.exists() and rows:
             want = [it["key"] for it in json.loads(twin.read_text(encoding="utf-8"))]
             if len(want) == len(rows):
-                typed = sum(1 for r, w in zip(rows, want) if r.get("key") != w)
+                typed = sum(1 for r, w in zip(rows, want)
+                            if r.get("key") and r["key"] != w)
                 if typed:
                     fixed_pos.append((f.name, typed))
                 for r, w in zip(rows, want):
@@ -177,11 +178,20 @@ def merge() -> None:
             unk = [x for x in pts if x not in ids]
             if unk:
                 bad.append((k, "考点 id 不存在：%s" % unk)); continue
-            if k in by_key and by_key[k]["points"] != pts:
-                bad.append((k, "同一 key 两份不同标签，需人工裁决：%s ≠ %s"
-                            % (by_key[k]["points"], pts)))
+            new = {"key": k, "points": pts, "source": r.get("source") or "llm"}
+            old = by_key.get(k)
+            if old and old["points"] != pts:
+                # 两条来源给得不一样。**不许两边都丢**（原来这里是 continue，
+                # 等于 agent 和 27B 撞车时两道题的标签一起蒸发）。
+                # 谁给得多留谁（agent 给 1—3 个、27B 只给 1 个，不是同一件事的两种答案），
+                # 数量相同且主考点也不同才算真分歧，留着报出来给人裁。
+                if len(pts) > len(old["points"]):
+                    by_key[k] = new
+                elif len(pts) == len(old["points"]) and pts[0] != old["points"][0]:
+                    bad.append((k, "同一 key 两份标签主考点不同，已留先到的：%s ≠ %s"
+                                % (old["points"], pts)))
                 continue
-            by_key[k] = {"key": k, "points": pts, "source": r.get("source") or "llm"}
+            by_key[k] = by_key.get(k) or new
 
     need = set()
     for p in sorted(V2.glob("*.成品.json")):
