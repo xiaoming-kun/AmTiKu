@@ -111,8 +111,17 @@ export function useQuestionList() {
     return ''
   }, [points, facets])
 
-  // 拉列表
+  /** **只有最后一次请求算数**（乱序防护）。
+   *
+   *  打开题库时那条"全库"请求是最慢的（要扫 2 万道、还要渲染 100 条块 IR），
+   *  而搜索请求只回 1 条、几十毫秒就回来了。用户开页就打字，于是：
+   *  搜索的响应先落地（表头 1 道、列表是那道题），全库的响应后落地，
+   *  把 `items`/`total` 又改回全库——表头明明挂着「搜「断臂」」，
+   *  数字却是两万量级、列表也退回没筛的样子。用户截图里那个数就是这么来的。
+   *  `my !== seq.current` 的响应一律丢弃，连 `loading` 都不许它关。 */
+  const seq = useRef(0)
   useEffect(() => {
+    const my = ++seq.current
     setLoading(true)
     api.list({
       q, type, kind, has: has.join(','), missing: missing.join(','),
@@ -121,6 +130,7 @@ export function useQuestionList() {
       limit: String(pageSize), offset: String((page - 1) * pageSize),
     })
       .then((d) => {
+        if (my !== seq.current) return
         setItems(d.items); setTotal(d.total)
         // 删题/改筛选后当前页可能超界，拉回来
         const maxPage = Math.max(1, Math.ceil(d.total / pageSize))
@@ -128,8 +138,8 @@ export function useQuestionList() {
         setSel((cur: Q | null) =>
           cur && d.items.some((x: Q) => x.key === cur.key) ? cur : (d.items[0] ?? null))
       })
-      .catch(reportErr)
-      .finally(() => setLoading(false))
+      .catch((e) => { if (my === seq.current) reportErr(e) })
+      .finally(() => { if (my === seq.current) setLoading(false) })
   }, [q, type, kind, has, missing, points, diffs, years, sort, page, pageSize, reload])
 
   useEffect(() => { setPageInput(String(page)) }, [page])

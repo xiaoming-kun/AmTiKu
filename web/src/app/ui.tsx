@@ -227,22 +227,34 @@ export function useUnmount(open: boolean, ms: number) {
  *  卷子从 2 题变 3 题、36 分变 41 分，直接替换数字人眼是跟不上的；
  *  300ms 内滚过去，既看得见变化又不会拖。尊重「减少动态效果」——
  *  那种情况下直接给终值。
+ *
+ *  **幅度大的变化不滚**：从 20934 滚到 1 会一路穿过几千个**任何筛选都给不出**
+ *  的数字。用户盯着屏（或截图）看到的是「搜「断臂」→ 8840 道」这种假答案。
+ *  滚动只在"加了一道题"这种小增量上才有意义，那里也才看得清。
  */
+const SPIN_MAX = 200
+
 export function Num({ value, className = '' }: { value: number; className?: string }) {
   const [shown, setShown] = useState(value)
-  const from = useRef(value)
+  // 屏幕上**当前画着**的数字。动画中途来新值就从这里续，
+  // 而不是从上一段的起点跳回去（旧写法只在动画跑完才更新起点）。
+  const cur = useRef(value)
   const raf = useRef(0)
   useEffect(() => {
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    if (reduce || from.current === value) { from.current = value; setShown(value); return }
-    const a = from.current, b = value, t0 = performance.now(), D = 300
+    const a = cur.current, b = value
+    if (reduce || a === b || Math.abs(b - a) > SPIN_MAX) {
+      cur.current = b; setShown(b); return
+    }
+    const t0 = performance.now(), D = 300
     const tick = (t: number) => {
       const k = Math.min(1, (t - t0) / D)
       // easeOutCubic：先快后慢，数字"落"在终值上
       const e = 1 - Math.pow(1 - k, 3)
-      setShown(Math.round(a + (b - a) * e))
+      const v = Math.round(a + (b - a) * e)
+      cur.current = v; setShown(v)
       if (k < 1) raf.current = requestAnimationFrame(tick)
-      else from.current = b
+      else cur.current = b
     }
     raf.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf.current)
