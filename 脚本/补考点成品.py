@@ -288,6 +288,36 @@ def check() -> None:
         print("   幽灵：", g)
     print("结论：%s" % ("✅ 账本自洽" if not (over or ghost or dup) else "⛔ 账本有问题，先修再入库"))
 
+    # **两种回填格式各自与批次对账**：早期 worker 只写 `key`（没有 `i`），
+    # 后期只写 `i`（没有 `key`）。有复核拿「`i` 是批次内局部号」去推 b001—b072 串题，
+    # 其实那 71 个文件**根本没有 `i` 字段**，无从错位。这里把两类的对账都固化下来：
+    # 纯 key 的比 key 集合，纯 i 的逐位比 i 序列，混排的单独报出来。
+    only_key = only_i = mixed = 0
+    mismatch = []
+    for f in sorted(BATCH.glob("r[0-9][0-9][0-9].json")):
+        bf = BATCH / ("b%s.json" % f.stem[1:])
+        if not bf.exists():
+            mismatch.append((f.name, "没有对应的批次文件"))
+            continue
+        rows = json.loads(f.read_text(encoding="utf-8"))
+        b = json.loads(bf.read_text(encoding="utf-8"))
+        hk = sum(1 for r in rows if r.get("key"))
+        hi = sum(1 for r in rows if r.get("i") is not None)
+        if hk == len(rows) and not hi:
+            only_key += 1
+            if {r["key"] for r in rows} != {x["key"] for x in b}:
+                mismatch.append((f.name, "key 集合与批次不符"))
+        elif hi == len(rows) and not hk:
+            only_i += 1
+            if [r["i"] for r in rows] != [x["i"] for x in b]:
+                mismatch.append((f.name, "i 序列与批次不符"))
+        else:
+            mixed += 1
+            mismatch.append((f.name, "i/key 混排：有 i %d 行、有 key %d 行" % (hi, hk)))
+    print("结果文件：纯 key %d 个・纯 i %d 个・混排 %d 个；与批次对不上 %d 个%s"
+          % (only_key, only_i, mixed, len(mismatch),
+             "" if not mismatch else " → " + "; ".join("%s %s" % m for m in mismatch[:4])))
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
