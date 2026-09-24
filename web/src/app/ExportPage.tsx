@@ -69,15 +69,17 @@ function Blueprint({ bp }: { bp: any }) {
         <div className="flex h-[6px] w-full overflow-hidden rounded-full bg-muted">
           {D.map((d, i) => (
             <span key={d} title={`目标 ${SHORT[d]} ${dt[d] || 0} 分`}
-              className={['bg-has', 'bg-brand', 'bg-danger'][i] + ' opacity-45'}
-              style={{ width: `${(dt[d] || 0) / total * 100}%` }} />
+              className={'bar-grow ' + ['bg-has', 'bg-brand', 'bg-danger'][i] + ' opacity-45'}
+              style={{ width: `${(dt[d] || 0) / total * 100}%`,
+                       animationDelay: `${i * 60}ms` }} />
           ))}
         </div>
         <div className="mt-1 flex h-[6px] w-full overflow-hidden rounded-full bg-muted">
           {D.map((d, i) => (
             <span key={d} title={`实际 ${SHORT[d]} ${da[d] || 0} 分`}
-              className={['bg-has', 'bg-brand', 'bg-danger'][i]}
-              style={{ width: `${(da[d] || 0) / total * 100}%` }} />
+              className={'bar-grow ' + ['bg-has', 'bg-brand', 'bg-danger'][i]}
+              style={{ width: `${(da[d] || 0) / total * 100}%`,
+                       animationDelay: `${120 + i * 60}ms` }} />
           ))}
         </div>
         <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10.5px]">
@@ -160,9 +162,11 @@ function safeName(out: string) {
   return out.replace(/[^\w\u4e00-\u9fff-]+/g, '_').replace(/^_+|_+$/g, '') || '试卷'
 }
 
-export default function ExportPage({ init, pool, from, filters, onClose }: {
+export default function ExportPage({ init, pool, from, filters, onClose, closing }: {
   init: Q[]; pool: Q[]; from: string
   filters: Record<string, string>; onClose: () => void
+  /** 正在播退场动画（父组件用 `useUnmount` 控制，播完才真卸载）。 */
+  closing?: boolean
 }) {
   const [list, setList] = useState<Q[]>(init)
   const poolN = pool.length
@@ -369,11 +373,12 @@ export default function ExportPage({ init, pool, from, filters, onClose }: {
   })
 
   return (
-    <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center
-                    bg-ink/25 p-5 backdrop-blur-[2px]">
-      <div className="pop-c flex h-[min(880px,92vh)] w-[min(1220px,95vw)] flex-col
-                      overflow-hidden rounded-[var(--radius-pop)] border border-border
-                      bg-surface shadow-[var(--shadow-pop)]">
+    <div className={`${closing ? 'anim-fade-out' : 'anim-fade-in'} fixed inset-0 z-50
+                    flex items-center justify-center bg-ink/25 p-5 backdrop-blur-[2px]`}>
+      <div className={`${closing ? 'anim-pop-out' : 'pop-c'} flex h-[min(880px,92vh)]
+                      w-[min(1220px,95vw)] flex-col overflow-hidden
+                      rounded-[var(--radius-pop)] border border-border bg-surface
+                      shadow-[var(--shadow-pop)]`}>
 
         {/* ── 头 ── */}
         <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">

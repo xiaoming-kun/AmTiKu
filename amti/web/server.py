@@ -1551,7 +1551,19 @@ def pdf(path: str):
 #    永远收不到 ping，看门狗会立刻把服务杀掉。
 _LAST_PING = [0.0]
 _PING_SEEN = [False]
-EXIT_IDLE_SEC = 25.0
+# 多久没 ping 才认为"人走了"。
+#
+# **必须明显大于 60 秒**：Chrome 对**后台标签页**的定时器有节流
+# （隐藏 5 分钟后降为每分钟一次），而心跳是 8 秒一次。
+# 原来设 25 秒 → 把标签页切到后台几分钟，服务就自己退了，
+# 用户切回来看到的是「连不上题库服务」。
+EXIT_IDLE_SEC = 95.0
+# 「页面说它要走了」之后还给多久。**不能是 0**：
+# `pagehide` 不只页面关闭时触发，**刷新（F5 / ⌘R）也会触发**——
+# 用户早先那个"刷新一下就再也连不上"就是这么来的：
+# beacon 一到，看门狗 2 秒内自杀，新页面还没加载完服务就没了。
+# 给 5 秒宽限，刷新来得及把心跳接上；真关掉也只是多等 5 秒。
+GONE_GRACE_SEC = 5.0
 
 # **正在处理的请求数**。看门狗靠它避免"活干到一半被退出"。
 #
@@ -1574,13 +1586,14 @@ def alive() -> dict:
 
 @app.post("/api/gone")
 def gone() -> dict:
-    r"""页面关掉了（`navigator.sendBeacon`）。
+    r"""页面说它要走了（`navigator.sendBeacon`）。
 
-    把最后 ping 时间往前推，看门狗下一轮就退出。
-    用 beacon 是因为它**在页面卸载时也能发出去**，`fetch` 不保证。
+    **不能立刻退**：`pagehide` 在刷新时也会触发（见 GONE_GRACE_SEC 的说明），
+    所以这里只把倒计时缩短到 `GONE_GRACE_SEC` 秒——刷新来得及接上，
+    真关掉也只是多等几秒。
     """
-    _LAST_PING[0] = time.monotonic() - EXIT_IDLE_SEC - 1
-    print("页面已关闭，准备退出", flush=True)
+    _LAST_PING[0] = time.monotonic() - (EXIT_IDLE_SEC - GONE_GRACE_SEC)
+    print("页面说要走 —— %d 秒内没有新的心跳就退出" % GONE_GRACE_SEC, flush=True)
     return {"ok": True}
 
 

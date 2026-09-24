@@ -61,22 +61,33 @@ let seq = 0
 
 export function Toaster() {
   const [list, setList] = useState<Item[]>([])
+  // 正在退场的那些：先标上，动画播完再从列表里删
+  const [leaving, setLeaving] = useState<Set<number>>(new Set())
   useEffect(() => {
     setToastSink((t) => setList((xs) => [...xs, { ...t, id: ++seq }].slice(-MAX_STACK)))
     setToastDismisser(() => setList([]))
     return () => { setToastSink(null); setToastDismisser(null) }
   }, [])
-  const done = useCallback((id: number) => setList((xs) => xs.filter((x) => x.id !== id)), [])
+  /** 先播退场再移除。**不能直接删** —— 那样提示是"啪"地消失的。 */
+  const done = useCallback((id: number) => {
+    setLeaving((s) => new Set(s).add(id))
+    setTimeout(() => {
+      setList((xs) => xs.filter((x) => x.id !== id))
+      setLeaving((s) => { const n = new Set(s); n.delete(id); return n })
+    }, 150)
+  }, [])
   if (!list.length) return null
   return (
     <div className="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2
                     flex-col items-center gap-2">
-      {list.map((t) => <One key={t.id} t={t} onDone={done} />)}
+      {list.map((t) => <One key={t.id} t={t} onDone={done} leaving={leaving.has(t.id)} />)}
     </div>
   )
 }
 
-function One({ t, onDone }: { t: Item; onDone: (id: number) => void }) {
+function One({ t, onDone, leaving }: {
+  t: Item; onDone: (id: number) => void; leaving: boolean
+}) {
   const [paused, setPaused] = useState(false)
   const left = useRef(t.ms)                    // 还剩多久（暂停时不再走）
   const since = useRef(0)
@@ -97,9 +108,9 @@ function One({ t, onDone }: { t: Item; onDone: (id: number) => void }) {
     <div
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="anim-fade-up pointer-events-auto relative flex items-center gap-3 overflow-hidden
-                 rounded-full bg-ink py-2 pl-3.5 pr-2 text-[12.5px] text-white
-                 shadow-[var(--shadow-pop)]">
+      className={`${leaving ? 'anim-toast-out' : 'anim-fade-up'} pointer-events-auto relative
+                 flex items-center gap-3 overflow-hidden rounded-full bg-ink py-2 pl-3.5 pr-2
+                 text-[12.5px] text-white shadow-[var(--shadow-pop)]`}>
       <Tone size={14} strokeWidth={2.4}
         className={t.tone === 'warn' ? 'shrink-0 text-warn-line' : 'shrink-0 text-has-line'} />
       <span className="max-w-[42ch] truncate">{t.text}</span>

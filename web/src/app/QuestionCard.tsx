@@ -138,7 +138,7 @@ export default function Card({
             className={`mt-[3px] grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[5px]
                         border transition-all duration-150 ${
               checked ? 'border-brand bg-brand text-white' : 'border-border-strong bg-surface text-transparent'}`}>
-            <Check size={11} strokeWidth={3} />
+            <Check size={11} strokeWidth={3} className={checked ? 'anim-check' : ''} />
           </span>
         )}
         <div className="min-w-0 flex-1 truncate text-[11.5px] leading-5 text-ink-faint">

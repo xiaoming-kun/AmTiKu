@@ -220,6 +220,18 @@ body {
 @keyframes pop-in     { from { opacity: 0; transform: scale(.965); }      to { opacity: 1; transform: none; } }
 @keyframes slide-in-r { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
 @keyframes slide-down { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+/* ── 退场 ──
+   进场有动画、退场"啪"地消失，是最容易露怯的一处：抽屉、弹层、提示
+   全都瞬间不见，界面显得生硬。**退场要比进场快**（约 65%）——
+   人已经决定关掉它了，多等一帧都是拖沓。 */
+@keyframes fade-out    { from { opacity: 1; } to { opacity: 0; } }
+@keyframes pop-out     { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.97); } }
+@keyframes slide-out-r { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(16px); } }
+@keyframes toast-out   { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(.96); } }
+/* 数字滚动：给"数量变了"一个看得见的过渡 */
+@keyframes check-pop   { 0% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
+/* 细目表横条：从 0 长到目标宽度 */
+@keyframes grow-x      { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes spin       { to { transform: rotate(360deg); } }
 @keyframes shimmer    { from { background-position: -200% 0; } to { background-position: 200% 0; } }
 @keyframes bar-slide  { 0% { left: -35%; width: 35%; } 50% { left: 40%; width: 45%; } 100% { left: 100%; width: 30%; } }
@@ -242,6 +254,13 @@ body {
 .anim-slide-d  { animation: slide-down 200ms var(--ease-soft) both; }
 .anim-pulse    { animation: pulse-soft 1.6s ease-in-out infinite; }
 .anim-bump     { animation: bump 320ms var(--ease-spring) both; }
+.anim-fade-out { animation: fade-out 130ms ease-in both; }
+.anim-pop-out  { animation: pop-out 140ms ease-in both; }
+.anim-slide-r-out { animation: slide-out-r 160ms ease-in both; }
+.anim-toast-out   { animation: toast-out 150ms ease-in both; }
+.anim-check    { animation: check-pop 200ms var(--ease-spring) both; }
+/* 横条生长：`transform: scaleX` 而不是 width —— 只走合成层，不触发重排 */
+.bar-grow { transform-origin: left; animation: grow-x 420ms var(--ease-soft) both; }
 .anim-flash    { animation: flash 900ms ease-out both; }
 
 /* 折叠区展开。外层给 `.reveal`，内层必须是唯一子元素且 overflow:hidden */
@@ -326,6 +345,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r,
   .anim-slide-d, .anim-pulse, .anim-bump, .anim-flash,
+  .anim-fade-out, .anim-pop-out, .anim-slide-r-out, .anim-toast-out,
+  .anim-check, .bar-grow,
   .anim-stagger > *, .skeleton, .progress-track::after, .pop, .pop-c, .reveal {
     animation: none !important;
   }

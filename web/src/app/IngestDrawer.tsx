@@ -21,8 +21,10 @@ const BTN_GHOST = `press inline-flex h-[32px] items-center gap-1.5 rounded-lg bo
                    bg-surface px-3 text-[12.5px] text-ink-soft transition-colors
                    hover:border-border-strong hover:text-ink`
 
-export default function IngestDrawer({ onClose, onDone, facets }: {
+export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   onClose: () => void; onDone: () => void; facets: any
+  /** 正在播退场动画（父组件用 `useUnmount` 控制）。 */
+  closing?: boolean
 }) {
   const [text, setText] = useState('')
   const [book, setBook] = useState('手工录入')
@@ -117,8 +119,9 @@ export default function IngestDrawer({ onClose, onDone, facets }: {
   }
 
   return (
-    <div className="anim-slide-r fixed inset-0 z-50 flex flex-col border-l border-border
-                    bg-surface shadow-[var(--shadow-pop)]" onClick={onClose}>
+    <div className={`${closing ? 'anim-slide-r-out' : 'anim-slide-r'} fixed inset-0 z-50
+                    flex flex-col border-l border-border bg-surface
+                    shadow-[var(--shadow-pop)]`} onClick={onClose}>
       <div className="flex min-h-0 flex-1 flex-col" onClick={(e) => e.stopPropagation()}>
         <header className="flex shrink-0 items-center gap-3 border-b border-border bg-surface px-5 py-3.5">
           <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-ink">

@@ -11,7 +11,7 @@ import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
 import { SECTION_LABEL, scoreOf, paperScore as totalScore } from '@/lib/paper'
 import { DIFF_STARS } from '@/lib/display'
 import { useQuestionList } from '@/lib/useQuestionList'
-import { Flags, Grip, useWidth, useFlag } from '@/app/ui'
+import { Flags, Grip, useWidth, useFlag, useUnmount, Num } from '@/app/ui'
 import QuestionCard from '@/app/QuestionCard'
 import { Trash, DeleteModal } from '@/app/Trash'
 import { Detail, TexSource } from '@/app/Detail'
@@ -60,6 +60,11 @@ export default function App() {
   /** 详情抽屉开着没有。它浮在内容区上（不占栏），Esc / ✕ 关掉。 */
   const [dOpen, setDOpen] = useState(false)
   const [dTab, setDTab] = useState<'detail' | 'tex'>('detail')
+  // 退场动画播完再卸载，不然抽屉"啪"地消失（见 ui.tsx 的 useUnmount）
+  const { shown: dShown, closing: dClosing } = useUnmount(dOpen, 170)
+  // 弹层同理：Esc / 点关闭都要能播完退场再卸载
+  const { shown: exportShown, closing: exportClosing } = useUnmount(showExport, 160)
+  const { shown: ingestShown, closing: ingestClosing } = useUnmount(showIngest, 170)
   /** 抽屉宽度可拖、带记忆（和筛选面板同一套 Grip/useWidth）。
    *  详情里有题图和长解析，固定 620 对某些题太窄、对另一些又浪费。 */
   const [dW, setDW] = useWidth('amtiku.w.drawer', 620, 380, 940)
@@ -113,16 +118,6 @@ export default function App() {
   const handout = useMemo(() => [...handoutMap.values()], [handoutMap])
   const paperScore = totalScore(paper)
   const answered = paper.filter((x) => x.flags['解析']).length
-  /** 往卷子里加东西时让卷子那条计数**跳一下**。
-   *
-   *  加完不再自动跳到卷子视图了（批量挑题时每加一次就切走，等于逼人再切回来），
-   *  所以得有个轻量回执告诉用户"收到了"。 */
-  const [paperBump, setPaperBump] = useState(0)
-  const bumpPaper = () => {
-    setPaperBump((v) => v + 1)
-    setTimeout(() => setPaperBump(0), 400)
-  }
-
   // 导出对象**只认卷子**，默认为空。
   // 早先卷子一空就自动拿「当前筛选结果」顶上，于是刚进页面就显示
   // 「导出 38」——用户还没说要导出什么，程序先替他决定了。不对。
@@ -135,7 +130,6 @@ export default function App() {
      比「确认清空？」更快也更安全（错点了也回得来）。 */
   const addToPaper = (it: Q) => {
     setPaperMap((m) => new Map(m).set(it.key, it))
-    bumpPaper()
     toast(`已加入卷子 · ${it.point_titles?.[0] || it.type_label}`, {
       action: { label: '撤销', run: () => removeFromPaper(it.key) },
     })
@@ -246,7 +240,7 @@ export default function App() {
     })
     exitSelect()
     // **加完不跳走**：批量挑题时每加一次就切视图，等于逼人再切回来。
-    bumpPaper()
+    // 回执交给两件事：卷子条上的数字**滚**过去 + 一条带撤销的提示。
     if (added.length) {
       toast(`已加入卷子 ${added.length} 道`, {
         action: { label: '撤销', run: () => setPaperMap((m) => {
@@ -632,7 +626,7 @@ export default function App() {
                   <h1 className="shrink-0 text-[19px] font-semibold tracking-tight">题库</h1>
                   <span className="tnum shrink-0 rounded-full bg-muted px-2 py-[2px] text-[11.5px]
                                    font-medium text-ink-soft">
-                    {loading ? '加载中…' : `${total.toLocaleString()} 道`}
+                    {loading ? '加载中…' : <><Num value={total} /> 道</>}
                   </span>
                   {/* **筛了什么，直接摆出来、逐个能摘**。
                       以前这里是一句拼出来的中文（「缺：解析」「有：图」），
@@ -730,7 +724,7 @@ export default function App() {
                     有题时常驻（提醒"你手上已经有几道了"）；空卷子不占地方。 */}
                 {paper.length > 0 && (
                   <div
-                    className={`flex shrink-0 items-center gap-2.5 border-b px-4 py-2
+                    className={`anim-slide-d flex shrink-0 items-center gap-2.5 border-b px-4 py-2
                                 text-[12.5px] ${view === 'paper'
                       ? 'border-brand-line bg-brand-soft/60'
                       : 'border-border bg-surface-2'}`}>
@@ -740,14 +734,18 @@ export default function App() {
                         className={view === 'paper' ? 'shrink-0 text-brand' : 'shrink-0 text-ink-faint'} />
                       {/* 只让**计数**跳一下就够。整条是满宽的，给它加 scale 动画
                           会在动画那一帧里顶出视口 80px（还闪一下横向滚动条）。 */}
-                      <span key={paperBump} className="anim-bump inline-flex shrink-0 items-baseline gap-1">
+                      {/* 数字**滚过去**而不是跳过去（见 ui.tsx 的 Num）——
+                          这本身就是"加进去了"的回执，不用再叠个 scale 跳动。 */}
+                      <span className="inline-flex shrink-0 items-baseline gap-1">
                         <span className={view === 'paper' ? 'font-semibold text-brand-ink' : 'font-semibold text-ink'}>
                           {view === 'paper' ? '当前卷子' : '已选'}
                         </span>
-                        <span className="tnum font-semibold text-brand-ink">{paper.length}</span>
+                        <Num value={paper.length} className="font-semibold text-brand-ink" />
                         <span className={view === 'paper' ? 'text-brand-ink' : 'text-ink'}>题</span>
                       </span>
-                      <span className="tnum shrink-0 text-ink-soft">{paperScore} 分</span>
+                      <span className="shrink-0 text-ink-soft">
+                        <Num value={paperScore} /> 分
+                      </span>
                       <span className={`tnum shrink-0 ${answered === paper.length && paper.length
                         ? 'text-has' : 'text-warn'}`}>
                         有解析 {answered}/{paper.length}
@@ -784,7 +782,7 @@ export default function App() {
 
                 {/* ── 栏内主体：题目列表 / 当前卷子 ── */}
                 {view === 'paper' ? (
-                  <PaperPanel paper={paper}
+                  <PaperPanel key="paper" paper={paper}
                     onOpen={(it) => { setSel(it); setDOpen(true) }}
                     onRemove={removeFromPaperUndo} onMove={moveInPaper}
                     onBack={() => setView('list')} />
@@ -857,7 +855,7 @@ export default function App() {
                   **浮在内容区上，不占栏**：看完就 Esc，题目栏的宽度一分不少。
                   不做点击遮罩关闭 —— 组卷时经常要"点一道看一道"，
                   抽屉开着还能继续点后面的卡片才顺手。 */}
-              {dOpen && (<>
+              {dShown && (<>
                 {/* 详情里有题图和长解析，固定宽度对某些题太窄、对另一些又浪费——
                     和筛选面板一样给一条能拖的边。
                     拖拽条**绝对定位到抽屉左边缘**，不能留在 flex 流里：
@@ -866,9 +864,9 @@ export default function App() {
                   <Grip width={dW} setWidth={setDW} min={380} max={940} />
                 </div>
                 <aside style={{ width: dW }}
-                  className="anim-slide-r absolute inset-y-0 right-0 z-30 flex
-                             flex-col border-l border-border bg-surface
-                             shadow-[var(--shadow-pop)]">
+                  className={`${dClosing ? 'anim-slide-r-out' : 'anim-slide-r'} absolute inset-y-0
+                             right-0 z-30 flex flex-col border-l border-border bg-surface
+                             shadow-[var(--shadow-pop)]`}>
                   <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border px-3">
                     {([['detail', '题目详情'], ['tex', 'LaTeX 源码']] as const).map(([t, label]) => (
                       <button key={t} onClick={() => setDTab(t)}
@@ -931,7 +929,7 @@ export default function App() {
         onSearch={(w) => { setTab('workbench'); setView('list'); setQ(w) }} />
       <Toaster />
 
-      {showExport && <ExportPage init={paper} pool={items} from={exportFrom}
+      {exportShown && <ExportPage closing={exportClosing} init={paper} pool={items} from={exportFrom}
         filters={{ q, type: L.type, kind, point: points.join(','),
                    difficulty: diffs.join(','), has: has.join(','),
                    year: years.join(',') }}
@@ -947,8 +945,8 @@ export default function App() {
               .then(() => setDeleteAsk(null))} />
       )}
 
-      {showIngest && <IngestDrawer facets={facets} onClose={() => setShowIngest(false)}
-        onDone={() => setReload((n) => n + 1)} />}
+      {ingestShown && <IngestDrawer closing={ingestClosing} facets={facets}
+        onClose={() => setShowIngest(false)} onDone={() => setReload((n) => n + 1)} />}
 
       {/* ── 讲义编辑器（全屏覆盖）──
           三栏排版需要整屏宽度；塞在面板里会被压成一条。

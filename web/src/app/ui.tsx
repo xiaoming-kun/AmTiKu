@@ -174,6 +174,60 @@ export function useWidth(key: string, init: number, min: number, max: number) {
   return [w, setW] as const
 }
 
+/** **让退场动画有时间播完**再卸载。
+ *
+ *  React 里 `open=false` 就直接不渲染了，元素"啪"地消失——进场有动画、
+ * 退场没有，界面会显得生硬。这个钩子把"该不该渲染"和"该不该显示"
+ * 拆开：`shown` 管渲染（延迟到动画播完），`closing` 管挂哪个 class。
+ *
+ *  用法：
+ *      const { shown, closing } = useUnmount(open, 160)
+ *      if (!shown) return null
+ *      <div className={closing ? 'anim-slide-r-out' : 'anim-slide-r'}>…</div>
+ *
+ *  `ms` 要和 CSS 里那条退场动画的时长对上（宁可略长一两帧，别短）。
+ */
+export function useUnmount(open: boolean, ms: number) {
+  const [shown, setShown] = useState(open)
+  const [closing, setClosing] = useState(false)
+  useEffect(() => {
+    if (open) { setShown(true); setClosing(false); return }
+    if (!shown) return
+    setClosing(true)
+    const t = setTimeout(() => { setShown(false); setClosing(false) }, ms)
+    return () => clearTimeout(t)
+  }, [open, shown, ms])
+  return { shown, closing }
+}
+
+/** 数字变化时**滚一下**，而不是直接跳。
+ *
+ *  卷子从 2 题变 3 题、36 分变 41 分，直接替换数字人眼是跟不上的；
+ *  300ms 内滚过去，既看得见变化又不会拖。尊重「减少动态效果」——
+ *  那种情况下直接给终值。
+ */
+export function Num({ value, className = '' }: { value: number; className?: string }) {
+  const [shown, setShown] = useState(value)
+  const from = useRef(value)
+  const raf = useRef(0)
+  useEffect(() => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduce || from.current === value) { from.current = value; setShown(value); return }
+    const a = from.current, b = value, t0 = performance.now(), D = 300
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / D)
+      // easeOutCubic：先快后慢，数字"落"在终值上
+      const e = 1 - Math.pow(1 - k, 3)
+      setShown(Math.round(a + (b - a) * e))
+      if (k < 1) raf.current = requestAnimationFrame(tick)
+      else from.current = b
+    }
+    raf.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf.current)
+  }, [value])
+  return <span className={`tnum ${className}`}>{shown}</span>
+}
+
 /** 开关型记忆（折叠状态）。懒得每处再写一遍 localStorage。 */
 export function useFlag(key: string, init = false) {
   const [v, setV] = useState(() => {

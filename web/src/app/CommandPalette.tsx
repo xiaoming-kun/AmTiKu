@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Search, CornerDownLeft, ArrowUp, ArrowDown } from 'lucide-react'
+import { useUnmount } from '@/app/ui'
 
 export type Cmd = {
   id: string
@@ -58,6 +59,8 @@ export default function CommandPalette({ open, onClose, commands, onSearch }: {
 }) {
   const [q, setQ] = useState('')
   const [idx, setIdx] = useState(0)
+  // 退场也要有动画（见 ui.tsx 的 useUnmount）
+  const { shown, closing } = useUnmount(open, 150)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -100,8 +103,6 @@ export default function CommandPalette({ open, onClose, commands, onSearch }: {
       ?.scrollIntoView({ block: 'nearest' })
   }, [idx, open])
 
-  if (!open) return null
-
   const plain = hits.length === 0 && q.trim().length > 0
   const active = hits[idx]
 
@@ -120,15 +121,17 @@ export default function CommandPalette({ open, onClose, commands, onSearch }: {
     }
   }
 
+  if (!shown) return null
+
   return (
-    <div className="anim-fade-in fixed inset-0 z-[70] flex items-start justify-center
-                    bg-ink/25 px-4 pt-[12vh] backdrop-blur-[2px]"
+    <div className={`${closing ? 'anim-fade-out' : 'anim-fade-in'} fixed inset-0 z-[70]
+                    flex items-start justify-center bg-ink/25 px-4 pt-[12vh] backdrop-blur-[2px]`}
       onMouseDown={onClose}>
       <div role="dialog" aria-modal="true" aria-label="命令面板"
         onMouseDown={(e) => e.stopPropagation()}
-        className="pop-c flex max-h-[min(560px,70vh)] w-[min(620px,100%)] flex-col overflow-hidden
-                   rounded-[var(--radius-pop)] border border-border bg-surface
-                   shadow-[var(--shadow-pop)]">
+        className={`${closing ? 'anim-pop-out' : 'pop-c'} flex max-h-[min(560px,70vh)]
+                   w-[min(620px,100%)] flex-col overflow-hidden rounded-[var(--radius-pop)]
+                   border border-border bg-surface shadow-[var(--shadow-pop)]`}>
 
         {/* 输入框 = combobox，指着下面的 listbox */}
         <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-4">
