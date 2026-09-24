@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import {
   ListFilter, SlidersHorizontal, X, Check, ChevronFirst, ChevronLast, ChevronRight,
   ClipboardList, Rows3, Rows2, BookPlus, FileText, ChevronUp, ChevronDown,
-  LayoutGrid, ScanLine, FolderTree, ChartColumn, Sparkles, NotebookPen, Trash2, History,
+  LayoutGrid, ScanLine, FolderTree, Sparkles, NotebookPen, Trash2, History,
   Route, Command as CommandIcon,
 } from 'lucide-react'
 import type { Q, Base } from '@/lib/types'
@@ -15,7 +15,7 @@ import { Flags, Grip, useWidth, useFlag, useUnmount, Num, CloseBtn } from '@/app
 import QuestionCard from '@/app/QuestionCard'
 import { Trash, DeleteModal } from '@/app/Trash'
 import { Detail, TexSource } from '@/app/Detail'
-import { Stats, Changes } from '@/app/Stats'
+import { Changes } from '@/app/Stats'
 import { Chain } from '@/app/Chain'
 import CanvasEditor from '@/editor/CanvasEditor'
 import ExportPage from '@/app/ExportPage'
@@ -33,8 +33,8 @@ import CommandPalette, { type Cmd } from '@/app/CommandPalette'
  *  · 题目列表和当前卷子是**同一栏里的两个视图**（`view` 切换）；
  *  · 题目详情 / LaTeX 源码是**浮在内容区上的抽屉**（`dOpen`，按需开、随时关）。
  *  所以这里只剩「整屏页面」这一种 tab。 */
-type Tab = 'workbench' | 'handout' | 'stats' | 'changes' | 'trash' | 'chain'
-const FULL_PAGE: Tab[] = ['stats', 'changes', 'trash', 'chain']
+type Tab = 'workbench' | 'handout' | 'changes' | 'trash' | 'chain'
+const FULL_PAGE: Tab[] = ['changes', 'trash', 'chain']
 
 export default function App() {
   // 列表数据与筛选 → useQuestionList（一行拿到全部筛选状态，见 lib/useQuestionList.ts）
@@ -284,7 +284,7 @@ export default function App() {
 
   /* ── 导航动作 ── */
   const navActive: NavKey =
-    tab === 'stats' ? 'stats' : tab === 'trash' ? 'trash' : tab === 'changes' ? 'changes'
+    tab === 'trash' ? 'trash' : tab === 'changes' ? 'changes'
     : tab === 'chain' ? 'chain' : tab === 'handout' ? 'handout'
     : view === 'paper' ? 'paper' : 'workbench'
 
@@ -391,7 +391,6 @@ export default function App() {
     const navIcon: Record<string, ReactNode> = {
       workbench: <LayoutGrid size={13} />, ingest: <ScanLine size={13} />,
       points: <FolderTree size={13} />, chain: <Route size={13} />,
-      stats: <ChartColumn size={13} />,
       export: <Sparkles size={13} />, paper: <ClipboardList size={13} />,
       handout: <NotebookPen size={13} />, trash: <Trash2 size={13} />,
       changes: <History size={13} />,
@@ -401,7 +400,6 @@ export default function App() {
       ingest: 'luru ingest import 录入 新建',
       points: 'zhishidian points topics 考点 章节',
       chain: 'zhishilianlu chain links 链路 先修 前置 关系 图',
-      stats: 'zhiliang stats 统计 质量 覆盖',
       export: 'zujuan export 组卷 导出 pdf',
       paper: 'shijuan paper 卷子 试卷',
       handout: 'jiangyi handout 讲义 画布',
@@ -558,8 +556,7 @@ export default function App() {
             </main>
           ) : FULL_PAGE.includes(tab) ? (
             <main className="anim-fade-in min-h-0 flex-1 overflow-y-auto">
-              {tab === 'stats' ? <Stats key={reload} />
-                : tab === 'trash' ? <Trash onChanged={() => setReload((v) => v + 1)} />
+              {tab === 'trash' ? <Trash onChanged={() => setReload((v) => v + 1)} />
                 : <Changes />}
             </main>
           ) : (
