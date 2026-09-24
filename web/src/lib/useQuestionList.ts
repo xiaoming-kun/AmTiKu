@@ -21,7 +21,9 @@ export function useQuestionList() {
 
   // ── 分页 ──
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  // 默认每页 100 道。后端有块级 IR 缓存，一页 100 条实测 0.02s；
+  // 老师挑题时更愿意一次看到一大片，20 条翻页太勤。
+  const [pageSize, setPageSize] = useState(100)
   const [pageInput, setPageInput] = useState('1')
   const listRef = useRef<HTMLDivElement>(null)
 

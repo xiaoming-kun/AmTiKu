@@ -819,10 +819,12 @@ export default function App() {
                   {items.length > 0 && <div className="h-1" />}
                 </div>
 
-                {/* 分页条。**总页数大于 1 才出现**——只有一页时占地方没意义。 */}
+                {/* 分页条。**总页数大于 1 才出现**——只有一页时占地方没意义。
+                    `pr-16`：右下角那颗快捷键浮球是 fixed 的，列表栏拉满时
+                    它会**压住「第 1–20 道，共 … 道」**，给它让出 64px。 */}
                 {total > pageSize && (
                   <div className="flex shrink-0 items-center gap-1.5 border-t border-border bg-surface
-                                  px-4 py-2 text-[12px] text-ink-faint">
+                                  py-2 pl-4 pr-20 text-[12px] text-ink-faint">
                     <PageBtn onClick={() => { setPage(1); listRef.current?.scrollTo(0, 0) }}
                       disabled={page <= 1}><ChevronFirst size={13} /></PageBtn>
                     <PageBtn onClick={() => { setPage((p) => Math.max(1, p - 1)); listRef.current?.scrollTo(0, 0) }}
