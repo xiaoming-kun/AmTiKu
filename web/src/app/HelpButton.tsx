@@ -7,7 +7,8 @@
  *  样式照着参考图的悬浮圆钮做：白底、细描边、大投影，不抢内容。
  */
 import { useEffect, useRef, useState } from 'react'
-import { CircleHelp, X } from 'lucide-react'
+import { CircleHelp } from 'lucide-react'
+import { CloseBtn } from '@/app/ui'
 import { NAV_GROUPS } from '@/app/Nav'
 
 /** 键位分组。**顺序按使用的先后**：先找题，再组卷，最后是通用。 */
@@ -79,9 +80,7 @@ export default function HelpButton() {
                         p-4 shadow-[var(--shadow-pop)]">
           <div className="mb-3 flex items-center gap-2">
             <span className="text-[13.5px] font-semibold">键盘快捷键</span>
-            <button onClick={() => setOpen(false)} className="icon-btn ml-auto h-6 w-6">
-              <X size={14} />
-            </button>
+            <CloseBtn onClick={() => setOpen(false)} className="ml-auto" />
           </div>
           <div className="space-y-3.5">
             {GROUPS.map((g) => (

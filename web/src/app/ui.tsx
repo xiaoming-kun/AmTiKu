@@ -4,7 +4,7 @@
  *  搬出去的子页面反向依赖 App（形成循环）。
  */
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, X } from 'lucide-react'
 import type { Flags as FlagMap } from '@/lib/types'
 
 export function Flags({ flags, size = 'sm' }: { flags: FlagMap; size?: 'sm' | 'md' }) {
@@ -34,6 +34,28 @@ export function Flags({ flags, size = 'sm' }: { flags: FlagMap; size?: 'sm' | 'm
           className={`${cls} rounded-md bg-gap-soft font-medium text-gap`}>{label}</span>
       ))}
     </span>
+  )
+}
+
+/** 弹层/抽屉右上角那颗关闭按钮。
+ *
+ *  以前是五个地方各写一行，而且**都是"一个没边框的小灰 ✕"**（图标 14~16px）——
+ *  又小又不显眼，是整个弹层里最难找到、最不好点的一个东西。
+ *  关闭是**逃生通道**，该一眼看到、闭着眼能点到，所以统一成：
+ *  32px 的方块 + 描边 + 图标 18px，悬停时底色浮出来。
+ *
+ *  抽成组件是为了以后不再各写一份——这次就是五处各写各的，一起小。
+ */
+export function CloseBtn({ onClick, title = '关闭', className = '' }: {
+  onClick: () => void; title?: string; className?: string
+}) {
+  return (
+    <button onClick={onClick} title={title} aria-label={title}
+      className={`press grid h-8 w-8 shrink-0 place-items-center rounded-lg border
+                  border-border bg-surface text-ink-soft transition-colors
+                  hover:border-border-strong hover:bg-muted hover:text-ink ${className}`}>
+      <X size={18} strokeWidth={2.2} />
+    </button>
   )
 }
 

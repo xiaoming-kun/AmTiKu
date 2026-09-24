@@ -11,7 +11,7 @@ import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
 import { SECTION_LABEL, scoreOf, paperScore as totalScore } from '@/lib/paper'
 import { DIFF_STARS } from '@/lib/display'
 import { useQuestionList } from '@/lib/useQuestionList'
-import { Flags, Grip, useWidth, useFlag, useUnmount, Num } from '@/app/ui'
+import { Flags, Grip, useWidth, useFlag, useUnmount, Num, CloseBtn } from '@/app/ui'
 import QuestionCard from '@/app/QuestionCard'
 import { Trash, DeleteModal } from '@/app/Trash'
 import { Detail, TexSource } from '@/app/Detail'
@@ -877,10 +877,7 @@ export default function App() {
                       </button>
                     ))}
                     <span className="min-w-0 flex-1" />
-                    <button onClick={() => setDOpen(false)} title="关闭（Esc）"
-                      className="icon-btn h-[30px] w-[30px]">
-                      <X size={16} />
-                    </button>
+                    <CloseBtn onClick={() => setDOpen(false)} title="关闭（Esc）" />
                   </div>
 
                   {!sel ? (

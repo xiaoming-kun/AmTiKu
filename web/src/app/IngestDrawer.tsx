@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { renderBlocks } from '@/lib/render'
 import { api } from '@/lib/api'
-import { Flags, Report, INGEST_SAMPLE } from '@/app/ui'
+import { Flags, Report, INGEST_SAMPLE, CloseBtn } from '@/app/ui'
 
 /** 输入框的统一样式（左侧「源材料」一栏里共用）。 */
 const FIELD = `h-[32px] rounded-lg border border-border bg-bg px-2.5 text-[12.5px] outline-none
@@ -128,9 +128,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
           <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
             先干跑看清楚，再确认导入 —— 干跑什么都不写
           </span>
-          <button onClick={onClose} title="关闭" className="icon-btn ml-auto h-7 w-7">
-            <X size={15} />
-          </button>
+          <CloseBtn onClick={onClose} className="ml-auto" />
         </header>
 
         <div className="flex min-h-0 flex-1">

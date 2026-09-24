@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, Check, Inbox, RotateCcw, Trash2, X } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { api } from '@/lib/api'
+import { CloseBtn } from '@/app/ui'
 
 
 /** 回收站。**删除的题放这儿，随时能放回去。**
@@ -221,9 +222,7 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
             </div>
             <div className="mt-0.5 text-[11.5px] text-ink-faint">删掉的题会移进回收站，可以恢复</div>
           </div>
-          <button onClick={onCancel} title="关闭" className="icon-btn -mr-1 -mt-0.5 h-7 w-7 shrink-0">
-            <X size={15} />
-          </button>
+          <CloseBtn onClick={onCancel} className="-mr-1 -mt-0.5" />
         </div>
 
         <div>

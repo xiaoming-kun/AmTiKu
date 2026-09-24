@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
+import { CloseBtn } from '@/app/ui'
 import { SECTION_LABEL, SHORT_NAME, questionScore, paperScore as totalScore } from '@/lib/paper'
 import CompileOverlay, { LATEX_STAGES, COVER_STAGES } from '@/app/CompileOverlay'
 
@@ -387,10 +388,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
             {list.length} 题 · {score} 分 · 有解析 {answered}/{list.length}
           </span>
           {genMsg && <span className="min-w-0 truncate text-[11.5px] text-brand-ink">{genMsg}</span>}
-          <button onClick={onClose} title="关闭"
-            className="icon-btn ml-auto h-7 w-7 shrink-0">
-            <X size={15} />
-          </button>
+          <CloseBtn onClick={onClose} className="ml-auto" />
         </header>
 
         <div className="flex min-h-0 flex-1">
