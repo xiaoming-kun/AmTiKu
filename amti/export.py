@@ -30,7 +30,7 @@ from . import store
 
 PKG = ROOT
 IMG_DIR = PKG / "图片"
-OUT_DIR = PKG / "试卷"
+from .paths import OUT_DIR   # 导出位置**唯一来源**（可在 数据/导出位置.txt 里改）
 
 # 分节顺序（组卷时按这个排）
 SECTION_ORDER = ("single_choice", "multi_choice", "fill_in_blank", "detailed_answer")
@@ -239,7 +239,8 @@ def export(keys: list[str], *, title: str = "", out: str = "",
 
     res = {"ok": True, "name": name, "questions": len(qs), "missing": missing,
            "tex_abs": str(tex_path), "pdf_abs": None, "dir_abs": str(OUT_DIR),
-           "saved_hint": f"{name} 已保存到 试卷/", "log": ""}
+           "saved_hint": f"{name} 已保存到 {OUT_DIR.name}/",
+           "out_dir": str(OUT_DIR), "log": ""}
     if do_compile:
         ok, log = compile_tex(tex_path)
         res["ok"] = ok

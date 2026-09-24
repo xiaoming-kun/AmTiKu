@@ -93,7 +93,7 @@ def _usage_bump(keys) -> None:
 # （打包后是 `_internal/web/dist`）。
 # 原来写的是 `PKG / "web" / "dist"`，而 PKG 是**数据目录**（exe 旁边）——
 # 那里没有前端，于是 `if UI_DIST.exists()` 整段跳过：接口全通、首页 404。
-OUT_DIR = PKG / "试卷"
+from amti.paths import OUT_DIR      # 导出位置唯一来源（见 amti/paths.py）
 
 log = get_logger(__name__)
 
@@ -1527,6 +1527,17 @@ def save_handout(body: HandoutSaveBody) -> dict:
 def delete_handout(name: str) -> dict:
     from amti import slidev_handout as sh
     return {"ok": sh.remove_handout(name)}
+
+
+@app.get("/api/settings")
+def settings() -> dict:
+    """界面要知道的**只读设置**。
+
+    现在只有一项：导出的试卷/讲义落在哪个目录。界面上的「存为 xxx/yyy.pdf」
+    得说真话——以前前端写死「试卷/」，而导出位置其实可以在
+    `数据/导出位置.txt` 里改，写死的那个就会骗人。
+    """
+    return {"out_dir": str(OUT_DIR), "out_name": OUT_DIR.name or str(OUT_DIR)}
 
 
 @app.get("/api/pdf")

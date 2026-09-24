@@ -211,6 +211,13 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
   const [genMsg, setGenMsg] = useState('')
   /** 组卷后的**细目表达成度**（目标 vs 实际）。只有 gaokao 模式会给。 */
   const [bp, setBp] = useState<any>(null)
+  /** 导出位置（后端说了算，别再写死「试卷/」）。 */
+  const [outDir, setOutDir] = useState({ name: '试卷', abs: '' })
+  useEffect(() => {
+    api.settings()
+      .then((d: any) => setOutDir({ name: d.out_name || '试卷', abs: d.out_dir || '' }))
+      .catch(() => {})     // 取不到就退回默认文案，不打断导出
+  }, [])
   // 组卷方案（`coverage`）：**要几道题、想覆盖多少考点**。
   // 目标是「尽量用最少的题把考点铺满」，所以先定题量再谈覆盖率。
   const [want, setWant] = useState('46')
@@ -521,8 +528,8 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
               <div className="flex items-baseline gap-1.5 text-[10.5px] text-ink-faint">
                 <span className="shrink-0">存为</span>
                 <code className="min-w-0 flex-1 truncate font-mono text-ink-soft"
-                  title={`试卷/${safeName(out)}.pdf`}>
-                  试卷/{safeName(out)}.pdf
+                  title={`${outDir.abs || outDir.name}/${safeName(out)}.pdf`}>
+                  {outDir.name}/{safeName(out)}.pdf
                 </code>
                 {outEdited && <span className="shrink-0 text-brand-ink">已手改</span>}
               </div>

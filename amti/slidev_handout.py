@@ -40,7 +40,8 @@ def _node_bin() -> Path:
 
 NODE_BIN = _node_bin()
 AMTIKU = ROOT
-OUT_DIR = AMTIKU / "试卷"
+# 导出位置**唯一来源**（试卷与讲义都落这儿，见 amti/paths.py）
+from .paths import OUT_DIR      # noqa: E402
 PUBLIC_IMG = SLIDEV_PROJ / "public" / "img"
 
 # 单次 Slidev 导出的硬上限。
@@ -1227,7 +1228,7 @@ def export(keys: list[str], *, title: str = "", out: str = "",
             final = OUT_DIR / f"{name}.pdf"
             shutil.copy2(pdf, final)
             res["pdf_abs"] = str(final)
-            res["saved_hint"] = f"{name}.pdf 已保存到 试卷/"
+            res["saved_hint"] = f"{name}.pdf 已保存到 {OUT_DIR.name}/"
             return res
 
         if attempt < retries:
@@ -1314,7 +1315,7 @@ def export_blocks(blocks: list[dict], *, title: str = "", out: str = "",
             final = OUT_DIR / f"{name}.pdf"
             shutil.copy2(pdf, final)
             res["pdf_abs"] = str(final)
-            res["saved_hint"] = f"{name}.pdf 已保存到 试卷/"
+            res["saved_hint"] = f"{name}.pdf 已保存到 {OUT_DIR.name}/"
             return res
         if attempt < retries:
             import time
@@ -1698,7 +1699,7 @@ def export_canvas(pages: list[dict], *, title: str = "", out: str = "",
             final = OUT_DIR / f"{name}.pdf"
             shutil.copy2(pdf, final)
             res["pdf_abs"] = str(final)
-            res["saved_hint"] = f"{name}.pdf 已保存到 试卷/"
+            res["saved_hint"] = f"{name}.pdf 已保存到 {OUT_DIR.name}/"
             return res
         if attempt < retries:
             import time

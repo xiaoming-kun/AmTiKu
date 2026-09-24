@@ -69,6 +69,8 @@ export const api = {
    *  由 `amti/render_tex.py` 生成，前端不再自己拼一遍。 */
   get: (key: string) => request('/api/questions/' + enc(key)),
   baseline: () => request('/api/baseline'),
+  /** 只读设置（导出位置等）。 */
+  settings: () => request('/api/settings'),
   changes: () => request('/api/changes'),
   changeText: (name: string) => request('/api/changes/' + enc(name)),
   statsDetail: () => request('/api/stats/detail'),
