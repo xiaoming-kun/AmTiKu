@@ -142,20 +142,15 @@ def merge() -> None:
         except Exception as e:
             bad.append((f.name, "读不了：%s" % e))
             continue
-        # **按位置校正 key**：worker 手打卷名会打错（实测把 `213_…上虞区高三期末`
-        # 写成「213_…四川省内江市…」、把 237 写成另一所学校的名字），
-        # 挂到成品里不存在的 key 上就等于这几道题没标签。
-        # 条数与批次文件相同 ⇒ 逐条按批次的 key 覆盖回来；不同就仍信它自己写的。
+        # **只报不改**：结果里的 key 与批次文件对不上就记一笔，**不按位置覆盖回去**——
+        # 万一某个 worker 把顺序打乱，按位置覆盖会把 A 题的标签静默挂到 B 题上，
+        # 那比丢标签严重得多。丢了是响的：`未覆盖.json` 会列出来，重跑那一批就行。
         twin = (BATCH / ("b%s.json" % f.stem[1:]))
         if twin.exists() and rows:
-            want = [it["key"] for it in json.loads(twin.read_text(encoding="utf-8"))]
-            if len(want) == len(rows):
-                typed = sum(1 for r, w in zip(rows, want)
-                            if r.get("key") and r["key"] != w)
-                if typed:
-                    fixed_pos.append((f.name, typed))
-                for r, w in zip(rows, want):
-                    r["key"] = w
+            want = {it["key"] for it in json.loads(twin.read_text(encoding="utf-8"))}
+            typed = sum(1 for r in rows if r.get("key") and r["key"] not in want)
+            if typed:
+                fixed_pos.append((f.name, typed))
         for r in rows:
             pts = list(dict.fromkeys(str(x) for x in (r.get("points") or [])))
             # key 一律以 `i` 为准；没有 `i` 才信它自己写的 key（旧格式）
@@ -205,7 +200,7 @@ def merge() -> None:
     if by_i:
         print("   其中 %d 条是按序号 `i` 对上的" % by_i)
     if fixed_pos:
-        print("   按位置校正过 worker 手打错的 key：%d 个文件 %d 条 %s"
+        print("   ⚠️ %d 个结果文件写了批次里没有的 key，共 %d 条（没按位置硬覆盖，重跑那批）：%s"
               % (len(fixed_pos), sum(n for _, n in fixed_pos),
                  ", ".join("%s×%d" % (a, b) for a, b in fixed_pos[:6])))
     print("覆盖成品 %d / %d 题（%.1f%%）" % (len(got & need), len(need), 100 * len(got & need) / max(1, len(need))))
