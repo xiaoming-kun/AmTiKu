@@ -235,7 +235,7 @@ def stat() -> None:
     b = BATCH / "b001.json"
     if b.exists():
         n = len(list(BATCH.glob("b*.json")))
-        r = len(list(BATCH.glob("r*.json")))
+        r = len(list(BATCH.glob("r*.json"))) + len(list((BATCH / "27b").glob("r*.json")))
         print("批次：出 %d 批，回收 %d 批" % (n, r))
     if got:
         c = Counter(x["points"][0] for x in got.values())
