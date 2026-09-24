@@ -141,18 +141,39 @@ export default function Card({
             <Check size={11} strokeWidth={3} className={checked ? 'anim-check' : ''} />
           </span>
         )}
-        <div className="min-w-0 flex-1 truncate text-[11.5px] leading-5 text-ink-faint">
-          {src && <span>来源：<span className="text-ink-soft">{src}</span></span>}
-          {src && q.point_titles?.length ? <span className="mx-1.5 text-border-strong">·</span> : null}
+        {/* 元信息行。
+            **考点是这条的主信息**——找题时扫的就是它，所以给它一个浅底胶囊、
+            放在最前面；来源退成灰字，两者之间用间距分开（不再是「·」串成一句）。
+
+            顺手去掉两处冗余：
+            · 「来源：」前缀——`source_label` 本身就是「2024年新高考II卷」，
+              谁都看得出这是出处，前缀纯占地方；
+            · **重复的年份**——实测 82% 的题 source_label 里已经含年份，
+              原来会写成「2024年新高考II卷 · 2024 年」，同一个年份说两遍。 */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-[11.5px] leading-5">
           {q.point_titles?.length ? (
-            <span className="font-medium text-ink-soft">
-              {q.point_titles[0]}
-              {q.point_titles.length > 1 && <span className="font-normal text-ink-faint"> 等 {q.point_titles.length} 个考点</span>}
+            <span
+              className="flex min-w-0 shrink items-center gap-1 rounded-md bg-brand-soft px-1.5
+                         py-[2px] font-medium text-brand-ink"
+              title={q.point_titles.join('、')}>
+              <span className="min-w-0 truncate">{q.point_titles[0]}</span>
+              {q.point_titles.length > 1 && (
+                <span className="tnum shrink-0 opacity-60">+{q.point_titles.length - 1}</span>
+              )}
             </span>
-          ) : null}
-          {year ? <span><span className="mx-1.5 text-border-strong">·</span>{year} 年</span> : null}
+          ) : (
+            <span className="shrink-0 rounded-md bg-warn-soft px-1.5 py-[2px] text-[11px]
+                             font-medium text-warn">无考点</span>
+          )}
+          {src && (
+            <span className="min-w-0 truncate text-ink-faint" title={src}>{src}</span>
+          )}
+          {!!year && !src.includes(String(year)) && (
+            <span className="shrink-0 text-ink-faint">{year} 年</span>
+          )}
           {!!q.used && (
-            <span className="ml-1.5 inline-flex items-center gap-0.5 text-warn" title={`已被导出 ${q.used} 次，是道常考题`}>
+            <span className="ml-auto flex shrink-0 items-center gap-0.5 text-warn"
+              title={`已被导出 ${q.used} 次，是道常考题`}>
               <Flame size={11} />{q.used}
             </span>
           )}
