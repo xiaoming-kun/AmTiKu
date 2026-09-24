@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import {
-  AlertTriangle, ArrowUp, Check, FileText, Inbox, Loader2, Merge, Play, Undo2, Upload, X,
+  AlertTriangle, ArrowUp, Check, FileText, Loader2, Merge, Play, Undo2, Upload, X,
 } from 'lucide-react'
 import { renderBlocks } from '@/lib/render'
 import { api } from '@/lib/api'
@@ -17,9 +17,6 @@ const FIELD = `h-[32px] rounded-lg border border-border bg-bg px-2.5 text-[12.5p
 /** 小节标题（抽屉里所有分组标题统一走这一个）。 */
 const LABEL = 'text-[11px] font-semibold tracking-[0.08em] text-ink-faint'
 /** 次按钮。 */
-const BTN_GHOST = `press inline-flex h-[32px] items-center gap-1.5 rounded-lg border border-border
-                   bg-surface px-3 text-[12.5px] text-ink-soft transition-colors
-                   hover:border-border-strong hover:text-ink`
 
 export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   onClose: () => void; onDone: () => void; facets: any
@@ -137,9 +134,18 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
         </header>
 
         <div className="flex min-h-0 flex-1">
-          {/* 左：源材料 */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex shrink-0 flex-wrap items-end gap-3 border-b border-border px-5 py-3.5">
+          {/* 左：源材料。**按"填什么"分成三块**（出处 / 归类 / 题目），
+              每块有编号和小标题——以前是三道分隔线堆着，看不出是几步，
+              下面还跟着一大片空白 textarea，整屏显得又空又乱。 */}
+          <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+            <section className="shrink-0">
+              <div className="mb-2 flex items-baseline gap-2">
+                <span className="grid h-4 w-4 shrink-0 place-items-center rounded bg-muted
+                                 text-[10px] font-semibold text-ink-faint">1</span>
+                <span className={LABEL}>出处</span>
+                <span className="text-[11px] text-ink-faint">录的是哪张卷的哪道题</span>
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
               {([['来源', book, setBook, '手工录入'], ['出处', label, setLabel, '如 第14套武汉三调'],
                  ['年份', year, setYear, '2024'], ['题号', no, setNo, '7']] as const).map(([name, val, set, ph]) => (
                 <div key={name}>
@@ -148,26 +154,25 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                     className={`w-[150px] ${FIELD}`} />
                 </div>
               ))}
-              <button onClick={() => setText(INGEST_SAMPLE)} className={BTN_GHOST}>
-                <FileText size={13} />填入示例
-              </button>
-              {/* 选文件：和拖拽一个效果 */}
-              <label className={`${BTN_GHOST} cursor-pointer`}>
-                <Upload size={13} />选文件…
-                <input type="file" accept=".tex,.txt" className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f) }} />
-              </label>
-            </div>
+              </div>
+            </section>
 
             {/* ── 难度 / 考点 ──
                 留空也能录（之后靠自动打标补），但人就在旁边时顺手指一下，
                 比事后回头对 17554 道题找哪道没标要准得多。
                 手动标了会记成 `point_source: manual`，自动打标不再覆盖。 */}
-            <div className="flex shrink-0 flex-wrap items-start gap-5 border-b border-border bg-surface-2 px-5 py-3.5">
+            <section className="shrink-0">
+              <div className="mb-2 flex items-baseline gap-2">
+                <span className="grid h-4 w-4 shrink-0 place-items-center rounded bg-muted
+                                 text-[10px] font-semibold text-ink-faint">2</span>
+                <span className={LABEL}>归类</span>
+                <span className="text-[11px] text-ink-faint">
+                  标了就以你标的为准；不标由系统按主考点派生
+                </span>
+              </div>
+              <div className="flex flex-wrap items-start gap-5">
               <div>
-                <div className={`mb-1.5 ${LABEL}`}>
-                  难度 <span className="font-normal tracking-normal text-ink-faint/80">（可留空，按主考点派生）</span>
-                </div>
+                <div className={`mb-1.5 ${LABEL}`}>难度</div>
                 <div className="flex gap-1.5">
                   {([['简单题', 1], ['中档题', 2], ['难题', 3]] as const).map(([d, k]) => (
                     <button key={d} onClick={() => setDiff(diff === d ? '' : d)}
@@ -184,7 +189,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
 
               <div className="min-w-[280px] flex-1">
                 <div className={`mb-1.5 ${LABEL}`}>
-                  考点 <span className="font-normal tracking-normal text-ink-faint/80">（第一条为主考点，可留空）</span>
+                  考点 <span className="font-normal tracking-normal text-ink-faint/80">（第一条为主考点）</span>
                 </div>
                 {/* 已选：按选中顺序排，第一个就是主考点 */}
                 {pts.length > 0 && (
@@ -230,8 +235,36 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                   </div>
                 )}
               </div>
-            </div>
-            <div className="relative min-h-0 flex-1"
+              </div>
+            </section>
+
+            {/* ③ 题目：**有边框的输入框**，不再是整片留白。
+                表头放「填入示例 / 选文件」——它们是往这个框里灌内容的动作，
+                搁在①那一行里既不像输入的一部分，也离框太远。 */}
+            <section className="flex min-h-[240px] flex-1 flex-col">
+              <div className="mb-2 flex shrink-0 items-center gap-2">
+                <span className="grid h-4 w-4 shrink-0 place-items-center rounded bg-muted
+                                 text-[10px] font-semibold text-ink-faint">3</span>
+                <span className={LABEL}>题目 LaTeX</span>
+                <button onClick={() => setText(INGEST_SAMPLE)}
+                  className="press ml-auto inline-flex h-[26px] items-center gap-1 rounded-lg border
+                             border-border bg-surface px-2 text-[11.5px] text-ink-soft
+                             hover:border-brand-line hover:text-brand-ink">
+                  <FileText size={12} />填入示例
+                </button>
+                {/* 选文件：和拖拽一个效果 */}
+                <label className="press inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-lg
+                                  border border-border bg-surface px-2 text-[11.5px] text-ink-soft
+                                  hover:border-brand-line hover:text-brand-ink">
+                  <Upload size={12} />选文件…
+                  <input type="file" accept=".tex,.txt" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f) }} />
+                </label>
+              </div>
+              <div className="relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-card)]
+                              border border-border bg-surface-2
+                              focus-within:border-brand-line
+                              focus-within:shadow-[0_0_0_3px_var(--color-brand-soft)]"
               onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
               onDragLeave={() => setDrag(false)}
               onDrop={(e) => {
@@ -243,28 +276,101 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                 onChange={(e) => { setText(e.target.value); setPv(null); setMsg('') }}
                 spellCheck={false}
                 placeholder={'粘贴 exam-zh 格式的题目，或把 .tex 文件拖进来：\n\n\\begin{question}\n…\n\\end{question}\n\\begin{solution}\n…\n\\end{solution}'}
-                className="h-full w-full resize-none bg-bg px-5 py-4 font-mono text-[12.5px]
-                           leading-relaxed outline-none placeholder:text-ink-faint" />
+                className="h-full w-full resize-none bg-transparent px-4 py-3.5 font-mono
+                           text-[12.5px] leading-relaxed outline-none placeholder:text-ink-faint" />
               {drag && (
                 <div className="anim-fade-in pointer-events-none absolute inset-3 flex flex-col items-center
                                 justify-center gap-2 rounded-[var(--radius-card)] border-2 border-dashed
                                 border-brand-line bg-brand-soft/70 text-[12.5px] font-medium text-brand-ink">
                   <Upload size={20} />
-                  松手就导入这个文件
+                  松手就读这个文件
                 </div>
               )}
-            </div>
+              </div>
+
+              {/* 干跑**跟着输入走**：它是"把上面这段材料分析一遍"的动作。
+                  以前它挂在右栏底部，离输入区一整屏远。 */}
+              <div className="mt-2.5 flex shrink-0 flex-col gap-2">
+                {err && (
+                  <div className="flex items-start gap-1.5 rounded-lg border border-warn-line
+                                  bg-warn-soft px-2.5 py-2 text-[11.5px] text-warn">
+                    <X size={13} className="mt-[1px] shrink-0" />{err}
+                  </div>
+                )}
+                {msg && (
+                  <div className="flex items-start gap-1.5 rounded-lg border border-has-line
+                                  bg-has-soft px-2.5 py-2 text-[11.5px] text-has">
+                    <Check size={13} className="mt-[1px] shrink-0" />{msg}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-ink-faint">
+                    干跑<b className="font-medium text-ink-soft">什么都不写</b>，只是拿它跟库里的题对一遍
+                  </span>
+                  {/* 一屏只留一个**实心粉**按钮（右下那个「确认导入」）。
+                      干跑做成"次级主按钮"：描边 + 浅粉底，分量够但不跟它抢。 */}
+                  <button onClick={dryRun} disabled={busy}
+                    className="press ml-auto inline-flex items-center gap-1.5 rounded-lg border
+                               border-brand-line bg-brand-soft px-4 py-2 text-[13px] font-semibold
+                               text-brand-ink transition-colors hover:bg-brand hover:text-white
+                               disabled:opacity-40 disabled:hover:bg-brand-soft
+                               disabled:hover:text-brand-ink">
+                    {busy
+                      ? <Loader2 size={13} className="shrink-0 animate-spin" />
+                      : <Play size={13} className="shrink-0" />}
+                    干跑
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
 
           {/* 右：干跑报告 */}
-          <div className="flex w-[420px] shrink-0 flex-col border-l border-border bg-bg">
+          <div className="flex w-[440px] shrink-0 flex-col border-l border-border bg-bg">
+            <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border
+                            bg-surface px-4">
+              <span className="text-[13px] font-semibold tracking-tight">干跑结果</span>
+              {pv ? (
+                <span className="rounded-full bg-brand-soft px-2 py-[1px] text-[11px] font-medium
+                                 text-brand-ink">
+                  {pv.count} 道
+                </span>
+              ) : (
+                <span className="text-[11px] text-ink-faint">还没跑</span>
+              )}
+            </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
+              {/* 空态**说明"会出现什么"**，而不是一片白里放一句话——
+                  空白占了大半屏，人不知道这一步能得到什么。 */}
               {!pv && !busy && (
-                <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-                  <Inbox size={22} className="text-border-strong" />
-                  <span className="text-[12.5px] text-ink-faint">
-                    点「干跑」看解析结果、图片、查重、影响面
-                  </span>
+                <div className="anim-fade-in flex h-full flex-col justify-center gap-3 px-1">
+                  <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
+                    <Play size={13} className="shrink-0 text-ink-faint" />
+                    点左边「干跑」之后，这里依次给出五样东西：
+                  </div>
+                  <ol className="space-y-2">
+                    {([
+                      ['规范：验证 → 修改 → 复核', '不合规的地方在哪、规范器改了什么、复核过没过'],
+                      ['解析结果', '识别出几道题、每题题干与选项长什么样'],
+                      ['图片', '引用了几张、哪些在库里、哪些缺'],
+                      ['查重', '与库中哪道相似、相似度多少，要不要并进去'],
+                      ['影响面', '这次会动到几道存量题 —— 最该先看的一行'],
+                    ] as const).map(([t, d], i) => (
+                      <li key={t} className="flex gap-2.5 rounded-[var(--radius-card)] border
+                                             border-border bg-surface p-2.5">
+                        <span className="mt-[1px] grid h-4 w-4 shrink-0 place-items-center rounded
+                                         bg-muted text-[10px] font-semibold text-ink-faint">
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[12px] font-medium text-ink">{t}</span>
+                          <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-faint">
+                            {d}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
                 </div>
               )}
               {busy && (
@@ -546,41 +652,18 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
               </>)}
             </div>
 
-            <div className="space-y-2 border-t border-border bg-surface px-4 py-3">
-              {err && (
-                <div className="flex items-start gap-1.5 rounded-lg border border-warn-line bg-warn-soft
-                                px-2.5 py-2 text-[11.5px] text-warn">
-                  <X size={13} className="mt-[1px] shrink-0" />{err}
-                </div>
-              )}
-              {msg && (
-                <div className="flex items-start gap-1.5 rounded-lg border border-has-line bg-has-soft
-                                px-2.5 py-2 text-[11.5px] text-has">
-                  <Check size={13} className="mt-[1px] shrink-0" />{msg}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <button onClick={dryRun} disabled={busy}
-                  className="press inline-flex items-center gap-1.5 rounded-lg border border-border
-                             bg-surface px-3 py-2 text-[12.5px] text-ink-soft transition-colors
-                             hover:border-border-strong hover:text-ink disabled:opacity-50">
-                  {busy
-                    ? <Loader2 size={13} className="shrink-0 animate-spin" />
-                    : <Play size={13} className="shrink-0" />}
-                  干跑
-                </button>
-                <button onClick={doCommit}
+            <div className="shrink-0 border-t border-border bg-surface px-4 py-3">
+              <button onClick={doCommit}
                   disabled={busy || !pv || pv.count === 0 || pv.spec?.ok === false
                             || (pv.missing_images?.length ?? 0) > 0}
                   title={pv?.spec?.ok === false ? '规范复核没过，先改题目'
                          : (pv?.missing_images?.length ? '有缺图，先补图' : '')}
-                  className="press ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand px-4
-                             py-2 text-[13px] font-medium text-white shadow-[var(--shadow-brand)]
-                             hover:brightness-105 disabled:opacity-40">
+                  className="press flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand
+                             px-4 py-2.5 text-[13px] font-semibold text-white
+                             shadow-[var(--shadow-brand)] hover:brightness-105 disabled:opacity-40">
                   <Upload size={13} className="shrink-0" />
                   确认导入 {pv?.count ? `(${pv.count} 道)` : ''}
                 </button>
-              </div>
             </div>
           </div>
         </div>
