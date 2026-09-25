@@ -216,6 +216,8 @@ export const FIT_MARGIN = 0.015            // 适配时页底保留的空白比�
 export const RESIZE_SLACK_PCT = 0.6        // 缩放下限余量（%），防正好卡住文字
 export const DEFAULT_Q_W = 92              // 题目块默认宽（%）
 export const DEFAULT_Q_X = 4               // 题目块默认左边距（%）
+export const DEFAULT_Y = 6                 // 新块的默认顶边（%，当前页还空着时）
+export const GAP_PCT = 1.5                 // 自动往下排时，块与块之间留的空（%）
 
 /** 块的本地唯一 id（只在前端用，导出时剥掉） */
 export const uid = () => Math.random().toString(36).slice(2, 10)

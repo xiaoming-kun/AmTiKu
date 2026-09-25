@@ -9,6 +9,7 @@ import { request, reportErr } from '@/lib/api'
 import {
   uid, type CBlock,
   MEASURE_DELAY_MS, FIT_MIN, FIT_MARGIN, RESIZE_SLACK_PCT, DEFAULT_Q_W, DEFAULT_Q_X,
+  DEFAULT_Y, GAP_PCT,
 } from '@/editor/shared'
 
 export function useCanvas(ratio: string) {
@@ -59,6 +60,9 @@ export function useCanvas(ratio: string) {
   const draggingRef = useRef(false)        // 拖拽/缩放中：跳过测量，避免每帧强制布局
   const rafRef = useRef(0)                 // 拖拽的 rAF 句柄
   const dragCleanupRef = useRef<(() => void) | null>(null)
+  /** 刚被「点进画布」的块 —— 只给它一次机会：在当前页放不下就自己占一页。
+   *  用户手拖过的块不在此列，老师摆哪儿就是哪儿。 */
+  const autoRef = useRef<string | null>(null)
   /** 测量每个块的内容是否超出框（框高由 h 决定时才有意义）。
    *  直接在浏览器里量真实 DOM，比后端估算准。 */
   const measure = useCallback(() => {
@@ -118,6 +122,34 @@ export function useCanvas(ratio: string) {
     const live = new Set(blocks.map((b) => b.id))
     for (const k of Object.keys(nextFits)) if (!live.has(k)) delete nextFits[k]
 
+    /** 刚点进来的块在当前页**放不下**（要塞就得缩小，或者干脆溢出页底）→
+     *  让它自己占一页。挤成小字或把下半道题切掉，都是「题目显示不全」。
+     *
+     *  只对**新加的块**做这一次（autoRef 用完即清，也不动老师手摆过的块），
+     *  而且页上得已有别的内容 —— 一道题本来就该占满一整页时不再折腾。 */
+    const aid = autoRef.current
+    if (aid) {
+      autoRef.current = null
+      const nb = blocks.find((b) => b.id === aid)
+      const nat = out[aid]
+      // 固有尺寸是按**满宽**量的，块实际 92% 宽 → 留 8% 余量
+      const hitBottom = !!nat &&
+        ((nb?.y ?? 0) / 100) * canvasH + nat.h * 1.08 > canvasH * (1 - FIT_MARGIN)
+      if (nb && blocks.length > 1 && (aid in nextFits || hitBottom)) {
+        const at = cur
+        // 新页插在**当前页后面**（不是追加到最末）—— 老师在第 2 页接着加题时，
+        // 新题该出现在第 3 页，而不是第 9 页
+        setPages((prev) => [
+          ...prev.slice(0, at + 1).map((p, i) => i === at
+            ? { blocks: p.blocks.filter((b) => b.id !== aid) } : p),
+          { blocks: [{ ...nb, y: DEFAULT_Y }] },
+          ...prev.slice(at + 1),
+        ])
+        setCur(at + 1)                // 跟过去，让老师看见题去哪了
+        return                        // 这一轮测量作废，下一页会重新量
+      }
+    }
+
     setNatural(out)
     // 只有真的变了才 set，避免每轮测量都触发重渲染
     const oldF = fitsRef.current
@@ -137,10 +169,30 @@ export function useCanvas(ratio: string) {
   const mutate = (fn: (bs: CBlock[]) => CBlock[]) =>
     setPages((prev) => prev.map((p, i) => i === cur ? { ...p, blocks: fn(p.blocks) } : p))
 
+  /** 新块的落点：接在当前页已有内容的**下面**（%）。
+   *
+   *  以前一律落在 `(4%, 6%)`，于是每加一道题都压在前一道题**同一个位置**上 ——
+   *  画布看不出变化，用户报「加号不起作用」（实测：连点两下，两个块完全重叠）。
+   *  这里直接量**真实 DOM** 的底边（块的 h 多为 0，只有浏览器知道它多高）。 */
+  const nextTop = (): number => {
+    const el = canvasRef.current
+    const cr = el?.getBoundingClientRect()
+    if (!cr?.height) return DEFAULT_Y
+    let bottom = 0
+    for (const b of blocks) {
+      // 外层绝对定位的盒子才是块的真正大小（内层还带着 zoom）
+      const box = measRef.current[b.id]?.parentElement
+      if (!box) continue
+      const r = box.getBoundingClientRect()
+      bottom = Math.max(bottom, ((r.bottom - cr.top) / cr.height) * 100)
+    }
+    return bottom > 0 ? Math.min(100 - GAP_PCT, bottom + GAP_PCT) : DEFAULT_Y
+  }
+
   const addBlock = (b: Partial<CBlock>) => {
     const nb: CBlock = {
       id: uid(), type: b.type || 'text', text: b.text || '',
-      key: b.key, x: b.x ?? 6, y: b.y ?? 6, w: b.w ?? 40, h: b.h ?? 0,
+      key: b.key, x: b.x ?? 6, y: b.y ?? nextTop(), w: b.w ?? 40, h: b.h ?? 0,
       z: blocks.length, fontSize: b.fontSize,
     }
     // 题目：默认满宽靠左 —— 题目是一整块内容，
@@ -160,7 +212,13 @@ export function useCanvas(ratio: string) {
       nb.w = 92
     }
     mutate((bs) => [...bs, nb])
+    autoRef.current = nb.id
     setSel(nb.id)
+    // 让新块滚进视野 —— 画布可能被滚到别处，光加进去用户是看不到的
+    requestAnimationFrame(() => {
+      canvasRef.current?.querySelector(`[data-bid="${nb.id}"]`)
+        ?.scrollIntoView({ block: 'nearest' })
+    })
   }
 
   /** 加一道题到画布。

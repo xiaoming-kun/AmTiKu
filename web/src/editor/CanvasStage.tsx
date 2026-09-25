@@ -129,6 +129,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
           style={{ width: '100%', maxWidth: 900, aspectRatio: String(aspect) }}>
           {blocks.map((b) => (
             <div key={b.id}
+              data-bid={b.id}
               onMouseDown={(e) => startDrag(e, b, 'move')}
               onClick={(e) => { e.stopPropagation(); setSel(b.id) }}
               className={`group absolute cursor-move select-none rounded-[3px]
