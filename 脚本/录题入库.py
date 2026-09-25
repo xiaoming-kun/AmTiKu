@@ -75,6 +75,44 @@ def derive_year(label):
 
 SOLVED_BY = "qoder/agent"      # 与本地求解线的 "qwen/qwen3.8-27b" 区分开
 
+# 用户 2026-09-25 让补的那批答案：模型逐题解出来的，单独一个可审的文件。
+# **不并进成品 JSON**——成品里印着的答案是原卷内容，混进去就分不清谁是谁的了。
+GAP_ANSWERS = Path(__file__).resolve().parent.parent / "数据/录题/补答案_41题.json"
+_answer_cache = None
+
+
+def load_gap_answers():
+    global _answer_cache
+    if _answer_cache is None:
+        _answer_cache = {}
+        if GAP_ANSWERS.exists():
+            for r in json.loads(GAP_ANSWERS.read_text(encoding="utf-8")):
+                _answer_cache["%s#%s" % (r["场"], r["题号"])] = r
+    return _answer_cache
+
+
+def attach_answers(path, recs):
+    r"""**只填成品答案栏本来就空的题**，返回填了哪些题号（调用方据此打 meta 标记）。
+
+    与 `merge_sidecar` 那条「不许取 sidecar 答案」的老规矩不冲突：
+    这里读的是单独一份、逐条写明「agent/自解」的清单，
+    而且**原卷印了答案的一律不碰**（那是内容，不是缺口）。
+    必须在 `rec_to_question` **之前**调用——题的正文是从 recs 渲染的。
+    """
+    lab = Path(path).name[: -len(".成品.json")]
+    gap = load_gap_answers()
+    filled = []
+    for r in recs:
+        if (r.get("答案") or "").strip():
+            continue
+        g = gap.get("%s#%s" % (lab, r["题号"]))
+        if not g or not (g.get("答案") or "").strip():
+            continue
+        r["答案"] = g["答案"]
+        # 不往 rec 里塞第 10 个键：成品固定 9 键，多出来的键会被写回文件
+        filled.append((r["题号"], g.get("来源") or "agent/自解"))
+    return filled
+
 
 def merge_sidecar(path, recs):
     r"""把同名的 `.解答.json`（模型补写的解析）并进成品，**只填空、不覆盖原卷解析**。
@@ -130,6 +168,9 @@ def main(path, do_commit, force=False):
         print("并入 sidecar 模型解答 %d 道（题号 %s）" % (n_fill, filled))
     if orphan:
         print("⚠️ sidecar 里有 %d 个题号在成品中不存在，已跳过：%s" % (len(orphan), orphan))
+    filled_ans = attach_answers(path, recs)
+    if filled_ans:
+        print("填模型自解答案 %d 道（题号 %s）" % (len(filled_ans), [t for t, _ in filled_ans]))
     qs = [R2.rec_to_question(r, label) for r in recs]
     n_pt = attach_points(path, recs, qs)
     if n_pt != len(recs):
@@ -138,10 +179,14 @@ def main(path, do_commit, force=False):
     # 模型补的解析要在库里可辨识：meta.solved_by 不参与指纹（不改 content_hash），
     # 界面 Detail.tsx 会据此挂「AI 求解」角标，供人工复核。
     filled_set = set(filled)
+    ans_by = dict(filled_ans)
     for r, q in zip(recs, qs):
         if r.get("题号") in filled_set:
             q.meta["solved_by"] = SOLVED_BY
             q.meta["solved_at"] = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+        if r.get("题号") in ans_by:
+            # 答案不是原卷印的，库里要能一眼看出来
+            q.meta["answer_by"] = ans_by[r["题号"]]
     tex = "\n\n".join(store.render_question(q) for q in qs)
     pv = ingest.preview(tex, book="模拟题", label=label, update_force=force)
     print("count=%s dup=%s" % (pv["count"], pv["dup"]))
