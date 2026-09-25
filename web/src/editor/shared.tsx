@@ -326,16 +326,21 @@ export function QuestionRow({ q, onAdd, onOpen }: {
       {/* 展开/收起：常驻会挤掉题干，只在悬停或已展开时露出来 */}
       <button onClick={() => setOpen((o) => !o)}
         title={open ? '收起题干' : '展开完整题干'}
-        className={`mt-[3px] shrink-0 rounded p-0.5 text-ink-faint transition-opacity
-                    duration-150 hover:text-brand ${open ? '' : 'opacity-0 group-hover:opacity-100'}`}>
-        <ChevronDown size={12}
+        className={`mt-[2px] grid h-6 w-5 shrink-0 place-items-center rounded-md
+                    text-ink-faint transition-opacity duration-150
+                    hover:bg-muted hover:text-brand
+                    ${open ? '' : 'opacity-0 group-hover:opacity-100'}`}>
+        <ChevronDown size={13}
           className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
-      {/* 加进画布：常驻会挤掉题干，只在悬停时浮出来 */}
+      {/* 加进画布 —— 这是这张卡片的**主操作**，所以常驻 + 实心品牌色圆钮：
+          以前 12px、只有悬停才淡出来，既小又找不着（用户：「这个加号要大一点」
+          「重点突出一下」） */}
       <button onClick={onAdd} title="加入画布"
-        className="mt-[3px] shrink-0 rounded p-0.5 text-brand opacity-0 transition-opacity
-                   duration-150 group-hover:opacity-100 hover:brightness-90">
-        <Plus size={12} />
+        className="press mt-[1px] grid h-[26px] w-[26px] shrink-0 place-items-center
+                   rounded-full bg-brand text-white shadow-[var(--shadow-brand)]
+                   hover:brightness-110">
+        <Plus size={16} strokeWidth={2.8} />
       </button>
     </div>
   )
