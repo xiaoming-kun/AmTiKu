@@ -964,7 +964,7 @@ export default function App() {
             </button>
           </div>
           <div className="min-h-0 flex-1">
-            <CanvasEditor handoutQs={handout.length ? handout : paper} />
+            <CanvasEditor handoutQs={handout.length ? handout : paper} facets={facets} />
           </div>
         </div>
       )}

@@ -171,7 +171,7 @@ export default function CanvasStage({ title, setTitle, name, setName,
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2
                             text-ink-faint">
               <LayoutGrid size={20} className="opacity-50" />
-              <div className="text-[12.5px]">点左上按钮添加块，或从左侧点题目加入</div>
+              <div className="text-[12.5px]">点上方按钮添加块；左侧点题目看详情，点 + 加入本页</div>
             </div>
           )}
 

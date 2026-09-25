@@ -297,7 +297,9 @@ export function blockFontSize(b: CBlock): number {
  */
 export const stemCache = new Map<string, string>()
 
-export function QuestionRow({ q, onAdd }: { q: Q; onAdd: () => void }) {
+export function QuestionRow({ q, onAdd, onOpen }: {
+  q: Q; onAdd: () => void; onOpen: () => void
+}) {
   // 认题要先看得见题：默认给 4 行，还想看全就点开（不点开不影响左边栏的速度）
   const [open, setOpen] = useState(false)
   const label = useMemo(() => {
@@ -310,27 +312,31 @@ export function QuestionRow({ q, onAdd }: { q: Q; onAdd: () => void }) {
     return txt
   }, [q.key, q.stem])
 
+  // 分工：**点题干 = 看整道题**（右侧弹出详情，跟主页面同一个组件），
+  // 「+」= 直接加进画布。以前整张卡都是「加入画布」，想看一眼全题没地方看。
   return (
-    <div onClick={onAdd} title="点击加入画布"
-      className="group flex cursor-pointer items-start gap-1.5 rounded-lg border border-border
-                 bg-surface px-3 py-2 transition-colors
-                 hover:border-brand-line hover:bg-brand-soft/40">
-      <div className={`min-w-0 flex-1 text-[12.5px] leading-[1.5] text-ink-soft
-                        transition-colors group-hover:text-ink ${open ? '' : 'line-clamp-4'}`}>
+    <div className="group flex items-start gap-1.5 rounded-lg border border-border
+                    bg-surface px-3 py-2 transition-colors
+                    hover:border-brand-line hover:bg-brand-soft/40">
+      <button onClick={onOpen} title="点击查看整道题（题干 / 答案 / 解析）"
+        className={`min-w-0 flex-1 text-left text-[12.5px] leading-[1.5] text-ink-soft
+                    transition-colors group-hover:text-ink ${open ? '' : 'line-clamp-4'}`}>
         {label}
-      </div>
+      </button>
       {/* 展开/收起：常驻会挤掉题干，只在悬停或已展开时露出来 */}
-      <button onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
+      <button onClick={() => setOpen((o) => !o)}
         title={open ? '收起题干' : '展开完整题干'}
         className={`mt-[3px] shrink-0 rounded p-0.5 text-ink-faint transition-opacity
                     duration-150 hover:text-brand ${open ? '' : 'opacity-0 group-hover:opacity-100'}`}>
         <ChevronDown size={12}
           className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
-      {/* 动作提示：常驻会挤掉题干，只在悬停时浮出来 */}
-      <Plus size={12}
-        className="mt-[3px] shrink-0 text-brand opacity-0 transition-opacity duration-150
-                   group-hover:opacity-100" />
+      {/* 加进画布：常驻会挤掉题干，只在悬停时浮出来 */}
+      <button onClick={onAdd} title="加入画布"
+        className="mt-[3px] shrink-0 rounded p-0.5 text-brand opacity-0 transition-opacity
+                   duration-150 group-hover:opacity-100 hover:brightness-90">
+        <Plus size={12} />
+      </button>
     </div>
   )
 }

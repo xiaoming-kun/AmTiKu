@@ -231,6 +231,11 @@ export function useCanvas(ratio: string) {
     addBlock({ type: 'question', key: qq?.key })
   }
 
+  /** 题库里的题被改过（答案/解析/标签）→ 刷新画布上那一份。
+   *  不刷新的话，「显示答案」开着时画布会一直显示改之前的答案。 */
+  const refreshQ = (qq: Q) =>
+    setBlockQs((m) => (qq?.key && m.has(qq.key) ? new Map(m).set(qq.key, qq) : m))
+
   const patch = (id: string, p: Partial<CBlock>) =>
     mutate((bs) => bs.map((b) => (b.id === id ? { ...b, ...p } : b)))
 
@@ -306,6 +311,6 @@ export function useCanvas(ratio: string) {
   return {
     pages, setPages, cur, setCur, sel, setSel, blocks,
     fits, overflowed, natural, blockQs, canvasRef, measRef, probeRef,
-    addBlock, addQuestion, patch, remove, bringToFront, startDrag,
+    addBlock, addQuestion, patch, remove, bringToFront, startDrag, refreshQ,
   }
 }

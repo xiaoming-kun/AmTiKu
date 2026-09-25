@@ -13,7 +13,8 @@ import { QuestionRow } from '@/editor/shared'
 import type { TopicGroup } from '@/editor/useDrawer'
 
 export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
-  openTopic, setOpenTopic, openPoint, pointQs, loadingPt, togglePoint, addQuestion }: {
+  openTopic, setOpenTopic, openPoint, pointQs, loadingPt, togglePoint,
+  addQuestion, previewQuestion }: {
   handoutQs: Q[]
   q: string; setQ: (s: string) => void
   searchResults: Q[] | null
@@ -24,6 +25,7 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
   loadingPt: string
   togglePoint: (pv: string) => void
   addQuestion: (qq: Q) => void
+  previewQuestion: (qq: Q) => void
 }) {
   return (
     <aside className="flex w-[254px] shrink-0 flex-col border-r border-border bg-surface">
@@ -31,7 +33,7 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
       <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
         <LibraryBig size={15} className="shrink-0 text-brand" />
         <span className="text-[14px] font-semibold tracking-tight">题库</span>
-        <span className="ml-auto shrink-0 text-[11px] text-ink-faint">（拖到画布）</span>
+        <span className="ml-auto shrink-0 text-[11px] text-ink-faint">（点题看详情）</span>
       </div>
 
       {/* ── 搜索：手在左栏时不用回顶栏 ── */}
@@ -62,7 +64,8 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
             </div>
             <div className="space-y-1">
               {handoutQs.map((qq) => (
-                <QuestionRow key={`p-${qq.key}`} q={qq} onAdd={() => addQuestion(qq)} />
+                <QuestionRow key={`p-${qq.key}`} q={qq}
+                  onAdd={() => addQuestion(qq)} onOpen={() => previewQuestion(qq)} />
               ))}
             </div>
           </section>
@@ -75,7 +78,8 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
             </div>
             <div className="space-y-1">
               {(searchResults || []).map((qq) => (
-                <QuestionRow key={qq.key} q={qq} onAdd={() => addQuestion(qq)} />
+                <QuestionRow key={qq.key} q={qq}
+                  onAdd={() => addQuestion(qq)} onOpen={() => previewQuestion(qq)} />
               ))}
             </div>
           </section>
@@ -127,7 +131,8 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
                                 )}
                                 <div className="space-y-1">
                                   {(pointQs[pt.value] || []).map((qq) => (
-                                    <QuestionRow key={qq.key} q={qq} onAdd={() => addQuestion(qq)} />
+                                    <QuestionRow key={qq.key} q={qq}
+                                      onAdd={() => addQuestion(qq)} onOpen={() => previewQuestion(qq)} />
                                   ))}
                                 </div>
                                 {!loadingPt && !(pointQs[pt.value] || []).length && (
