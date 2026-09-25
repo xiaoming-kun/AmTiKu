@@ -7,7 +7,7 @@
  *    · 本组件只负责组装
  */
 import { useEffect, useRef, useState } from 'react'
-import { FileText, Plus } from 'lucide-react'
+import { FileText, GripHorizontal, Plus } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
 import { Detail } from '@/app/Detail'
@@ -38,6 +38,10 @@ export default function CanvasEditor({ handoutQs, facets }: {
   const [preview, setPreview] = useState<Q | null>(null)
   const [pvFull, setPvFull] = useState<Q | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  /** 面板被拖到哪儿了（px，相对编辑器内容区）。null = 还停在默认位（上方居中）。
+   *  拖动后**记住**：换一道题看时不会又跳回默认位。 */
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   // 左栏（考点树 / 搜索 / 懒加载）→ useDrawer
   const {
     q, setQ, searchResults, topics, openTopic, setOpenTopic,
@@ -92,6 +96,35 @@ export default function CanvasEditor({ handoutQs, facets }: {
     refreshQ(d)          // 这道题要是在画布上，别让它显示旧答案/旧解析
   }
 
+  /** 拖标题栏挪面板 —— 位置由老师自己定，爱放哪儿放哪儿。
+   *
+   *  用 px 而不是 %：面板是「看题用的小窗」，跟画布比例无关。
+   *  第一次拖之前面板靠 CSS 居中（`left-1/2 -translate-x-1/2`），
+   *  这里先量一次真实位置再转成 px，所以起步不会跳。 */
+  const startPanelDrag = (e: React.MouseEvent) => {
+    // 点在「加入画布 / 关闭」上时是点按钮，不是拖
+    if ((e.target as Element)?.closest?.('button')) return
+    const panel = panelRef.current, host = hostRef.current
+    if (!panel || !host) return
+    e.preventDefault()
+    const pr = panel.getBoundingClientRect()
+    const hr = host.getBoundingClientRect()
+    const offX = e.clientX - pr.left          // 抓住的位置相对面板左上角
+    const offY = e.clientY - pr.top
+    const clamp = (v: number, hi: number) => Math.max(0, Math.min(v, Math.max(0, hi)))
+    setPos({ x: clamp(pr.left - hr.left, hr.width - pr.width), y: clamp(pr.top - hr.top, 0) })
+    const move = (ev: MouseEvent) => setPos({
+      x: clamp(ev.clientX - hr.left - offX, hr.width - pr.width),
+      y: clamp(ev.clientY - hr.top - offY, hr.height - Math.min(pr.height, hr.height)),
+    })
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
   // 页面比例（画布宽高比）—— 渲染用，不属于 hook
   const box = RATIO_BOX[ratio] || RATIO_BOX['16:9']
   const aspect = box.w / box.h
@@ -116,7 +149,7 @@ export default function CanvasEditor({ handoutQs, facets }: {
   return (
     // 三栏骨架：左右是 bg-surface 的面板，中间画布区 bg-bg 暗一档，
     // 画布上的白色纸张才浮得起来（分割一律用 border-border）。
-    <div className="relative flex h-full min-h-0 bg-bg">
+    <div ref={hostRef} className="relative flex h-full min-h-0 bg-bg">
       <PointDrawer
         handoutQs={handoutQs}
         q={q} setQ={setQ} searchResults={searchResults} topics={topics}
@@ -144,15 +177,24 @@ export default function CanvasEditor({ handoutQs, facets }: {
       />
 
       {/* ── 题目详情（点左栏题目弹出来）──
-          **悬空**的一张卡：四边都留出空隙、圆角 + 大投影，浮在画布上面，
-          不占任何一栏的布局。点别处 / Esc / ✕ 收起，看完点「加入画布」进当前页。 */}
+          **悬空**的小窗：默认落在上方居中，四边不贴边、圆角 + 大投影。
+          拖标题栏可以挪到任意位置，挪过之后就一直记着（换题不跳回原位）。
+          点别处 / Esc / ✕ 收起，看完点「加入画布」进当前页。 */}
       {preview && (
         <aside ref={panelRef}
-          className="anim-pop absolute right-5 top-[68px] bottom-5 z-30 flex w-[470px]
-                     max-w-[calc(100%-2.5rem)] flex-col overflow-hidden rounded-2xl
-                     border border-border bg-surface shadow-[var(--shadow-pop)]
-                     ring-1 ring-black/[0.03]">
-          <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
+          /* 高度上限跟着落点走：拖到下面时自动矮一点，再长的题也不会从窗口
+             底下冒出去（`100%` = 编辑器内容区的高度） */
+          style={pos ? { left: pos.x, top: pos.y,
+                         maxHeight: `calc(100% - ${pos.y + 16}px)` } : undefined}
+          className={`anim-pop absolute z-30 flex max-h-[calc(100%-2rem)] w-[540px]
+                      max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl
+                      border border-border bg-surface shadow-[var(--shadow-pop)]
+                      ring-1 ring-black/[0.03] ${pos ? '' : 'left-1/2 top-4 -translate-x-1/2'}`}>
+          {/* 标题栏 = 拖动把手 */}
+          <div onMouseDown={startPanelDrag} title="按住这里可以拖动整个窗口"
+            className="flex h-[52px] shrink-0 cursor-move items-center gap-2 border-b
+                       border-border px-3.5 select-none">
+            <GripHorizontal size={15} className="shrink-0 text-ink-faint" />
             <FileText size={15} className="shrink-0 text-brand" />
             <span className="text-[13.5px] font-semibold">题目详情</span>
             <span className="ml-auto shrink-0" />
