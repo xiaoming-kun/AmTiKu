@@ -70,6 +70,9 @@ MINOR_MAX_PER_TOPIC = 2
 # 解答题**按位置**的分值，不是均分。真实卷就是这样：
 # 15 题 13 分，16/17 题各 15 分，18/19 题各 17 分，合计 77。
 ANSWER_SCORES = [13, 15, 15, 17, 17]
+# 第 6 道起的分值。测试卷的题量是老师筛出来多少算多少，答案题可能 1 道、
+# 也可能 20 道，超出的按 15 分一道。
+ANSWER_EXTRA = 15
 MINOR_SCORE = {"single_choice": 5, "multi_choice": 6, "fill_in_blank": 5}
 
 # 题型的中文短名（说明文字里用）
@@ -78,22 +81,21 @@ SHORT_NAME = {"single_choice": "单选", "multi_choice": "多选",
 
 
 def answer_scores(n: int) -> list[int]:
-    r"""解答题分值表。标准是 5 题；题数不是 5 时按 77 分同比例摊，
-    并用**最大余数法**保证加起来仍是 77（不然整卷会不是 150 分）。
+    r"""解答题分值表：**按高考卷面上的位置**取 —— 13/15/15/17/17，第 6 道起 15 分。
+
+    以前这里把 77 分按题数**摊平**，保证"解答题板块恒为 77 分"——那是为了让
+    标准高考卷正好 150 分。可测试卷的题量是老师筛出来多少算多少：
+
+        1 道  → [77]        ← 一道解答题 77 分（用户：「解答题怎么能够是 77 分呢」）
+        23 道 → 每道 3 分
+
+    一道题值多少分，不该由卷上还有几道题决定。分值跟着**题在卷面上的位置**走。
+    高考卷恒为 5 道 → [13,15,15,17,17] → 合计 77，全卷 150 分，一个字没变。
     """
     if n <= 0:
         return []
-    if n == len(ANSWER_SCORES):
-        return list(ANSWER_SCORES)
-    total = sum(ANSWER_SCORES)
-    exact = [total / n] * n
-    base = [int(x) for x in exact]
-    rest = total - sum(base)
-    # 余数大的先加
-    order = sorted(range(n), key=lambda i: -(exact[i] - base[i]))
-    for i in order[:rest]:
-        base[i] += 1
-    return base
+    return [ANSWER_SCORES[i] if i < len(ANSWER_SCORES) else ANSWER_EXTRA
+            for i in range(n)]
 
 
 def score_of(qtype: str, index: int, total: int) -> int:
@@ -605,10 +607,15 @@ def _selftest() -> int:
     # 前端 `web/src/lib/paper.ts` 里有一份同样规则的 TS 实现（界面要实时算分，
     # 不能每加一道题就请求一次后端）。这两条断言就是那份拷贝的"锚"：
     # 改了这里的规则，这两条会红，提醒你回去改 TS。
-    check("解答题分值表加起来恒为 77（n=1..30）",
-          all(sum(answer_scores(n)) == 77 for n in range(1, 31)),
-          str([(n, sum(answer_scores(n))) for n in range(1, 31)
-               if sum(answer_scores(n)) != 77]))
+    check("解答题按高考卷面位置给分：5 道 = 13/15/15/17/17 = 77 分",
+          answer_scores(5) == ANSWER_SCORES and sum(answer_scores(5)) == 77,
+          str(answer_scores(5)))
+    # 分值跟着题走，不跟着卷走：题量变了，每道题的分数不能变。
+    # 这条同时钉住「1 道解答题 ≠ 77 分」，以及前端 `paper.ts` 那份拷贝。
+    check("解答题分值不随题量摊平（1 道=13、6 道=92、每道都在 13~17）",
+          answer_scores(1) == [13] and answer_scores(6) == [13, 15, 15, 17, 17, 15]
+          and all(13 <= s <= 17 for n in range(1, 31) for s in answer_scores(n)),
+          str([(n, answer_scores(n)) for n in (1, 2, 6)]))
     check("标准高考卷 8+3+3+5 = 150 分",
           total_score({"single_choice": 8, "multi_choice": 3,
                        "fill_in_blank": 3, "detailed_answer": 5}) == 150,
@@ -633,9 +640,9 @@ def _selftest() -> int:
     _q14 = topic_quota(14, list(MINOR_TOPIC_WEIGHT))
     check("小题章节配额合计正好 14 道", sum(_q14.values()) == 14, str(_q14))
 
-    check("覆盖卷 9+4+10+23 = 196 分（解答题只算 77，不是每道 15）",
+    check("覆盖卷 9+4+10+23 = 466 分（解答题 77 + 15×18，不摊成每道 3 分）",
           total_score({"single_choice": 9, "multi_choice": 4,
-                       "fill_in_blank": 10, "detailed_answer": 23}) == 196,
+                       "fill_in_blank": 10, "detailed_answer": 23}) == 466,
           str(total_score({"single_choice": 9, "multi_choice": 4,
                            "fill_in_blank": 10, "detailed_answer": 23})))
     check("解答题板块顺序正确",

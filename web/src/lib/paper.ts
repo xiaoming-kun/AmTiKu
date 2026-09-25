@@ -10,49 +10,41 @@ export const MINOR_SCORE: Record<string, number> = {
   single_choice: 5, multi_choice: 6, fill_in_blank: 5,
 }
 
-/** 解答题**整块固定 77 分**。
+/** 解答题**按高考卷面上的位置**给分，不是均分。
  *
- *  这不是"15 分一道"：`amti/generate.py` 的 `answer_scores(n)` 把 77 分
- *  按题数摊开（标准 5 道 → 13/15/15/17/17），用最大余数法保证**加起来仍是 77**，
- *  不管几道题。所以：
+ *  真卷就是这样：15 题 13 分，16/17 题各 15 分，18/19 题各 17 分，合计 77。
  *
- *      8×5 + 3×6 + 3×5 + 77 = 150   ← 正好是真高考卷的总分
+ *  以前这里把 77 分按题数**摊平**，保证「解答题板块恒为 77 分」——
+ *  那是为了让标准高考卷正好 150 分。可测试卷的题量是老师筛出来多少算多少：
  *
- *  旧代码写的是 `detailed_answer: 15` 这种"一道 15 分"的假表，
- *  于是「考点覆盖卷」挑出 23 道解答题时，界面报 484 分，而卷面上只有 196 分。 */
-export const ANSWER_TOTAL = 77
+ *      1 道  → [77]        ← 一道解答题 77 分（用户：「解答题怎么能够是 77 分呢」）
+ *      23 道 → 每道 3 分
+ *
+ *  一道题值多少分，不该由卷上还有几道题决定。高考卷恒为 5 道 →
+ *  [13,15,15,17,17] → 合计 77，全卷 150 分，一个字没变。 */
+export const ANSWER_SCORES = [13, 15, 15, 17, 17]
 
-/** 标准 5 道解答题的分值表（满分 77）。 */
-const ANSWER_SCORES = [13, 15, 15, 17, 17]
+/** 第 6 道起的分值（测试卷解答题可能一道都没有，也可能二十道）。 */
+export const ANSWER_EXTRA = 15
 
-/** 解答题分值表：题数不是 5 时按 77 分同比例摊，用**最大余数法**保证加起来仍是 77。
- *
- *  **逐行照抄 `amti/generate.py` 的 `answer_scores()`**（那里是权威）。
+/** 解答题分值表。**逐行照抄 `amti/generate.py` 的 `answer_scores()`**（那里是权威）。
  *  两处算法必须一致——不一致就意味着界面上的分值跟 PDF 上印的不一样。 */
 export function answerScores(n: number): number[] {
   if (n <= 0) return []
-  if (n === ANSWER_SCORES.length) return [...ANSWER_SCORES]
-  const total = ANSWER_TOTAL
-  const exact = total / n
-  const base = Array.from({ length: n }, () => Math.floor(exact))
-  const rest = total - base.reduce((a, b) => a + b, 0)
-  // 余数大的先加；余数一样就按次序（Python 的 sorted 是稳定的，这里显式写出来）
-  const order = [...base.keys()].sort((i, j) => (exact - base[j]) - (exact - base[i]) || i - j)
-  for (const i of order.slice(0, rest)) base[i] += 1
-  return base
+  return Array.from({ length: n }, (_, i) => ANSWER_SCORES[i] ?? ANSWER_EXTRA)
 }
 
 /** 某一道题在卷面上的分值（解答题**按位置**取，其余固定）。
  *  对应 `amti/generate.py` 的 `score_of()`。 */
 export function questionScore(type: string, indexInType: number, countOfType: number): number {
-  if (type === 'detailed_answer') return answerScores(countOfType)[indexInType] ?? 15
+  if (type === 'detailed_answer') return answerScores(countOfType)[indexInType] ?? ANSWER_EXTRA
   return MINOR_SCORE[type] ?? 5
 }
 
 /** 某个题型 n 道题占多少分。 */
 export function scoreOf(type: string, n: number): number {
   if (n <= 0) return 0
-  if (type === 'detailed_answer') return ANSWER_TOTAL
+  if (type === 'detailed_answer') return answerScores(n).reduce((a, b) => a + b, 0)
   return (MINOR_SCORE[type] ?? 5) * n
 }
 

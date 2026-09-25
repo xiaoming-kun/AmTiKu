@@ -309,6 +309,35 @@ console.log(JSON.stringify(cases.map((s) => mod.showAnswers(s))))
 """
 
 
+_NODE_PROBE_SCORE = r"""
+// 把 paper.ts 里的计分函数转出来，和后端 generate.py 逐项比对。
+import { execSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'amti-score-'))
+const out = path.join(dir, 'paper.mjs')
+execSync(
+  `npx esbuild "src/lib/paper.ts" --bundle --format=esm --platform=node `
+  + `--alias:@=./src --outfile="${out}" --log-level=error`,
+  { cwd: '%s/web', stdio: 'pipe' })
+
+const mod = await import('file://' + out)
+const cases = JSON.parse(process.argv[2])
+const expand = (c) => {
+  const qs = []
+  for (const [t, n] of Object.entries(c)) for (let i = 0; i < n; i++) qs.push({ type: t })
+  return qs
+}
+console.log(JSON.stringify({
+  answer: cases.ns.map((n) => mod.answerScores(n)),
+  per: cases.ns.map((n) => mod.answerScores(n).map((_v, i) => mod.questionScore('detailed_answer', i, n))),
+  totals: cases.counts.map((c) => mod.paperScore(expand(c))),
+}))
+"""
+
+
 def test_frontend_backend_answer_red_parity():
     r"""答案的**红色渲染**前后端必须逐字一致。
 
@@ -366,6 +395,56 @@ def test_frontend_backend_label_parity():
 
     for q, b, f in zip(qs, backend, frontend):
         assert b == f, f"前后端不一致：{q.key} 后端={b!r} 前端={f!r}"
+
+
+def test_frontend_backend_score_parity():
+    r"""卷面分值前后端必须逐项一致（界面上的「多少分」= PDF 上印的「多少分」）。
+
+    计分有两份实现：`amti/generate.py` 是权威，`web/src/lib/paper.ts` 是界面
+    实时算分用的拷贝（每加一道题都请求后端不现实）。两份一分叉就会出现
+    「界面写 77 分、卷面印 13 分」——用户在组卷页一眼就能看出不对。
+
+    顺便把「一道解答题 77 分」这个 bug 钉死：
+    `answer_scores(n)` 曾经把 77 分**按题数摊平**，n=1 时返回 [77]。
+    """
+    from amti import generate as gen
+
+    ns = [0, 1, 2, 3, 4, 5, 6, 8, 14, 23, 30]
+    counts = [
+        {},
+        {"single_choice": 8, "multi_choice": 3, "fill_in_blank": 3,
+         "detailed_answer": 5},                       # 标准高考卷 = 150
+        {"detailed_answer": 1},                       # 一道解答题：13 分，不是 77
+        {"detailed_answer": 23},
+        {"single_choice": 9, "multi_choice": 4, "fill_in_blank": 10,
+         "detailed_answer": 23},
+        {"fill_in_blank": 4},
+    ]
+
+    probe = ROOT / "测试" / "_score_probe.mjs"
+    probe.write_text(_NODE_PROBE_SCORE % ROOT, encoding="utf-8")
+    try:
+        r = subprocess.run(["node", str(probe), json.dumps({"ns": ns, "counts": counts})],
+                           cwd=str(ROOT / "web"), capture_output=True, text=True, timeout=180)
+        assert r.returncode == 0, (r.stdout + r.stderr)[-600:]
+        fe = json.loads(r.stdout.strip().splitlines()[-1])
+    finally:
+        probe.unlink(missing_ok=True)
+
+    be_answer = [gen.answer_scores(n) for n in ns]
+    be_per = [[gen.score_of("detailed_answer", i, n) for i in range(n)] for n in ns]
+    be_totals = [gen.total_score(c) for c in counts]
+    assert be_answer == fe["answer"], \
+        f"解答题分值表不一致：后端 {be_answer} 前端 {fe['answer']}"
+    assert be_per == fe["per"], f"单题分值不一致：后端 {be_per} 前端 {fe['per']}"
+    assert be_totals == fe["totals"], \
+        f"整卷总分不一致：后端 {be_totals} 前端 {fe['totals']}"
+
+    # 分值跟着**题**走，不跟着**卷**走
+    assert gen.answer_scores(1) == [13], gen.answer_scores(1)
+    assert gen.answer_scores(5) == [13, 15, 15, 17, 17], gen.answer_scores(5)
+    assert gen.total_score({"single_choice": 8, "multi_choice": 3,
+                            "fill_in_blank": 3, "detailed_answer": 5}) == 150
 
 
 # ── 无 pytest 时的运行器 ──────────────────────────────────────
