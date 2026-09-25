@@ -6,7 +6,7 @@
  *    · 三栏 UI     → 文件内的三个列组件
  *    · 本组件只负责组装
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FileText, Plus } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
@@ -34,9 +34,10 @@ export default function CanvasEditor({ handoutQs, facets }: {
   const [withAns, setWithAns] = useState(false)
   const [titleFont, setTitleFont] = useState(DEFAULT_TITLE_FONT)
   const [bodyFont, setBodyFont] = useState(DEFAULT_BODY_FONT)
-  // 点左栏题目 → 右侧弹出整道题（题干/答案/解析），跟主页面同一个 Detail
+  // 点左栏题目 → 悬空弹出整道题（题干/答案/解析），跟主页面同一个 Detail
   const [preview, setPreview] = useState<Q | null>(null)
   const [pvFull, setPvFull] = useState<Q | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
   // 左栏（考点树 / 搜索 / 懒加载）→ useDrawer
   const {
     q, setQ, searchResults, topics, openTopic, setOpenTopic,
@@ -65,6 +66,25 @@ export default function CanvasEditor({ handoutQs, facets }: {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreview(null) }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
+  }, [preview])
+
+  /** 点面板以外的任何地方 → 收起来。悬空的板子不该赖着不走。
+   *
+   *  用 `mousedown` 而不是 `click`：`click` 要等鼠标抬起，拖画布上的块时
+   *  板子会一直挡着；按下就收，看不见的东西不参与拖拽。
+   *
+   *  **左栏例外**：点另一道题时先收再开会在按住鼠标那一瞬间闪一下，
+   *  所以左栏里的点击交给它自己（点了就直接换成新题）。 */
+  useEffect(() => {
+    if (!preview) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element | null
+      if (panelRef.current?.contains(t as Node)) return
+      if (t?.closest?.('[data-qdrawer]')) return
+      setPreview(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
   }, [preview])
 
   const onPreviewSaved = (d: Q) => {
@@ -124,12 +144,14 @@ export default function CanvasEditor({ handoutQs, facets }: {
       />
 
       {/* ── 题目详情（点左栏题目弹出来）──
-          浮在最上层、盖住右侧属性面板：跟主页面一样是「从右边滑出来的抽屉」，
-          看完点「加入画布」直接进当前页，Esc / 关闭回画布。 */}
+          **悬空**的一张卡：四边都留出空隙、圆角 + 大投影，浮在画布上面，
+          不占任何一栏的布局。点别处 / Esc / ✕ 收起，看完点「加入画布」进当前页。 */}
       {preview && (
-        <aside className="anim-slide-r absolute inset-y-0 right-0 z-30 flex w-[470px]
-                          max-w-[70%] flex-col border-l border-border bg-surface
-                          shadow-[var(--shadow-pop)]">
+        <aside ref={panelRef}
+          className="anim-pop absolute right-5 top-[68px] bottom-5 z-30 flex w-[470px]
+                     max-w-[calc(100%-2.5rem)] flex-col overflow-hidden rounded-2xl
+                     border border-border bg-surface shadow-[var(--shadow-pop)]
+                     ring-1 ring-black/[0.03]">
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
             <FileText size={15} className="shrink-0 text-brand" />
             <span className="text-[13.5px] font-semibold">题目详情</span>

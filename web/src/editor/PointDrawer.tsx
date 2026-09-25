@@ -28,7 +28,9 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
   previewQuestion: (qq: Q) => void
 }) {
   return (
-    <aside className="flex w-[254px] shrink-0 flex-col border-r border-border bg-surface">
+    // data-qdrawer：右侧的悬空详情靠它认出「这是左栏的点击」——
+    // 点另一道题时直接换内容，不先收再开（按住鼠标那一瞬间会闪一下）
+    <aside data-qdrawer className="flex w-[254px] shrink-0 flex-col border-r border-border bg-surface">
       {/* ── 面板头 ── */}
       <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
         <LibraryBig size={15} className="shrink-0 text-brand" />
