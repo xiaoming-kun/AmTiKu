@@ -4,28 +4,56 @@
  *  挤在一个文件里，App.tsx 一度 4700 行）。
  *  这里都是**纯展示 / 纯函数**，不带状态 —— 状态在 CanvasEditor 里。
  */
-import { useMemo } from 'react'
-import { Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronDown, Plus } from 'lucide-react'
 import katex from 'katex'
 import { transformStem, transformOption } from '@/lib/qlatex'
 import type { Q } from '@/lib/types'
 
 /** 轻量 LaTeX 渲染：把 $行内$ 与 $$独立$$ 转成 KaTeX。 */
-/** 题干 → 纯文字（侧边栏列表用）。
+/** 常见数学记号 → 看得懂的文字（左栏列表专用）。
+ *
+ *  不映射就会**丢掉**：`$x\\in(-1,1)$` 变成 `x(-1,1)`、`$\\paren[D]$` 变成 `[D]`，
+ *  老师没法拿它认题。这里只求「读得通」，不追求排版正确。 */
+const PLAIN_SYM: Record<string, string> = {
+  in: '∈', notin: '∉', cup: '∪', cap: '∩', subset: '⊂', subseteq: '⊆',
+  le: '≤', leq: '≤', ge: '≥', geq: '≥', ne: '≠', neq: '≠', equiv: '≡',
+  pm: '±', mp: '∓', times: '×', div: '÷', cdot: '·', ast: '∗',
+  alpha: 'α', beta: 'β', gamma: 'γ', theta: 'θ', lambda: 'λ', mu: 'μ',
+  pi: 'π', rho: 'ρ', sigma: 'σ', phi: 'φ', varphi: 'φ', omega: 'ω', Delta: 'Δ',
+  infty: '∞', angle: '∠', triangle: '△', perp: '⊥', parallel: '∥',
+  forall: '∀', exists: '∃', to: '→', rightarrow: '→', Rightarrow: '⇒',
+  leftrightarrow: '⇔', int: '∫', sum: '∑', prod: '∏', sqrt: '√', circ: '°',
+  cdots: '⋯', dots: '…', ldots: '…', qquad: ' ', quad: ' ',
+  // 函数名：原样留着，别让 `g(x)=\cos x` 变成 `g(x)= x`
+  sin: 'sin', cos: 'cos', tan: 'tan', cot: 'cot', sec: 'sec', csc: 'csc',
+  arcsin: 'arcsin', arccos: 'arccos', arctan: 'arctan', ln: 'ln', log: 'log',
+  lg: 'lg', exp: 'exp', lim: 'lim', max: 'max', min: 'min', det: 'det',
+}
+
+/** 题干 → 纯文字（左栏列表用）。
  *
  *  列表里显示 LaTeX 源码（`$PA\\perp$ 底面`）很难读，
  *  去掉命令、图片标签、$ 定界符，只留文字。
+ *
+ *  ⚠️ 这里**只服务「认题」**，不做也不该做真正的 LaTeX 解析
+ *  （题目的事实来源是 `amti/latex_ir.py`）。所以**不截断** ——
+ *  截多少由卡片的 CSS 决定，展开时才看得到完整的题。
  */
 export function plainStem(stem: string): string {
   return String(stem || '')
     .replace(/<img[^>]*>/g, '［图］')
     .replace(/\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\}/g, '［图］')
+    // TikZ 图：整段收成「［图］」，别把源码摊在列表里
+    .replace(/\\begin\{(tikzpicture|axis|scope)\}(\[[^\]]*\])?[\s\S]*?\\end\{\1\}/g, '［图］')
+    .replace(/\\(?:d|t)?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '$1/$2')
+    // 填空处 `\paren[D]`：括号里那个字母是答案，列表只留空括号
+    .replace(/\\paren\s*\[[^\]]*\]/g, '（　）')
+    .replace(/\\([a-zA-Z]+)(\s*)/g, (_m, name: string, sp: string) => (PLAIN_SYM[name] ?? '') + sp)
     .replace(/\$\$?/g, '')
-    .replace(/\\[a-zA-Z]+\s*/g, '')
     .replace(/[{}]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 80)
 }
 
 /** 把 markdown 表格切成「文本段 + 表格段」，其余原样。 */
@@ -268,6 +296,8 @@ export function blockFontSize(b: CBlock): number {
 export const stemCache = new Map<string, string>()
 
 export function QuestionRow({ q, onAdd }: { q: Q; onAdd: () => void }) {
+  // 认题要先看得见题：默认给 4 行，还想看全就点开（不点开不影响左边栏的速度）
+  const [open, setOpen] = useState(false)
   const label = useMemo(() => {
     const k = q.key || ''
     const hit = stemCache.get(k)
@@ -283,9 +313,19 @@ export function QuestionRow({ q, onAdd }: { q: Q; onAdd: () => void }) {
       className="group flex cursor-pointer items-start gap-1.5 rounded-lg border border-border
                  bg-surface px-3 py-2 transition-colors
                  hover:border-brand-line hover:bg-brand-soft/40">
-      <div className="line-clamp-2 min-w-0 flex-1 text-[12.5px] leading-[1.5] text-ink-soft
-                      transition-colors group-hover:text-ink">{label}</div>
-      {/* 动作提示：常驻会挤掉题干两行，只在悬停时浮出来 */}
+      <div className={`min-w-0 flex-1 text-[12.5px] leading-[1.5] text-ink-soft
+                        transition-colors group-hover:text-ink ${open ? '' : 'line-clamp-4'}`}>
+        {label}
+      </div>
+      {/* 展开/收起：常驻会挤掉题干，只在悬停或已展开时露出来 */}
+      <button onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
+        title={open ? '收起题干' : '展开完整题干'}
+        className={`mt-[3px] shrink-0 rounded p-0.5 text-ink-faint transition-opacity
+                    duration-150 hover:text-brand ${open ? '' : 'opacity-0 group-hover:opacity-100'}`}>
+        <ChevronDown size={12}
+          className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {/* 动作提示：常驻会挤掉题干，只在悬停时浮出来 */}
       <Plus size={12}
         className="mt-[3px] shrink-0 text-brand opacity-0 transition-opacity duration-150
                    group-hover:opacity-100" />
