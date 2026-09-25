@@ -162,10 +162,40 @@ def merge_sidecar(path, recs):
     return len(filled), filled, orphan
 
 
-def main(path, do_commit, force=False):
+def drop_skipped(path, recs, skip):
+    r"""按题号把个别题**从这一场的入库里摘掉**，用于「原卷自己印坏、四道闸都过不去」的题。
+
+    为什么不放宽闸：`schema.problems()` 要求选项标号从 A 连续，这条不变量抓的正是
+    **我们自己把选项抄丢**。为一道题去容忍非连续标号，等于把闸上开个能漏题的口子。
+    也不补一个不存在的 C 选项——那是编造原卷没有的内容。
+    所以摘出来单独挂着，但**必须在同场的 `.待复核.json` 里有登记**才让摘，
+    免得「摘掉」变成悄悄丢题。
+    """
+    if not skip:
+        return recs, []
+    pf = Path(str(path).replace(".成品.json", ".待复核.json"))
+    reg = set()
+    if pf.exists():
+        reg = {str(e.get("题号")) for e in json.loads(pf.read_text(encoding="utf-8"))}
+    out, gone = [], []
+    for r in recs:
+        if str(r["题号"]) in skip:
+            if str(r["题号"]) not in reg:
+                sys.exit("⛔ 要摘掉第 %s 题，但 %s 里没有它的登记 —— 不许悄悄丢题"
+                         % (r["题号"], pf.name))
+            gone.append(r["题号"])
+        else:
+            out.append(r)
+    return out, gone
+
+
+def main(path, do_commit, force=False, skip=()):
     recs = json.loads(Path(path).read_text(encoding="utf-8"))
     label = re_label(path)
     year = derive_year(label)
+    recs, gone = drop_skipped(path, recs, skip)
+    if gone:
+        print(f"按 --skip 摘掉 {len(gone)} 题（已在待复核登记）：{gone}")
     fixed = tidy(recs)
     if fixed:
         Path(path).write_text(json.dumps(recs, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -304,5 +334,10 @@ def re_label(path):
 
 
 if __name__ == "__main__":
-    a = [x for x in sys.argv[1:] if x not in ("--commit", "--force")]
-    main(a[0], "--commit" in sys.argv, "--force" in sys.argv)
+    argv = sys.argv[1:]
+    skip = ()
+    if "--skip" in argv:
+        i = argv.index("--skip")
+        skip = tuple(x for x in argv[i + 1].split(",") if x)
+        del argv[i:i + 2]
+    main(argv[0], "--commit" in argv, "--force" in argv, skip)
