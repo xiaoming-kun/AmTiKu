@@ -36,7 +36,7 @@ export const NAV_GROUPS: { label: string; items: Item[] }[] = [
     label: '工作流',
     items: [
       { key: 'workbench', label: '工作台', hint: 'W', icon: LayoutGrid, desc: '找题、挑题、组卷' },
-      { key: 'ingest', label: '录入识别', hint: 'I', icon: ScanLine, desc: '把 LaTeX 粘进来入库' },
+      { key: 'ingest', label: '录题', hint: 'I', icon: ScanLine, desc: '把 LaTeX 粘进来入库' },
       { key: 'points', label: '知识点', hint: 'K', icon: FolderTree, desc: '按章节考点筛题' },
       { key: 'chain', label: '知识链路', hint: 'L', icon: Route, desc: '考点之间的先修关系图' },
     ],

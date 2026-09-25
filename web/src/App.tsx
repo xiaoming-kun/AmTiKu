@@ -406,7 +406,7 @@ export default function App() {
     }
     const navWords: Record<string, string> = {
       workbench: 'gongzuotai workbench home list 题库 找题',
-      ingest: 'luru ingest import 录入 新建',
+      ingest: 'luru ingest import 录题 录入 新建',
       points: 'zhishidian points topics 考点 章节',
       chain: 'zhishilianlu chain links 链路 先修 前置 关系 图',
       export: 'zujuan export 组卷 导出 pdf',
@@ -442,7 +442,7 @@ export default function App() {
       { id: 'act:export', label: '新建试卷 / 组卷导出', group: '做', icon: <Sparkles size={13} />,
         hint: '⌘↵', keywords: 'daochu export zujuan pdf 导出 组卷', run: () => setShowExport(true) },
       { id: 'act:ingest', label: '录入新题', group: '做', icon: <ScanLine size={13} />,
-        hint: 'I', keywords: 'luru ingest 录入', run: () => setShowIngest(true) },
+        hint: 'I', keywords: 'luru ingest 录题 录入', run: () => setShowIngest(true) },
       { id: 'act:help', label: '查看键盘快捷键', group: '做', icon: <CommandIcon size={13} />,
         hint: '?', keywords: 'kuaijiejian shortcut help 快捷键 帮助',
         run: () => window.dispatchEvent(new CustomEvent('amtiku:help')) },
