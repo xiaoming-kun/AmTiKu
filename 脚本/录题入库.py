@@ -92,26 +92,33 @@ def load_gap_answers():
 
 
 def attach_answers(path, recs):
-    r"""**只填成品答案栏本来就空的题**，返回填了哪些题号（调用方据此打 meta 标记）。
+    r"""**只填本来就空的栏**（答案、解析各判各的），返回填了哪些题号。
 
     与 `merge_sidecar` 那条「不许取 sidecar 答案」的老规矩不冲突：
-    这里读的是单独一份、逐条写明「agent/自解」的清单，
-    而且**原卷印了答案的一律不碰**（那是内容，不是缺口）。
-    必须在 `rec_to_question` **之前**调用——题的正文是从 recs 渲染的。
+    这里读的是单独一份、逐条写明「agent/自解」的清单
+    （`数据/录题/补答案_41题.json`），而且**原卷印了答案的一律不碰**——那是内容，不是缺口。
+    必须在 `rec_to_question` **之前**调用：题的正文是从 recs 渲染的。
+    不往 rec 里塞第 10 个键（成品固定 9 键，多出来的键会被 `tidy` 写回文件）。
     """
     lab = Path(path).name[: -len(".成品.json")]
     gap = load_gap_answers()
-    filled = []
+    filled, also_sol = [], []
     for r in recs:
-        if (r.get("答案") or "").strip():
-            continue
         g = gap.get("%s#%s" % (lab, r["题号"]))
-        if not g or not (g.get("答案") or "").strip():
+        if not g:
             continue
-        r["答案"] = g["答案"]
-        # 不往 rec 里塞第 10 个键：成品固定 9 键，多出来的键会被写回文件
-        filled.append((r["题号"], g.get("来源") or "agent/自解"))
-    return filled
+        cur_a = (r.get("答案") or "").strip()
+        new_a = (g.get("答案") or "").strip()
+        if not cur_a and new_a:
+            r["答案"] = new_a
+            filled.append((r["题号"], g.get("来源") or "agent/自解"))
+        cur_s = (r.get("解析") or "").strip()
+        new_s = (g.get("解析") or "").strip()
+        if (not cur_s or cur_s == "解析无") and new_s:
+            r["解析"] = new_s
+            also_sol.append(r["题号"])
+    return filled, also_sol
+
 
 
 def merge_sidecar(path, recs):
@@ -168,9 +175,11 @@ def main(path, do_commit, force=False):
         print("并入 sidecar 模型解答 %d 道（题号 %s）" % (n_fill, filled))
     if orphan:
         print("⚠️ sidecar 里有 %d 个题号在成品中不存在，已跳过：%s" % (len(orphan), orphan))
-    filled_ans = attach_answers(path, recs)
+    filled_ans, gap_sol = attach_answers(path, recs)
     if filled_ans:
         print("填模型自解答案 %d 道（题号 %s）" % (len(filled_ans), [t for t, _ in filled_ans]))
+    if gap_sol:
+        print("填模型自解解析 %d 道（题号 %s）" % (len(gap_sol), gap_sol))
     qs = [R2.rec_to_question(r, label) for r in recs]
     n_pt = attach_points(path, recs, qs)
     if n_pt != len(recs):
@@ -178,7 +187,7 @@ def main(path, do_commit, force=False):
               "界面按考点筛会找不到它们" % (n_pt, len(recs)))
     # 模型补的解析要在库里可辨识：meta.solved_by 不参与指纹（不改 content_hash），
     # 界面 Detail.tsx 会据此挂「AI 求解」角标，供人工复核。
-    filled_set = set(filled)
+    filled_set = set(filled) | set(gap_sol)
     ans_by = dict(filled_ans)
     for r, q in zip(recs, qs):
         if r.get("题号") in filled_set:
