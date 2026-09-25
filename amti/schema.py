@@ -173,6 +173,7 @@ class Question:
         只报告，不修正。修不修由人决定——这是与旧项目最大的区别。
         """
         bad: list[str] = []
+        _BS_WS = set(chr(92) + " \t\r\n")   # 「只剩反斜杠和空白」的字符集
 
         if self.type not in QTYPES:
             bad.append(f"题型非法：{self.type!r}（只能是 {QTYPES}）")
@@ -226,6 +227,21 @@ class Question:
         # 实测：2024 全国甲卷（文）#18、（理）#17 就中过这个假阳性。
         if self.type == "detailed_answer" and has_fillin and not _fillin_in_table(self.stem):
             bad.append("解答题的题干里不该有 \\fillin{}")
+
+        # 数学段里**只剩反斜杠和空白** = 原卷此处印漏了一整个式子。
+        # 实测：入库 102 题后层③ 唯一那处 KaTeX 报错就是它——
+        # 宝鸡市 2026 届（二）#3 卷面印成「“$ac>bc$” 是        ” 的」，
+        # 转录留下 `$\ $`，KaTeX 报 `Unexpected character: '\\'`。
+        # 四道闸原先没有一条认得它：`$` 个数是偶的、没有裸 `%`、conform 也不查这个。
+        # ⚠️ 两个坑：① 不能直接写正则跨全文找 `$\ $`，`$9$\\` 换行 `$7$` 这种
+        #    「闭段$ + 反斜杠 + 开段$」会被误判（存量表题误伤 35 道）——必须按 `$`
+        #    切段、只看奇数段；② 不能用 `strip() == ""`，`strip()` 不去反斜杠。
+        for _fld, _txt in (("题干", self.stem), ("解析", self.solution),
+                           *(("选项 %s" % o.label, o.text) for o in self.options)):
+            for _i, _seg in enumerate((_txt or "").split("$")):
+                if _i % 2 and _seg and set(_seg) <= _BS_WS:
+                    bad.append("%s 里有只含反斜杠的空数学段（原卷此处印漏，KaTeX 会报错）" % _fld)
+                    break
 
         # 图片：`figures` 是**从正文推导**的（见 latex_ir.parse_question），
         # 所以两个方向都要成立，而且两边必须扫**同一批字段**：
