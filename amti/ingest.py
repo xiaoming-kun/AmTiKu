@@ -137,12 +137,18 @@ def _auto_key(book: str, label: str, i: int, meta: dict,
 def parse_source(text: str, *, book: str = "手工录入", label: str = "",
                  region: str = "", year: int | None = None,
                  source_no: str = "", points: list[str] | None = None,
-                 difficulty: str = "") -> dict:
+                 difficulty: str = "", qtype: str = "") -> dict:
     r"""解析源材料。返回 `{questions, errors}`。**不写任何东西。**
 
-    `points` / `difficulty` 是**在界面上填的**。源材料的 meta JSON 里也能写
-    这两样，但界面上明明白白选了就该以界面为准（界面覆盖源材料）。
+    `points` / `difficulty` / `qtype` 是**在界面上填的**。源材料的 meta JSON
+    里也能写这几样，但界面上明明白白选了就该以界面为准（界面覆盖源材料）。
     自动打标那条路（LLM 读题干定考点）只在两者都没有时才跑。
+
+    `qtype` 覆盖**从 LaTeX 推断出来的题型**（`\begin{problem}` → 解答题、
+    有选项 → 单选/多选、有 `\fillin` → 填空）。推断看的是正文形态，
+    绝大多数时候对；但录一道还没写答案的多选题时会被判成单选，
+    所以给人留一个明确指定的口子。选错了后端会当场拦下来
+    （填空题不该有选项、多选题答案至少两个字母…），干跑就能看见。
     """
     blocks = split_source(text)
     out: list[Question] = []
@@ -169,8 +175,11 @@ def parse_source(text: str, *, book: str = "手工录入", label: str = "",
                     q.key = d["key"]
             except ValueError:
                 errors.append({"seq": i, "reason": "元数据行不是合法 JSON"})
+        # 优先级：**界面 > 源材料 meta > 从正文推断**
         if q.type and meta.get("type"):
             q.type = meta["type"]
+        if qtype:
+            q.type = qtype
 
         meta.setdefault("book", book)
         # **题号**：单题录入时记原卷的题号。试卷上标来源要用它，
@@ -356,6 +365,7 @@ def _incomplete_errors(qs) -> list[dict]:
 def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str = "",
             region: str = "", year: int | None = None, source_no: str = "",
             points: list[str] | None = None, difficulty: str = "",
+            qtype: str = "",
             update_force: bool = False, merge_into: dict | None = None,
             dup_threshold: float = 0.80) -> dict:
     r"""干跑：解析 + 图片预检 + 查重 + 校验 + 影响面。**什么都不写。**
@@ -363,7 +373,8 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
     `src_dirs` 是图片搜索目录（不传则用默认来源目录）。
     """
     parsed = parse_source(text, book=book, label=label, region=region, year=year,
-                          source_no=source_no, points=points, difficulty=difficulty)
+                          source_no=source_no, points=points, difficulty=difficulty,
+                          qtype=qtype)
     qs: list[Question] = parsed["questions"]
     errors = list(parsed["errors"])
     # 「并入这道」：先把 key 改过去，后面的查重/升级才认得出是同一道题
@@ -557,6 +568,7 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
 def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str = "",
            region: str = "", year: int | None = None, source_no: str = "",
            points: list[str] | None = None, difficulty: str = "",
+           qtype: str = "",
            update_existing: bool = True, update_force: bool = False,
            merge_into: dict | None = None,
            skip_dup: bool = True, skip_missing_figures: bool = True) -> dict:
@@ -566,7 +578,8 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     `skip_missing_figures=True` 时跳过缺图的题——**不导入半成品**。
     """
     parsed = parse_source(text, book=book, label=label, region=region, year=year,
-                          source_no=source_no, points=points, difficulty=difficulty)
+                          source_no=source_no, points=points, difficulty=difficulty,
+                          qtype=qtype)
     qs: list[Question] = parsed["questions"]
     if not qs:
         return {"ok": False, "error": "没有解析出任何题目", "added": []}
@@ -749,6 +762,20 @@ def _selftest() -> int:
     check("第 1 道是单选", qs[0].type == "single_choice", qs[0].type)
     check("单选题答案从 \\item* 得出", qs[0].answer == "A", qs[0].answer)
     check("第 2 道是解答", qs[1].type == "detailed_answer", qs[1].type)
+
+    # 界面上明确选的题型**覆盖**从正文推断出来的（`qtype=`）：
+    # 录一道还没写答案的多选题时，正文推断会判成单选，得能手动改过来。
+    _ov = parse_source(src, book="测试录入", label="第1套",
+                       qtype="multi_choice")["questions"]
+    check("界面选的题型覆盖推断结果",
+          [_q.type for _q in _ov] == ["multi_choice", "multi_choice"],
+          str([_q.type for _q in _ov]))
+    _ov2 = parse_source(src, book="测试录入", label="第1套",
+                        qtype="detailed_answer")["questions"]
+    check("覆盖对每一道都生效", _ov2[0].type == "detailed_answer", _ov2[0].type)
+    check("不传 qtype 时行为不变",
+          parse_source(src, book="测试录入", label="第1套")["questions"][0].type
+          == "single_choice")
     check("key 自动生成", qs[0].key == "测试录入/第1套#1", qs[0].key)
     check("book 写进 meta", qs[0].meta.get("book") == "测试录入", str(qs[0].meta))
 

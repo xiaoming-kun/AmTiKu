@@ -1166,6 +1166,7 @@ class IngestBody(BaseModel):
     src_dir: str = ""                   # 图片来源目录，留空用默认
     points: str = ""                    # 考点 id，逗号分隔（界面上选的）
     difficulty: str = ""                # 简单题/中档题/难题（界面上选的）
+    qtype: str = ""                     # 题型（界面上选的）；留空=按正文推断
     update_existing: bool = True        # 库里已有这道题：手里这份更全就**升级**
     update_force: bool = False          # 连已有的解析也覆盖（默认只补不覆盖）
     merge_into: dict = {}               # {新题key: 库内key} —— 界面上点「并入这道」
@@ -1182,6 +1183,7 @@ def ingest_preview(body: IngestBody) -> dict:
                      region=body.region, year=body.year,
                      source_no=body.source_no, points=pts or None,
                      difficulty=body.difficulty.strip(),
+                     qtype=body.qtype.strip(),
                      update_force=body.update_force,
                      merge_into=body.merge_into or None,
                      dup_threshold=body.dup_threshold)
@@ -1190,7 +1192,8 @@ def ingest_preview(body: IngestBody) -> dict:
             body.text, book=body.book, label=body.label,
             region=body.region, year=body.year,
             source_no=body.source_no, points=pts or None,
-            difficulty=body.difficulty.strip())["questions"]):
+            difficulty=body.difficulty.strip(),
+            qtype=body.qtype.strip())["questions"]):
         it["blocks"] = {
             "stem": lb.parse_blocks(q.stem),
             "answer": lb.parse_blocks(q.answer),
@@ -1210,6 +1213,7 @@ def ingest_commit(body: IngestBody) -> dict:
                       region=body.region, year=body.year,
                       source_no=body.source_no, points=pts or None,
                       difficulty=body.difficulty.strip(),
+                      qtype=body.qtype.strip(),
                       update_existing=body.update_existing,
                       update_force=body.update_force,
                       merge_into=body.merge_into or None)

@@ -32,6 +32,9 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   // 但手工录入时人就在旁边，顺手指一下比事后回头补准得多——
   // 而且**手动标的不会被自动打标覆盖**（`point_source: manual`）。
   const [diff, setDiff] = useState('')
+  // 题型：默认 '' = 按正文推断（见 `amti/latex_ir.py` 的题型判定）。
+  // 录多选题最容易踩：答案还没写完时会被判成单选，这里能直接指定。
+  const [qtype, setQtype] = useState('')
   const [pts, setPts] = useState<string[]>([])
   // 库里已有的题：手里这份更全就**升级**（默认开）。
   // 「连已有解析也覆盖」默认关——残缺的重录不该冲掉库里好的解析。
@@ -61,6 +64,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
     year: year ? Number(year) : null,
     source_no: no,
     difficulty: diff,
+    qtype,
     points: pts.join(','),
     update_existing: updateExisting,
     update_force: updateForce,
@@ -169,6 +173,31 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                 </span>
               </div>
               <div className="flex flex-wrap items-start gap-5">
+              {/* 题型：**默认按正文推断**（`\begin{problem}` → 解答题、
+                  有选项 → 单选/多选、有 `\fillin` → 填空），绝大多数时候对，
+                  所以默认那一档叫「自动识别」。但录一道还没写答案的多选题时
+                  会被判成单选 —— 所以留一个明确指定的口子。
+                  选得和正文对不上（填空题却有选项…）后端会当场拦下来，
+                  干跑就能看见。 */}
+              <div>
+                <div className={`mb-1.5 ${LABEL}`}>
+                  题型 <span className="font-normal tracking-normal text-ink-faint/80">（默认按正文识别）</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[['', '自动识别'], ['single_choice', '单选题'], ['multi_choice', '多选题'],
+                    ['fill_in_blank', '填空题'], ['detailed_answer', '解答题']].map(([v, t]) => (
+                    <button key={v || 'auto'} onClick={() => setQtype(v)}
+                      title={v ? '' : '按 LaTeX 正文推断（problem→解答、有选项→选择、有 \\fillin→填空）'}
+                      className={`press rounded-full border px-2.5 py-[5px] text-[12px] font-medium
+                                  transition-colors ${
+                        qtype === v ? 'border-brand bg-brand text-white shadow-[0_2px_8px_-3px_var(--color-brand)]'
+                                    : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <div className={`mb-1.5 ${LABEL}`}>难度</div>
                 <div className="flex gap-1.5">
