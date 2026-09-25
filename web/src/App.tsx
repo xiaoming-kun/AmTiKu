@@ -194,6 +194,15 @@ export default function App() {
     })
   }
 
+  /** 点题目就看这道题：**详情永远跟着走**，点下一道自动换成下一道。
+   *
+   *  以前这里写的是 `setSel(it); if (!selectMode) setDOpen(true)` ——
+   *  而多选是**默认模式**，于是默认状态下点卡片只勾选、右边纹丝不动，
+   *  想看一眼题得先点 ✕ 关掉上一道、再去点「放大」。
+   *  `QuestionCard` 里那句注释「详情永远跟着走」当时只改了一半：
+   *  卡片把 onOpen 叫出来了，onOpen 自己却把门关了。 */
+  const showDetail = (it: Q) => { setSel(it); setDOpen(true) }
+
   /** 从详情点考点跳过来：列表立刻切成「只看这个考点」，并把该考点
    *  所在大类展开，这样侧栏能看见自己选中了什么。 */
   const [findNote, setFindNote] = useState('')
@@ -797,8 +806,8 @@ export default function App() {
                     <QuestionCard key={it.key} q={it} active={sel?.key === it.key}
                       inPaper={paperMap.has(it.key)} inHandout={handoutMap.has(it.key)}
                       selectMode={selectMode} checked={checked.has(it.key)} dense={dense}
-                      onOpen={() => { setSel(it); if (!selectMode) setDOpen(true) }}
-                      onDetail={() => { setSel(it); setDOpen(true) }}
+                      onOpen={() => showDetail(it)}
+                      onDetail={() => showDetail(it)}
                       onAdd={() => { addToPaper(it) }}
                       onAddHandout={() => addOneToHandout(it)}
                       onToggle={() => L.toggleCheck(it.key)} />
