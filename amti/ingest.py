@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import dedup, images as im, knowledge as kb, normalize as norm, store
 from .latex_ir import BODY_ENV_RE, parse_question
-from .schema import QTYPE_LABEL, Question
+from .schema import QTYPE_LABEL, Option, Question
 
 # 一个题块 = 题目环境 + 紧跟着的 solution 环境（如果有）
 _BLOCK_RE = re.compile(
@@ -493,15 +493,22 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
     # 口径和 `commit` 一致：**只有 key 相同才算"已在库"**。
     # 内容雷同只是提示——高考题按卷组织，文理卷出同一道题是常态，
     # 按内容判重会把理卷那道丢掉（实测 1992 全国卷（理）少入库 13 道）。
-    existing = {dup_fingerprint(q) for _f, q in store.iter_questions()}
-    existing_keys = {q.key for _f, q in store.iter_questions()}
-    idx = dedup.DedupIndex(store.load_all())
-    by_key = {q.key: q for _f, q in store.iter_questions()}
-    # 指纹 → 库里那道。另一份卷子上的同一道题 key 是不一样的，
+    # 库里那份的三个索引，**一趟扫完**。以前这儿是四次 `iter_questions()`
+    # 各扫一遍全库（21,063 道 × 4），而 preview 是逐场调的 —— 体检 571 场
+    # 光重复扫库就多花十几分钟。
+    existing: set[str] = set()
+    existing_keys: set[str] = set()
+    by_key: dict[str, Question] = {}
+    # 指纹 → 库里那道。**另一份卷子上的同一道题，key 必然不同**，
     # 只按 key 找「库里那份」，重复题的考点/难度就永远对不上账。
     by_fp: dict[str, Question] = {}
     for _f, q in store.iter_questions():
-        by_fp.setdefault(dup_fingerprint(q), q)
+        fp = dup_fingerprint(q)
+        existing.add(fp)
+        by_fp.setdefault(fp, q)
+        existing_keys.add(q.key)
+        by_key[q.key] = q
+    idx = dedup.DedupIndex(store.load_all())
     for it in items:
         # ⚠️ **判据必须和 `commit` 一致**：key 相同 **或** 指纹相同。
         # 只看指纹会漏掉「同一个 key 但内容改了」——干跑说"新题"、
@@ -664,22 +671,29 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     #   * 指纹（题干+选项）已存在 → 别处的同一道题（文理卷），跳过
     # 只用指纹会漏掉第一种：内容变了（比如补了图）但 key 没变，
     # 指纹判「新」→ append 又写一份 → **重复 key**。实测踩过（92 个重复）。
-    existing_fp = {dup_fingerprint(x) for _f, x in store.iter_questions()}
-    existing_keys = {x.key for _f, x in store.iter_questions()}
-    idx = dedup.DedupIndex(store.load_all())
+    # 库内索引**一次装载、一趟扫完**：这里原先是 `iter_questions()` 两趟
+    # ＋`load_all()` 两趟（每趟把 21,063 道重新解析一遍），
+    # 而 commit 是逐场调的 —— 体检 571 场光重复读库就要多花十几分钟。
+    all_qs = store.load_all()
+    idx = dedup.DedupIndex(all_qs)
     skipped: list[dict] = []
     keep: list[Question] = []
     # **升级**：库里已有这道题，但手里这份更全（带解析／考点更多）。
     # 不新写一份（那会撞 key 或写重复），而是**改库里那一份**。
     upgrades: list[dict] = []
-    all_qs = store.load_all()
-    by_key = {x.key: x for x in all_qs}
+    existing_fp: set[str] = set()
+    existing_keys: set[str] = set()
+    by_key: dict[str, Question] = {}
     # 指纹 → 库里那道：**另一份卷子上的同一道题，key 必然不同**。
     # 只按 key 找"库里那份"，这种重复题的考点/难度就永远对不上账
     # （手里这份标了考点、库里那道空着或标得更少，白白浪费一次录入）。
     by_fp: dict[str, Question] = {}
     for x in all_qs:
-        by_fp.setdefault(dup_fingerprint(x), x)
+        fp = dup_fingerprint(x)
+        existing_fp.add(fp)
+        by_fp.setdefault(fp, x)
+        existing_keys.add(x.key)
+        by_key[x.key] = x
     for q in qs:
         fp = dup_fingerprint(q)
         if skip_dup and (q.key in existing_keys or fp in existing_fp):
