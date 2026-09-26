@@ -273,8 +273,9 @@ def main(path, do_commit, force=False, skip=()):
         print("干跑通过（未加 --commit，没有写库）")
         return
     rep = ingest.commit(tex, book="模拟题", label=label, year=year, update_force=force)
-    print("ok=%s added=%s upgraded=%s"
-          % (rep.get("ok"), rep.get("added_count"), len(rep.get("upgraded") or [])))
+    print("ok=%s added=%s upgraded=%s skipped=%s"
+          % (rep.get("ok"), rep.get("added_count"), len(rep.get("upgraded") or []),
+             len(rep.get("skipped") or [])))
     if not rep.get("ok"):
         print(json.dumps(rep, ensure_ascii=False, indent=1)[:1500])
         sys.exit("commit 失败")
