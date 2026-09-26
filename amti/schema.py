@@ -70,6 +70,28 @@ class Figure:
     source: str = ""            # 来源标注（如 "tikz-original"）
 
 
+def _math_braces_bad(seg: str) -> bool:
+    r"""数学段里的**未转义**花括号配不配对。
+
+    `\{`、`\}` 是内容（集合括号、印出来的 `\}`），不算配对关系——
+    不跳开转义的话 `$\{1,2\}$`、`$\}$` 会被整片误伤。
+    """
+    d, i = 0, 0
+    while i < len(seg):
+        c = seg[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "{":
+            d += 1
+        elif c == "}":
+            d -= 1
+            if d < 0:
+                return True
+        i += 1
+    return d != 0
+
+
 @dataclass
 class Question:
     key: str                    # 自然键，如 "高考真题汇编/2025/全国II卷#4"
@@ -239,8 +261,17 @@ class Question:
         for _fld, _txt in (("题干", self.stem), ("解析", self.solution),
                            *(("选项 %s" % o.label, o.text) for o in self.options)):
             for _i, _seg in enumerate((_txt or "").split("$")):
-                if _i % 2 and _seg and set(_seg) <= _BS_WS:
+                if not (_i % 2 and _seg):
+                    continue
+                if set(_seg) <= _BS_WS:
                     bad.append("%s 里有只含反斜杠的空数学段（原卷此处印漏，KaTeX 会报错）" % _fld)
+                    break
+                # 第六种杀手：数学段里**花括号配不平**，尾巴掉回正文。
+                # 实测那处入库后 layer③ 唯一报错的是 `}]`——「填空位跟随答案」把
+                # `\fillin[{$(2,3]$}]` 从中间截断（正则不认 `{…}` 分组），`}$}]` 漏成正文。
+                if _math_braces_bad(_seg):
+                    bad.append("%s 的数学段里花括号配不平（KaTeX 会报错）：%r"
+                               % (_fld, _seg[:40]))
                     break
 
         # 图片：`figures` 是**从正文推导**的（见 latex_ir.parse_question），

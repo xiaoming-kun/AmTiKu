@@ -578,23 +578,48 @@ def sentence_period(q: Question) -> bool:
 
 
 _SLOT_ANS = re.compile(r"\\(?:paren|fillin)\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]")
+_SLOT_CMD = re.compile(r"\\(?:paren|fillin)(?![a-zA-Z])")
+
+
+def iter_slots(text: str, cmd: re.Pattern = _SLOT_CMD):
+    r"""按 **TeX 可选参数的规矩**数括号，读出 `\fillin[…]`／`\paren[…]` 的槽位。
+
+    返回 `[(命令起点, `[` 的下标, 参数内容, 右括号之后的下标)]`；
+    **括号配不平就返回 None**——读不准就一处都不改，别猜。
+
+    ⚠️ 为什么不用正则：`_SLOT_ANS` 那类 `(?:[^\[\]]|\[[^\]]*\])*` 只认一层方括号、
+    **不认 `{…}` 分组**，于是 `\fillin[{$(2,3]$}]`（答案里带右闭区间）会从中间被截断，
+    截断点后面的 `}$}]` 掉回正文——实测端到端渲染那处 KaTeX 报错就是这么来的
+    （`数学段只剩闭合符` 那族残形）。本模块只有 `scan_bracket` 懂 TeX，
+    槽位也必须由它读。
+    """
+    out = []
+    for m in cmd.finditer(text):
+        i = text.find("[", m.end())
+        if i < 0 or i - m.end() > 4:
+            continue
+        arg, end, ok = scan_bracket(text, i)
+        if not ok:
+            return None
+        out.append((m.start(), i, arg, end))
+    return out
 
 
 def _slot_period(stem: str) -> bool:
-    r"""把 `\fillin[…X.]` 里末尾那个 `.` 改成 `。`。返回改没改。"""
+    r"""把 `\fillin[…X.]` 里末尾那个 `.` 改成 `。`。返回新串（没改就返回假值）。"""
     if not stem or "." not in stem:
         return False
-
-    def sub(m):
-        body = m.group(1)
-        if not body.endswith("."):
-            return m.group(0)
-        return m.group(0)[:m.start(1) - m.start(0)] + body[:-1] + "。" + "]"
-
-    new = _SLOT_ANS.sub(sub, stem)
-    if new != stem:
-        return new
-    return False
+    slots = iter_slots(stem)
+    if not slots:
+        return False
+    out, pos, changed = [], 0, False
+    for start, bracket, arg, end in slots:
+        body = arg[:-1] + "。" if arg.endswith(".") else arg
+        changed = changed or body != arg
+        out.append(stem[pos:bracket] + "[" + body + "]")
+        pos = end
+    out.append(stem[pos:])
+    return "".join(out) if changed else False
 
 
 @rule(name="行内公式统一用 $…$", scope=ENTRY,
@@ -958,9 +983,6 @@ def answer_into_fillin(q: Question) -> bool:
     return True
 
 
-_FILLIN_SLOT = re.compile(r"\\fillin\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]")
-
-
 @rule(name="多空答案分隔符统一", scope=ENTRY, why="规范 §2.2：多空用 `；` 分隔")
 def unify_sep(q: Question) -> bool:
     if q.type != "fill_in_blank" or "；" in q.answer:
@@ -990,19 +1012,19 @@ def fillin_follows_answer(q: Question) -> bool:
     """
     if q.type != "fill_in_blank" or not q.answer.strip():
         return False
-    holes = list(_FILLIN_SLOT.finditer(q.stem))
+    holes = iter_slots(q.stem, _FILLIN_CMD)
     if not holes:
         return False
     parts = split_answers(q.answer, len(holes))
     if len(parts) != len(holes):
         return False
-    if all(h.group(1).strip() == p.strip() for h, p in zip(holes, parts)):
+    if all(arg.strip() == p.strip() for _s, _b, arg, _e, p in zip(holes, parts)):
         return False                      # 已经一致，不动
     out, pos = [], 0
-    for h, p in zip(holes, parts):
-        out.append(q.stem[pos:h.start()])
+    for (start, _bracket, _arg, end), p in zip(holes, parts):
+        out.append(q.stem[pos:start])
         out.append(r"\fillin[" + protect(p) + "]")
-        pos = h.end()
+        pos = end
     out.append(q.stem[pos:])
     q.stem = "".join(out)
     return True
@@ -1558,6 +1580,29 @@ def _selftest() -> int:
     normalize(_y, ENTRY)
     check("答案进填空位：已填的括号不许被重复插入",
           _y.stem.count(r"\fillin") == 1, repr(_y.stem))
+
+    # ⚠️ **答案里带 `]`（右闭区间）的那一类**：槽位必须由 `iter_slots` 按 TeX 的
+    # 可选参数规则读。以前用正则 `(?:[^\[\]]|\[[^\]]*\])*` 数括号，它不认 `{…}` 分组，
+    # 于是 `\fillin[{$(2,3]$}]` 从中间被截断，尾巴 `}$}]` 掉回正文——
+    # 入库后端到端渲染就那一处 KaTeX 报错（长沙湖南师大附中月考（五）#13）。
+    _z = Question(key="t/bracket", type="fill_in_blank",
+                  stem=r"取值范围为\fillin[]。", answer=r"$(2,3]$", solution="解析无")
+    normalize(_z, ENTRY)
+    check("答案带右闭区间：填进槽位后没有尾巴掉回正文",
+          _z.stem.endswith(r"\fillin[{$(2,3]$}]。"), repr(_z.stem))
+    _again = _z.stem
+    normalize(_z, ENTRY)
+    check("答案带右闭区间：再规范化一遍**不叠尾巴**（正文才是答案的真相）",
+          _z.stem == _again, repr(_z.stem))
+    _w = Question(key="t/paren-br", type="fill_in_blank",
+                  stem=r"解集为\fillin[{$[0,1]$}]。", answer=r"{$[0,1]$}",
+                  solution="解析无")
+    normalize(_w, ENTRY)
+    check("槽位里已有配对花括号时不被截断",
+          _w.stem.endswith(r"\fillin[{$[0,1]$}]。"), repr(_w.stem))
+    check("iter_slots：配不平的槽位返回 None（读不准就不改）",
+          iter_slots(r"x\fillin[$\left[0,1$]。") is None,
+          str(iter_slots(r"x\fillin[$\left[0,1$]。")))
     _q = Question(key="t/fill3", type="fill_in_blank", stem="求 $b$。", answer="")
     check("补填空位：没答案就不补（免得造出永远填不上的空位）",
           not ensure_fillin(_q), repr(_q.stem))
