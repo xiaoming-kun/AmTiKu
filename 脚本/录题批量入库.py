@@ -11,6 +11,8 @@ r"""**顺序**驱动器：一场一场调 `脚本/录题入库.py`，它自己�
   （实测雄安 #219×#223 一次 commit 双写 7 道）
 * 「疑似整场重复卷」那道闸由 `录题入库.py` 自己拦（判重≥半数），拦下来的场
   **只记日志不改队列状态** —— 改状态说"这场没了"是人的事
+* 写法缺陷（preview 不干净：花括号配不平、印漏式子……）同样**只记日志、跳过这场**，
+  剩下三百多场不该为一道的转录缺陷排队；名单在收工小结里一次性交出来
 * 入库题数、跳过几道、升级几道要逐场落账，`录题收尾.py` 才有东西可写
 * zsh 会把备注里的反引号当命令替换、静默吃掉还退 0 —— 全程 subprocess 传参数列表绕开
 
@@ -24,6 +26,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import os
 import re
 import subprocess
 import sys
@@ -64,15 +67,27 @@ def blocked_scenes() -> set[int]:
                 r = json.loads(line)
             except ValueError:
                 continue
-            if r.get("结论") == "被拦-疑似整场重复":
+            if r.get("结论") in ("被拦-疑似整场重复", "被拦-preview不干净"):
                 out.add(r.get("序号"))
     return out
+
+
+def ambiguous_scenes() -> set[int]:
+    """一个序号挂两份成品的（实测 #53、#215）—— 挑哪份入库是人定的事。"""
+    n: dict[int, int] = {}
+    for f in glob.glob(str(V2 / "*.成品.json")):
+        k = Path(f).name.split("_")[0]
+        if k.isdigit():
+            n[int(k)] = n.get(int(k), 0) + 1
+    return {k for k, v in n.items() if v > 1}
 
 
 def next_scenes(n: int) -> list[str]:
     q = json.loads(QFILE.read_text(encoding="utf-8"))
     have = {Path(f).name.split("_")[0] for f in glob.glob(str(V2 / "*.成品.json"))}
-    skip = blocked_scenes()
+    # 绕开两类：判过「疑似整场重复卷」的（不改状态就会每批在同一场撞停）、
+    # 一个序号两份成品的（`scene_file` 会直接退出，把整批带走）。
+    skip = blocked_scenes() | ambiguous_scenes()
     out = [str(r["序号"]) for r in q["队列"]
            if r.get("状态") == "已解析-待入库" and str(r["序号"]) in have
            and r["序号"] not in skip]
@@ -116,9 +131,11 @@ def pending_registry(path: Path) -> int:
 
 
 def finish(no: str, added: int, pending: int, note: str) -> None:
+    # `AMTIKU_SIMLIST=0`：逐场不做「读全库重刷库内模拟卷清单」，批末统一刷一次
     subprocess.run([sys.executable, str(ROOT / "脚本/录题收尾.py"),
                     str(no), str(added), str(pending), note],
-                   cwd=ROOT, check=True, capture_output=True, text=True)
+                   cwd=ROOT, check=True, capture_output=True, text=True,
+                   env={**os.environ, "AMTIKU_SIMLIST": "0"})
 
 
 def main() -> None:
@@ -135,7 +152,7 @@ def main() -> None:
     if not nos:
         sys.exit("既没点名序号也没给 --next")
     defer = a.commit and not a.no_defer
-    done, blocked, secs = [], [], []
+    done, blocked, defect, secs = [], [], [], []
     print("%s%s：%d 场" % ("入库" if a.commit else "干跑（不写库）",
                           "，升级延后到批末" if defer else "", len(nos)), flush=True)
     for i, no in enumerate(nos, 1):
@@ -148,6 +165,12 @@ def main() -> None:
         rec.update(parse(out))
         rec["秒"] = round(time.time() - t0, 1)
         secs.append(rec["秒"])
+        if rec["秒"] > 120:
+            # 实测有两场各卡了 596 / 947 秒，而同一场单独干跑只要 4 秒
+            # —— 卡的是落盘那一下（备份 52MB＋整库重写的磁盘突发，怀疑撞上 Time Machine），
+            # 不是脚本逻辑。这种场必须看得见，不然整批的账会被平均数藏掉。
+            print("⚠️ 这场用了 %.0f 秒（中位数才 %.0f 秒）—— 单独重跑一遍确认是不是盘的问题"
+                  % (rec["秒"], sorted(secs)[len(secs) // 2]), flush=True)
         if rc:
             if "疑似整场重复卷" in out:
                 rec["结论"] = "被拦-疑似整场重复"
@@ -156,10 +179,19 @@ def main() -> None:
                 print("⛔ %s 疑似整场重复卷，**没入库**，继续下一场（改队列状态要人来裁）"
                       % path.name[:40])
                 continue
+            if "preview 不干净" in out:
+                # 写法缺陷（花括号配不平、印漏式子…）：这一场不入库，但**不把整批停掉**。
+                # 停下来的代价是剩下三百场都排队；跳过的前提是名单必须交到人手里。
+                rec["结论"] = "被拦-preview不干净"
+                rec["原因"] = (out.split("problems: ")[1][:300] if "problems: " in out
+                               else out.split("⛔")[0][-300:])
+                _log(rec)
+                defect.append(no)
+                print("⛔ %s 写法有缺陷，没入库（已记进缺陷名单，继续下一场）" % path.name[:40])
+                continue
             rec["结论"] = "被拦"
             _log(rec)
-            sys.exit("⛔ %s 被拦（见上一段输出），停下来人工看，不把后面的场连着跑"
-                     % path.name[:50])
+            sys.exit("⛔ %s 被拦且不是上面两类（见上一段输出），停下来人工看" % path.name[:50])
         if a.commit:
             if rec["added"] is None:
                 rec["结论"] = "commit 没报账"
@@ -180,10 +212,23 @@ def main() -> None:
         print("每场中位 %.0f 秒（最快 %.0f / 最慢 %.0f）"
               % (sorted(secs)[len(secs) // 2], min(secs), max(secs)))
     if blocked:
-        print("⚠️ 疑似整场重复卷、没入库的序号：%s" % " ".join(blocked))
-    if defer and not a.no_flush:
-        print("\n—— 批末落账：待刷标签 ——", flush=True)
-        subprocess.run([sys.executable, str(ROOT / "脚本/刷标签.py")], cwd=ROOT)
+        print("⛔ 判重过半（疑似整场重复卷）、没入库的序号：%s" % " ".join(blocked))
+    if defect:
+        print("⛔ 写法缺陷、没入库的序号：%s（逐条原因见 批量入库.jsonl 的「原因」列）"
+              % " ".join(defect))
+    amb = sorted(ambiguous_scenes())
+    if amb:
+        print("⚠️ 一个序号挂两份成品、`--next` 绕过的序号：%s" % " ".join(str(x) for x in amb))
+    if a.commit and not a.no_flush:
+        if defer:
+            print("\n—— 批末落账：待刷标签 ——", flush=True)
+            subprocess.run([sys.executable, str(ROOT / "脚本/刷标签.py")], cwd=ROOT)
+        # 逐场省掉的「库内模拟卷清单」在这儿补刷一次（下一批的撞车预检才准）
+        subprocess.run([sys.executable, str(ROOT / "脚本/录题收尾.py"), "--simlist"],
+                       cwd=ROOT, check=True, capture_output=True, text=True)
+        print("\n—— 批末刷库内模拟卷清单（逐场省下的那三四秒在这里补上）——", flush=True)
+        subprocess.run([sys.executable, str(ROOT / "脚本/录题收尾.py"), "--simlist"],
+                       cwd=ROOT)
 
 
 def _log(rec: dict) -> None:
