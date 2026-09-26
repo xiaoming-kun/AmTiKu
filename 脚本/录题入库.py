@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 r"""录题入库：成品 JSON → Question → preview → commit（走 ingest 唯一入口）。
 
-用法：python3 脚本/录题入库.py <成品.json> [--commit] [--force]
+用法：python3 脚本/录题入库.py <成品.json> [--commit] [--force] [--skip 3,7]
+                       [--defer-upgrades] [--allow-mostly-dup]
 不带 --commit 只干跑。preview 有 errors / problems / missing_images 时**拒绝入库**。
 `--force` = 库里已有同 key 且解析非空时，以手里这份为准（补录解析用）。
+
+`--defer-upgrades`：本批**只追加、不动存量**。该刷给库里重复题的考点/难度记进
+`数据/录题/待刷标签.jsonl`，一批跑完由 `脚本/刷标签.py` 一次落账。
+为什么要有这个开关：commit 只要产出一项升级就得整库重写（51MB 重写＋52MB 备份），
+而实测一批 20 场里 18 场都带升级 ⇒ 每场白搭三十秒。
+
+`--allow-mostly-dup`：放开「**判重≥半数＝疑似整场重复卷**」这道闸。
+默认拦：这种场多半是同一场考试换了个卷名又录了一遍（实测 #7 武汉九调 11/17 题
+指纹已在库里），该人来裁队列状态，不该由脚本顺手写进去。
 """
 import datetime as _dt
 import json, re, sys
@@ -15,6 +25,10 @@ from amti import record2 as R2, store, ingest
 # 为什么不在入库后再补：那要走 `store.rewrite_all()` 全库重写，
 # 而 `points` 不参与 content_hash，入库时一次带进去是零风险的。
 LABELS = Path(__file__).resolve().parent.parent / ".tobias/分类/成品标签.json"
+
+# `--defer-upgrades` 攒下来的账单：一批场跑完后 `脚本/刷标签.py` 一次落账。
+# 为什么攒着：commit 每产出一项升级就要 `rewrite_all` 整库重写（51MB）＋备份（52MB）。
+LABEL_JOURNAL = Path(__file__).resolve().parent.parent / "数据/录题/待刷标签.jsonl"
 _points_cache = None
 
 
@@ -201,7 +215,29 @@ def drop_skipped(path, recs, skip):
     return out, gone
 
 
-def main(path, do_commit, force=False, skip=()):
+def defer_labels(path, pv):
+    r"""把「该刷给库里重复题的考点/难度」逐条追加进 journal，本场 commit 因此**不必整库重写**。
+
+    journal 只记两件事：刷给库里哪道（`dup_key`）、用什么考点（`points`）。
+    落账时 `ingest.apply_labels` 会**重跑一遍 `merge_plan`**，所以这里记的不是
+    「结论」而是「线索」——重复记、隔几天再记都不会把库里已有的东西改坏。
+    """
+    lab = Path(path).name[: -len(".成品.json")]
+    n = 0
+    with LABEL_JOURNAL.open("a", encoding="utf-8") as fh:
+        for it in pv["items"]:
+            up = it.get("update") or {}
+            tgt = it.get("dup_key") or ""
+            if not tgt or not up.get("points"):
+                continue
+            fh.write(json.dumps({"场": lab, "key": it["key"], "dup_key": tgt,
+                                 "points": up["points"], "point_source": "llm"},
+                                ensure_ascii=False) + "\n")
+            n += 1
+    return n
+
+
+def main(path, do_commit, force=False, skip=(), defer=False, allow_mostly_dup=False):
     recs = json.loads(Path(path).read_text(encoding="utf-8"))
     label = re_label(path)
     year = derive_year(label)
@@ -250,8 +286,12 @@ def main(path, do_commit, force=False, skip=()):
         print("⚠️ 有 %d 题指纹已在库，先核对是不是整场撞车：" % pv["dup"]["merge"])
         for it in pv["items"]:
             if it["same_key"]:
+                # `dup_key` 才是**指纹逐字相同**的那道（也就是会被刷标签的那道）；
+                # `dups[0]` 只是最像的一道，0.80 也算，拿它当撞车证据会冤枉人。
                 hits = it["dups"][:1]
-                print("   %s ←→ %s" % (it["key"], hits[0]["key"] if hits else "同 key"))
+                print("   %s ←→ %s" % (it["key"], it.get("dup_key")
+                                       or ("同 key（最像的是 %s %s）" % (hits[0]["key"], hits[0]["score"])
+                                           if hits else "同 key")))
     # ⚠️ `spec.after` 也要拦：commit 里还有一道「规范复核不过就不录」的闸门，
     # 只查 errors/problems 会白跑一次 commit 才被拒（实测第 29 场 #19）。
     spec_after = pv["spec"]["after"]
@@ -272,7 +312,27 @@ def main(path, do_commit, force=False, skip=()):
     if not do_commit:
         print("干跑通过（未加 --commit，没有写库）")
         return
-    rep = ingest.commit(tex, book="模拟题", label=label, year=year, update_force=force)
+    # ── 两道入库前的闸 ──
+    n_merge = pv["dup"]["merge"]
+    if not allow_mostly_dup and n_merge * 2 >= len(recs):
+        sys.exit("⛔ 判重 %d/%d 题指纹已在库 —— 疑似整场重复卷，没入库。"
+                 "先核库里是不是已有这一场（看上面 ←→ 的那批 key），确认要录再加 --allow-mostly-dup"
+                 % (n_merge, len(recs)))
+    if defer:
+        # defer 只搬得动**标签**（考点/难度）。哪道题的升级还牵扯正文，这一场就退回
+        # 逐场内联升级——宁可慢，不许把该补的解析攒丢了。
+        body = [it["key"] for it in pv["items"]
+                if set(it.get("update") or {}) - {"points", "difficulty", "stars"}]
+        if body:
+            print("⚠️ 有 %d 道的升级牵扯正文（%s），本场**不 defer**，照常内联升级"
+                  % (len(body), body[:3]))
+            defer = False
+        else:
+            n = defer_labels(path, pv)
+            if n:
+                print("记待刷标签 %d 条（本场只追加，收尾跑 脚本/刷标签.py 一次落账）" % n)
+    rep = ingest.commit(tex, book="模拟题", label=label, year=year,
+                        update_force=force, update_existing=not defer)
     print("ok=%s added=%s upgraded=%s skipped=%s"
           % (rep.get("ok"), rep.get("added_count"), len(rep.get("upgraded") or []),
              len(rep.get("skipped") or [])))
@@ -342,4 +402,5 @@ if __name__ == "__main__":
         i = argv.index("--skip")
         skip = tuple(x for x in argv[i + 1].split(",") if x)
         del argv[i:i + 2]
-    main(argv[0], "--commit" in argv, "--force" in argv, skip)
+    main(argv[0], "--commit" in argv, "--force" in argv, skip,
+         "--defer-upgrades" in argv, "--allow-mostly-dup" in argv)

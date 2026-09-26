@@ -2,20 +2,22 @@
 r"""**顺序**驱动器：一场一场调 `脚本/录题入库.py`，它自己不做任何入库动作。
 
     python3 脚本/录题批量入库.py 101 102 103            # 只看账（干跑，不写库）
-    python3 脚本/录题批量入库.py --next 12              # 按队列顺序看接下来 12 场
-    python3 脚本/录题批量入库.py --next 12 --commit      # 真入库，一场一次 commit
+    python3 脚本/录题批量入库.py --next 20              # 按队列顺序看接下来 20 场
+    python3 脚本/录题批量入库.py --next 20 --commit      # 真入库，一场一次 commit
 
 为什么要这么一层，而不是在 shell 里 for 循环：
 
 * **一场一次 commit** 是 §6 红线：混批会让同 label 的两场撞 key
   （实测雄安 #219×#223 一次 commit 双写 7 道）
-* 每场**先干跑再看账**，账不对就不按 `--commit`：中途一场不干净必须停下来，
-  不把后面的场连着跑完
-* `merge ≥ 半数` 说明这一整场多半就是库里已有的重复卷 —— 这种场**不自动入库**，
-  只记进日志等人改队列状态（自动跳＝悄悄丢一整场）
+* 「疑似整场重复卷」那道闸由 `录题入库.py` 自己拦（判重≥半数），拦下来的场
+  **只记日志不改队列状态** —— 改状态说"这场没了"是人的事
 * 入库题数、跳过几道、升级几道要逐场落账，`录题收尾.py` 才有东西可写
+* zsh 会把备注里的反引号当命令替换、静默吃掉还退 0 —— 全程 subprocess 传参数列表绕开
 
-zsh 会把备注里的反引号当命令替换、静默吃掉还退 0 —— 所以全程 subprocess 传参数列表。
+**标签为什么延后刷**：commit 每产出一项升级就要 `rewrite_all` 整库重写
+（51MB 重写＋52MB 备份），实测一批 20 场有 18 场带升级 ⇒ 每场白搭三十秒。
+所以逐场走 `--defer-upgrades`（只追加、该刷的记进 `待刷标签.jsonl`），
+一批跑完 `脚本/刷标签.py` 一次落账。
 """
 from __future__ import annotations
 
@@ -49,18 +51,40 @@ def scene_file(no: str) -> Path:
     return Path(hits[0])
 
 
+def blocked_scenes() -> set[int]:
+    """日志里已经判过「疑似整场重复卷」的序号。
+
+    `--next` 要绕开它们：这种场不改队列状态就会一直排在队首，
+    每次跑批都在同一场上撞停，等于后面全堵死。
+    """
+    out = set()
+    if LOG.exists():
+        for line in LOG.read_text(encoding="utf-8").splitlines():
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if r.get("结论") == "被拦-疑似整场重复":
+                out.add(r.get("序号"))
+    return out
+
+
 def next_scenes(n: int) -> list[str]:
     q = json.loads(QFILE.read_text(encoding="utf-8"))
     have = {Path(f).name.split("_")[0] for f in glob.glob(str(V2 / "*.成品.json"))}
+    skip = blocked_scenes()
     out = [str(r["序号"]) for r in q["队列"]
-           if r.get("状态") == "已解析-待入库" and str(r["序号"]) in have]
+           if r.get("状态") == "已解析-待入库" and str(r["序号"]) in have
+           and r["序号"] not in skip]
     return out[:n]
 
 
-def call(path: Path, commit: bool) -> tuple[int, str]:
+def call(path: Path, commit: bool, defer: bool = False) -> tuple[int, str]:
     cmd = [sys.executable, str(ROOT / "脚本/录题入库.py"), str(path)]
     if commit:
         cmd.append("--commit")
+        if defer:
+            cmd.append("--defer-upgrades")
     p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     out = p.stdout + (("\n" + p.stderr) if p.stderr.strip() else "")
     print(out.rstrip(), flush=True)
@@ -102,51 +126,64 @@ def main() -> None:
     ap.add_argument("scenes", nargs="*", help="队列里的序号")
     ap.add_argument("--next", type=int, default=0)
     ap.add_argument("--commit", action="store_true")
+    ap.add_argument("--no-defer", action="store_true",
+                    help="升级不延后，逐场内联刷（每产出一项升级就整库重写一次，慢三十秒/场）")
+    ap.add_argument("--no-flush", action="store_true",
+                    help="批末不把待刷标签落账（留着自己跑 脚本/刷标签.py）")
     a = ap.parse_args()
     nos = [str(x) for x in a.scenes] + (next_scenes(a.next) if a.next else [])
     if not nos:
         sys.exit("既没点名序号也没给 --next")
-    done, blocked = [], []
-    print("%s：%d 场" % ("入库" if a.commit else "干跑（不写库）", len(nos)))
+    defer = a.commit and not a.no_defer
+    done, blocked, secs = [], [], []
+    print("%s%s：%d 场" % ("入库" if a.commit else "干跑（不写库）",
+                          "，升级延后到批末" if defer else "", len(nos)), flush=True)
     for i, no in enumerate(nos, 1):
         path = scene_file(no)
         print("\n[%d/%d] %s" % (i, len(nos), path.name[:64]), flush=True)
         t0 = time.time()
         rec: dict = {"序号": int(no), "场": path.name,
-                     "模式": "commit" if a.commit else "dry"}
-        rc, out = call(path, False)               # ① 先干跑
-        rec.update({"干跑退出码": rc, **{"干跑_" + k: v for k, v in parse(out).items()}})
+                     "模式": "commit" if a.commit else "dry", "defer": defer}
+        rc, out = call(path, a.commit, defer)
+        rec.update(parse(out))
+        rec["秒"] = round(time.time() - t0, 1)
+        secs.append(rec["秒"])
         if rc:
-            rec["结论"] = "干跑不干净"
-            _log(rec)
-            sys.exit("⛔ %s 干跑就不干净，停下来人工看，不把后面的场连着跑" % path.name[:50])
-        if (rec["干跑_merge"] or 0) * 2 >= (rec["干跑_count"] or 1):
-            rec["结论"] = "疑似整场撞车，未入库"
-            _log(rec)
-            blocked.append(no)
-            print("⛔ 判重 %s/%s 题已在库 —— 疑似整场重复卷，**没有入库**，等人工裁队列状态"
-                  % (rec["干跑_merge"], rec["干跑_count"]))
-            continue
-        if a.commit:
-            rc2, out2 = call(path, True)          # ② 账对了才真入库
-            c = parse(out2)
-            rec["入库_"] = c
-            if rc2 or c["added"] is None:
-                rec["结论"] = "commit 失败"
+            if "疑似整场重复卷" in out:
+                rec["结论"] = "被拦-疑似整场重复"
                 _log(rec)
-                sys.exit("⛔ %s 干跑过了但 commit 退回 %s，停" % (path.name[:50], rc2))
+                blocked.append(no)
+                print("⛔ %s 疑似整场重复卷，**没入库**，继续下一场（改队列状态要人来裁）"
+                      % path.name[:40])
+                continue
+            rec["结论"] = "被拦"
+            _log(rec)
+            sys.exit("⛔ %s 被拦（见上一段输出），停下来人工看，不把后面的场连着跑"
+                     % path.name[:50])
+        if a.commit:
+            if rec["added"] is None:
+                rec["结论"] = "commit 没报账"
+                _log(rec)
+                sys.exit("⛔ %s commit 退 0 却没报出 added，收尾不写账，先人来核" % path.name[:50])
             note = "入库 %d 题；判重跳过 %d；升级 %d；相似 %d" % (
-                c["added"], c["skipped"], c["upgraded"], rec["干跑_suspect"])
-            finish(no, c["added"], pending_registry(path), note)
+                rec["added"], rec["skipped"], rec["upgraded"], rec["suspect"])
+            finish(no, rec["added"], pending_registry(path), note)
             rec["结论"] = "done"
             done.append(no)
-            print("✓ " + note)
+            print("✓ %s（%.0f 秒）" % (note, rec["秒"]))
         else:
             rec["结论"] = "干跑通过"
         _log(rec)
-    print("\n小结：%s" % ("入库 %d 场" % len(done) if a.commit else "干跑通过 %d 场" % len(nos)))
+    print("\n小结：%s" % ("入库 %d 场" % len(done) if a.commit
+                          else "干跑通过 %d 场" % len(nos)))
+    if secs:
+        print("每场中位 %.0f 秒（最快 %.0f / 最慢 %.0f）"
+              % (sorted(secs)[len(secs) // 2], min(secs), max(secs)))
     if blocked:
-        print("⚠️ 疑似整场撞车、没入库的序号：%s" % " ".join(blocked))
+        print("⚠️ 疑似整场重复卷、没入库的序号：%s" % " ".join(blocked))
+    if defer and not a.no_flush:
+        print("\n—— 批末落账：待刷标签 ——", flush=True)
+        subprocess.run([sys.executable, str(ROOT / "脚本/刷标签.py")], cwd=ROOT)
 
 
 def _log(rec: dict) -> None:

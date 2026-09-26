@@ -331,6 +331,73 @@ def merge_plan(old: Question, new: Question, *, force: bool = False) -> dict:
     return plan
 
 
+def apply_plan(old: Question, plan: dict, *, point_source: str = "") -> list[str]:
+    r"""把 `merge_plan` 的结果落到**库里那一道**上，返回动了哪些字段。
+
+    `commit` 和批次末的 `apply_labels` 共用这一份，两边不许各写一套落账姿势。
+    """
+    fields = [k for k in plan if k in ("solution", "answer", "points", "difficulty")]
+    if plan.get("answer_prev"):
+        old.meta["answer_prev"] = plan["answer_prev"]
+    if "solution" in plan:
+        old.solution = plan["solution"]
+    if "answer" in plan:
+        old.answer = plan["answer"]
+    if "points" in plan:
+        old.points = plan["points"]
+        # 谁的考点写谁的路数：录入线带的是 llm，界面上手填才是 manual
+        old.meta["point_source"] = point_source or "manual"
+    if "difficulty" in plan:
+        old.meta["difficulty"] = plan["difficulty"]
+        old.meta["stars"] = plan.get("stars", {
+            "简单题": 1, "中档题": 2, "难题": 3}.get(plan["difficulty"], 0))
+    if "solution" in plan or "answer" in plan:
+        # 答案/解析变了，作答括号得跟着重排。**只改标签时不重排**——
+        # 那会把一道没动的存量题的正文也改了，等于绕过"存量不变"那条承诺。
+        norm.normalize(old, norm.ENTRY)
+    # **盖时间戳**。这样 `store.diff()` 能把"有意升级"和
+    # "规则偷偷动了存量"分开报——否则每次升级验收都会红。
+    old.meta["upgraded_at"] = time.strftime("%Y-%m-%d %H:%M")
+    old.meta["upgraded_fields"] = fields
+    return fields
+
+
+def apply_labels(entries: list[dict], *, dry_run: bool = False) -> dict:
+    r"""**一批一次**整库重写：把逐场录入攒下的「考点/难度该刷给库里哪道」一次落账。
+
+    为什么要有这条路：`commit` 只要产出一项升级就得 `rewrite_all` 全库
+    （51MB 重写＋52MB 备份），而实测一批 20 场里 18 场都带升级 ⇒
+    逐场重写等于把全库重抄二十遍，每场白搭三十秒。
+    所以录入线的姿势改成：**逐场只追加**（`update_existing=False`），
+    该刷的标签记进 journal，一批跑完再走这里。
+
+    幂等：内部对每条重跑 `merge_plan`（只升不降），刷过的第二遍不会再改，
+    所以 journal 重复、程序中断都可以直接重跑。
+    `entries` 每条要 `dup_key`（库里那道）和 `points`（手里这道标了什么）。
+    """
+    all_qs = store.load_all()
+    by_key = {x.key: x for x in all_qs}
+    done, missing = [], []
+    for e in entries:
+        old = by_key.get(e.get("dup_key") or "")
+        if old is None:
+            missing.append(e)
+            continue
+        new = Question(key=old.key, type=old.type, stem=old.stem,
+                       points=list(e.get("points") or []))
+        plan = {k: v for k, v in merge_plan(old, new).items()
+                if k in ("points", "difficulty", "stars")}
+        if not plan:
+            continue                       # 库里那道已经不差了（多半上一批刷过）
+        fields = apply_plan(old, plan, point_source=e.get("point_source") or "")
+        done.append({"key": old.key, "fields": fields})
+    rep = {"刷了": len(done), "查无此key": len(missing), "dry_run": dry_run,
+           "明细": done[:20]}
+    if done and not dry_run:
+        store.rewrite_all(all_qs)
+    return rep
+
+
 def dup_fingerprint(q: Question) -> str:
     r"""判重指纹：题干 + 选项**（归一化后）。
 
@@ -704,30 +771,7 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
                 plan = {k: v for k, v in plan.items()
                         if k in ("points", "difficulty", "stars")}
             if update_existing and plan:
-                fields = [k for k in plan
-                          if k in ("solution", "answer", "points", "difficulty")]
-                if plan.get("answer_prev"):
-                    old.meta["answer_prev"] = plan["answer_prev"]
-                if "solution" in plan:
-                    old.solution = plan["solution"]
-                if "answer" in plan:
-                    old.answer = plan["answer"]
-                if "points" in plan:
-                    old.points = plan["points"]
-                    # 谁的考点写谁的路数：录入线带的是 llm，界面上手填才是 manual
-                    old.meta["point_source"] = q.meta.get("point_source") or "manual"
-                if "difficulty" in plan:
-                    old.meta["difficulty"] = plan["difficulty"]
-                    old.meta["stars"] = plan.get("stars", {
-                        "简单题": 1, "中档题": 2, "难题": 3}.get(plan["difficulty"], 0))
-                if "solution" in plan or "answer" in plan:
-                    # 答案/解析变了，作答括号得跟着重排。**只改标签时不重排**——
-                    # 那会把一道没动的存量题的正文也改了，等于绕过"存量不变"那条承诺。
-                    norm.normalize(old, norm.ENTRY)
-                # **盖时间戳**。这样 `store.diff()` 能把"有意升级"和
-                # "规则偷偷动了存量"分开报——否则每次升级验收都会红。
-                old.meta["upgraded_at"] = time.strftime("%Y-%m-%d %H:%M")
-                old.meta["upgraded_fields"] = fields
+                fields = apply_plan(old, plan, point_source=q.meta.get("point_source") or "")
                 upgrades.append({"key": q.key, "dup_key": old.key,
                                  "fields": fields,
                                  "why": plan.get("solution_why", ""),
