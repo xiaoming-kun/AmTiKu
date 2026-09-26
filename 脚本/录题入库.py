@@ -73,6 +73,18 @@ def derive_year(label):
     return int(m.group()) if m else None
 
 
+# 「缺答案/缺解析」是**入库**闸门（`ingest._incomplete_errors`，2026-09-21 新规矩）拦的，
+# 不是解析阶段的失败。无答案卷的成品本来就该空着，把它算进失败会逼执行的人去凑答案
+# ——那是伪造原卷内容。所以按「是不是这道闸拦的」分流，只有**其它**错误才算失败。
+# 精确匹配 `ingest` 的固定句式，不用「缺」+「答案」这种宽松关键词——会误吞真正的错误。
+INC_REASON = "本库规矩：没有答案或没有解析的题目不许入库"
+_INC_REASON = INC_REASON          # 旧名沿用，免得别处已经引用
+
+
+def incomplete(e) -> bool:
+    return INC_REASON in json.dumps(e, ensure_ascii=False)
+
+
 SOLVED_BY = "qoder/agent"      # 与本地求解线的 "qwen/qwen3.8-27b" 区分开
 
 # 用户 2026-09-25 让补的那批答案：模型逐题解出来的，单独一个可审的文件。
@@ -243,19 +255,8 @@ def main(path, do_commit, force=False, skip=()):
     # ⚠️ `spec.after` 也要拦：commit 里还有一道「规范复核不过就不录」的闸门，
     # 只查 errors/problems 会白跑一次 commit 才被拒（实测第 29 场 #19）。
     spec_after = pv["spec"]["after"]
-    # ⚠️ 「缺答案/缺解析」这一类 errors 是**入库**的闸门（ingest._incomplete_errors，
-    # 2026-09-21 新规矩），不是解析阶段的闸门。无答案卷的成品本来就该空着，
-    # 把它算进失败会逼着执行的人去凑答案 —— 那是伪造原卷内容。
-    # 所以这里按「是不是完整性闸拦的」分流：只有**其它**错误才算失败。
-    # 精确匹配 ingest._incomplete_errors 的固定句式，不用宽松关键词
-    # ——「缺」+「答案」这种组合会误吞真正的错误。
-    _INC_REASON = "本库规矩：没有答案或没有解析的题目不许入库"
-
-    def _incomplete(e):
-        return _INC_REASON in json.dumps(e, ensure_ascii=False)
-
-    inc = [e for e in pv["errors"] if _incomplete(e)]
-    hard = [e for e in pv["errors"] if not _incomplete(e)]
+    inc = [e for e in pv["errors"] if incomplete(e)]
+    hard = [e for e in pv["errors"] if not incomplete(e)]
     bad = hard or pv["problems"] or pv["missing_images"] or spec_after
     for k, arr in (("errors", hard), ("problems", pv["problems"]),
                    ("missing_images", pv["missing_images"])):
