@@ -1030,6 +1030,32 @@ def fillin_follows_answer(q: Question) -> bool:
     return True
 
 
+_ARC_CMD = re.compile(r"\\(over|under)paren\s*\{")
+
+
+@rule(name="弧记号改用 overset", scope=ENTRY,
+      why="KaTeX 没有 `\\overparen`／`\\underparen`（那是 amsmath 给 LaTeX 用的），"
+          "录进来端到端渲染就报 `Undefined control sequence: \\overparen`。"
+          "库里已有 44 道写的是 `\\overset{\\frown}{AB}`，同一个意思同一个写法")
+def arc_to_overset(q: Question) -> bool:
+    changed = False
+    for target in ("stem", "answer", "solution"):
+        t = getattr(q, target) or ""
+        if r"\overparen" not in t and r"\underparen" not in t:
+            continue
+        setattr(q, target, _ARC_CMD.sub(
+            lambda mo: (r"\overset" if mo.group(1) == "over" else r"\underset")
+            + r"{\frown}{", t))
+        changed = True
+    for i, o in enumerate(q.options):
+        if r"\overparen" in o.text or r"\underparen" in o.text:
+            o.text = _ARC_CMD.sub(
+                lambda mo: (r"\overset" if mo.group(1) == "over" else r"\underset")
+                + r"{\frown}{", o.text)
+            changed = True
+    return changed
+
+
 @rule(name="方括号参数保护", scope=ENTRY, why="规范 §2.3：不配平的 `[` 会让 TeX 扫到文件末尾")
 def protect_brackets(q: Question) -> bool:
     changed = False
@@ -1603,6 +1629,25 @@ def _selftest() -> int:
     check("iter_slots：配不平的槽位返回 None（读不准就不改）",
           iter_slots(r"x\fillin[$\left[0,1$]。") is None,
           str(iter_slots(r"x\fillin[$\left[0,1$]。")))
+
+    # KaTeX 没有 `\overparen`（那是 amsmath 给 LaTeX 的），库里 44 道用的是
+    # `\overset{\frown}{}`——入库时必须自动换掉，否则层③ 端到端渲染就红
+    _arc = Question(key="t/arc", type="fill_in_blank",
+                    stem=r"弧 $\overparen{AB}$ 所对圆心角为 $\dfrac{\pi}{3}$",
+                    answer=r"$\dfrac{\pi}{3}$", solution="解析无")
+    arc_to_overset(_arc)
+    check("弧记号：\\overparen 换成 \\overset{\\frown}{}",
+          r"\overset{\frown}{AB}" in _arc.stem and "overparen" not in _arc.stem,
+          repr(_arc.stem))
+    _arc2 = Question(key="t/arc2", type="single_choice",
+                     stem=r"$\overparen{AB}$、$\underparen{CD}$ 相等吗",
+                     options=[Option("A", r"$\overparen{AB}$"), Option("B", "是")],
+                     answer="A", solution="解析无")
+    arc_to_overset(_arc2)
+    check("弧记号：选项里也换、underparen 也换",
+          "overparen" not in _arc2.stem and "underparen" not in _arc2.stem
+          and "overparen" not in _arc2.options[0].text,
+          repr(_arc2.stem + _arc2.options[0].text))
     _q = Question(key="t/fill3", type="fill_in_blank", stem="求 $b$。", answer="")
     check("补填空位：没答案就不补（免得造出永远填不上的空位）",
           not ensure_fillin(_q), repr(_q.stem))

@@ -70,6 +70,11 @@ class Figure:
     source: str = ""            # 来源标注（如 "tikz-original"）
 
 
+_LEFT_CMD = re.compile(r"\\left(?![a-zA-Z])")
+_RIGHT_CMD = re.compile(r"\\right(?![a-zA-Z])")
+_MIDDLE_CMD = re.compile(r"\\middle(?![a-zA-Z])")
+
+
 def _math_braces_bad(seg: str) -> bool:
     r"""数学段里的**未转义**花括号配不配对。
 
@@ -258,7 +263,8 @@ class Question:
         # ⚠️ 两个坑：① 不能直接写正则跨全文找 `$\ $`，`$9$\\` 换行 `$7$` 这种
         #    「闭段$ + 反斜杠 + 开段$」会被误判（存量表题误伤 35 道）——必须按 `$`
         #    切段、只看奇数段；② 不能用 `strip() == ""`，`strip()` 不去反斜杠。
-        for _fld, _txt in (("题干", self.stem), ("解析", self.solution),
+        for _fld, _txt in (("题干", self.stem), ("答案", self.answer),
+                           ("解析", self.solution),
                            *(("选项 %s" % o.label, o.text) for o in self.options)):
             for _i, _seg in enumerate((_txt or "").split("$")):
                 if not (_i % 2 and _seg):
@@ -272,6 +278,20 @@ class Question:
                 if _math_braces_bad(_seg):
                     bad.append("%s 的数学段里花括号配不平（KaTeX 会报错）：%r"
                                % (_fld, _seg[:40]))
+                    break
+                # 第七、八种：`\left` 与 `\right` 不成对（跨了两个数学段＝同一个错），
+                # 以及 `\middle` 前面根本没有 `\left`。都是 KaTeX 直接报错的写法。
+                # ⚠️ 只数**个数**，不做嵌套检查：试过写一个按 `{…}` 深度配对的正斜体
+                # 定界符检查器，全库 29,885 道误伤 7,626 道——漏报代价远小于误伤
+                # （误伤会把一整场好题拒收）。嵌套跨组那一族留给层③ 端到端渲染兜。
+                nl, nr = len(_LEFT_CMD.findall(_seg)), len(_RIGHT_CMD.findall(_seg))
+                if nl != nr:
+                    bad.append("%s 的数学段里 \\left 有 %d 个、\\right 有 %d 个，不成对"
+                               % (_fld, nl, nr))
+                    break
+                if _MIDDLE_CMD.search(_seg) and not nl:
+                    bad.append("%s 的数学段里有 \\middle 却没有 \\left（KaTeX 报 "
+                               "\\middle without preceding \\left）" % _fld)
                     break
 
         # 图片：`figures` 是**从正文推导**的（见 latex_ir.parse_question），
@@ -363,6 +383,12 @@ if __name__ == "__main__":
                   answer="A"), []),
         (Question(key="t/2", type="fill_in_blank", stem=r"$1+1=$\fillin{}."), []),
         (Question(key="t/3", type="detailed_answer", stem="已知函数 $f(x)=x^2$。"), []),
+        # ⚠️ 两条**合法**对照：新加的两道数学段闸门必须放过它们
+        # （误伤一道＝一整场好题被拒收，代价比漏报大得多）。
+        (Question(key="t/4", type="detailed_answer",
+                  stem=r"已知 $\left(2x-1\right)>0$，则 $\left|x\right|$ 为"), []),
+        (Question(key="t/5", type="detailed_answer",
+                  stem=r"集合 $A=\left\{x\mid x^{2}-1=0\right\}$ 有 $\{2\}$ 个元素"), []),
         # 错误样例
         (Question(key="e/1", type="single_choice", stem="x",
                   options=[Option("A", "a")], answer="A"),
@@ -378,6 +404,11 @@ if __name__ == "__main__":
         (Question(key="e/5", type="detailed_answer",
                   stem=r"如图 \includegraphics{a1b2c3d4e5f60718.png} 所示"),
          ["figures 里没有它"]),
+        # 第七、八种 KaTeX 杀手（实测入库 8,952 题后层③ 报的就是这两族）
+        (Question(key="e/6", type="detailed_answer", stem=r"求 $P(A\middle| B)$ 的值。"),
+         [r"有 \middle 却没有"]),
+        (Question(key="e/7", type="detailed_answer", stem=r"解得 $\left|x-1=2$。"),
+         ["不成对"]),
     ]
     ok = 0
     for q, want in samples:
