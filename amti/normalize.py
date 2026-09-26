@@ -862,6 +862,60 @@ def answer_for_detailed(q: Question) -> bool:
     return True
 
 
+_PART_HEAD = re.compile(r"^[ \t]*[（(]\s*([1-4])\s*[)）][ \t]*")
+
+
+@rule(name="解答题小问改用 enumerate", scope=ENTRY,
+      why="库里 4385 道解答题的小问都是 `\\begin{enumerate}\\item …`，前端 `qlatex.ts:convertEnumerate` "
+          "与导出 `slidev_handout.convert_enumerate` 按这一种实现（成对的转换函数，只统一一半就会"
+          "预览和导出不一致）。新录的题里另有 847 道写成手写 `(1)(2)`，形制分叉")
+def parts_to_enumerate(q: Question) -> bool:
+    r"""解答题题干里行首的 `(1)(2)…` 分问 → `\\begin{enumerate}\\item …\\end{enumerate}`。
+
+    四道保险，缺一条就不改（宁可留着原样，也不能把题干改坏）：
+
+    1. **已经有 `\\item`／`enumerate` 的不动**——那是目标形制，重复包裹会套娃。
+    2. **数学段里出现过 `(数字)` 的整题不动**。`$f(1)=2$`、`$a_1(1)$` 这类括号
+       和分问编号长得一样；实测全库有 35 道解答题踩这个。
+    3. **编号必须从 1 起严格递增**（1,2 / 1,2,3 / 1,2,3,4），至少两问。
+       题干里引用上一问的「由(1)得」会被行首正则捞到，实测有 29 道长成
+       `121`、`122`、`13`、`1212` 这种序列——这些一律不改。
+    4. 编号必须**在行首**，不在句中（句中出现的多半是「高一（1）班」这类内容）。
+    """
+    if q.type != "detailed_answer":
+        return False
+    st = q.stem or ""
+    if r"\item" in st or r"\begin{enumerate}" in st:
+        return False
+    for i, seg in enumerate(st.split("$")):                 # 保险 2
+        if i % 2 and re.search(r"[（(]\s*[1-9]\s*[)）]", seg):
+            return False
+    lines = st.split("\n")
+    hits = [(n, int(_PART_HEAD.match(l).group(1)))
+            for n, l in enumerate(lines) if _PART_HEAD.match(l)]
+    if len(hits) < 2:                                       # 保险 3
+        return False
+    if [g for _n, g in hits] != list(range(1, len(hits) + 1)):
+        return False
+    head = "\n".join(lines[:hits[0][0]]).rstrip()
+    parts = []
+    for j, (n, _g) in enumerate(hits):
+        end = hits[j + 1][0] if j + 1 < len(hits) else len(lines)
+        body = "\n".join(lines[n:end])
+        body = _PART_HEAD.sub("", body, count=1).strip()    # 去掉手写编号，编号由环境渲染
+        body = re.sub(r"\n{2,}", "\n", body).strip()
+        if not body:
+            return False
+        parts.append(body)
+    new = ("\n".join(["\\begin{enumerate}"] + ["\\item " + t for t in parts]
+                      + ["\\end{enumerate}"]))
+    stem = (head + "\n" if head else "") + new
+    if stem == st:
+        return False
+    q.stem = stem
+    return True
+
+
 @rule(name="解答题不留空作答位", scope=ENTRY,
       why="规范 §2.2：解答题的答案是「见解析」，题干里不该留空的 `\\paren[]`／`\\fillin[]`"
           "——留着渲染器就以为答案能内联，反而不写「答案：见解析」，答案就丢了")
