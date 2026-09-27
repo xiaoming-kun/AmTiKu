@@ -887,6 +887,24 @@ def answer_for_detailed(q: Question) -> bool:
     return True
 
 
+@rule(name="解答题答案栏统一「见解析」", scope=MIGRATE,
+      why="规范 §2.2 定的是解答题答案栏写「见解析」，可存量里有 500 道把结果写进了答案栏"
+          "（实测还有写成「解答题」「C」这种占位/串到选择题栏的）——同一个字段两种口径，"
+          "组卷答案页与界面就没法一视同仁地印。⚠️ **只归一解析栏真有推导的那些**："
+          "答案栏是唯一载体的（解析空／「解析无」）一律不动，那等于把答案删了")
+def unify_detailed_answer(q: Question) -> bool:
+    if q.type != "detailed_answer":
+        return False
+    a = (q.answer or "").strip()
+    if not a or a == "见解析":
+        return False
+    s = (q.solution or "").strip()
+    if not s or s == "解析无":
+        return False                      # 答案栏是唯一载体，动了就是丢信息
+    q.answer = "见解析"
+    return True
+
+
 _PART_HEAD = re.compile(r"^[ \t]*[（(]\s*([1-4])\s*[)）][ \t]*")
 
 
@@ -1648,6 +1666,21 @@ def _selftest() -> int:
           "overparen" not in _arc2.stem and "underparen" not in _arc2.stem
           and "overparen" not in _arc2.options[0].text,
           repr(_arc2.stem + _arc2.options[0].text))
+    # MIGRATE「解答题答案栏统一见解析」：解析栏有推导才收口，答案栏是唯一载体的不动
+    _u1 = Question(key="t/unify1", type="detailed_answer", stem="求 $f(x)$ 的极值。",
+                   answer="(1) $1$；(2) $-1$", solution="对 $f(x)$ 求导得 $f'(x)=2x$，\
+故极大值为 $1$，极小值为 $-1$。")
+    check("MIGRATE 解答题答案栏：解析有推导 → 收口成「见解析」",
+          unify_detailed_answer(_u1) and _u1.answer == "见解析", repr(_u1.answer))
+    _u2 = Question(key="t/unify2", type="detailed_answer", stem="解不等式。",
+                   answer="$x>2$", solution="解析无")
+    check("MIGRATE 解答题答案栏：解析空着 → **不动**（答案栏是唯一载体，动了就是丢信息）",
+          not unify_detailed_answer(_u2) and _u2.answer == "$x>2$", repr(_u2.answer))
+    _u3 = Question(key="t/unify3", type="detailed_answer", stem="见解析样。",
+                   answer="见解析", solution="推导略。")
+    check("MIGRATE 解答题答案栏：已经是「见解析」→ 不报改动",
+          not unify_detailed_answer(_u3), repr(_u3.answer))
+
     _q = Question(key="t/fill3", type="fill_in_blank", stem="求 $b$。", answer="")
     check("补填空位：没答案就不补（免得造出永远填不上的空位）",
           not ensure_fillin(_q), repr(_q.stem))
