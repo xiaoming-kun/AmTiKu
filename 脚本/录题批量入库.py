@@ -94,12 +94,14 @@ def next_scenes(n: int) -> list[str]:
     return out[:n]
 
 
-def call(path: Path, commit: bool, defer: bool = False) -> tuple[int, str]:
+def call(path: Path, commit: bool, defer: bool = False, allow_dup: bool = False) -> tuple[int, str]:
     cmd = [sys.executable, str(ROOT / "脚本/录题入库.py"), str(path)]
     if commit:
         cmd.append("--commit")
         if defer:
             cmd.append("--defer-upgrades")
+        if allow_dup:
+            cmd.append("--allow-mostly-dup")
     p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     out = p.stdout + (("\n" + p.stderr) if p.stderr.strip() else "")
     print(out.rstrip(), flush=True)
@@ -147,6 +149,9 @@ def main() -> None:
                     help="升级不延后，逐场内联刷（每产出一项升级就整库重写一次，慢三十秒/场）")
     ap.add_argument("--no-flush", action="store_true",
                     help="批末不把待刷标签落账（留着自己跑 脚本/刷标签.py）")
+    ap.add_argument("--allow-mostly-dup", action="store_true",
+                    help="放开「判重≥半数＝疑似整场重复卷」这道闸：整场里**库里没有的那几道**"
+                         "值得留下（逐字重复的那批照样被指纹闸吞掉、不会写第二份）")
     a = ap.parse_args()
     nos = [str(x) for x in a.scenes] + (next_scenes(a.next) if a.next else [])
     if not nos:
@@ -161,7 +166,7 @@ def main() -> None:
         t0 = time.time()
         rec: dict = {"序号": int(no), "场": path.name,
                      "模式": "commit" if a.commit else "dry", "defer": defer}
-        rc, out = call(path, a.commit, defer)
+        rc, out = call(path, a.commit, defer, a.allow_mostly_dup)
         rec.update(parse(out))
         rec["秒"] = round(time.time() - t0, 1)
         secs.append(rec["秒"])
