@@ -434,6 +434,8 @@ def cmd_accept(_a) -> int:
     for m in ("schema", "latex_blocks", "render_tex", "images", "dedup",
               "ingest", "generate", "normalize", "chain"):
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
+    # 知识清单（讲义讲解内容源）：书方言展开、节点切分、图宽、考点映射、搜索
+    run("单元自检 · klist", [_s.executable, "-m", "amti.klist"], r"自检：")
     run("题目解析回归", [_s.executable, "-m", "amti.latex_ir", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")
     run("录题自检", [_s.executable, "-m", "amti.record", "--selftest"], r"通过|失败")

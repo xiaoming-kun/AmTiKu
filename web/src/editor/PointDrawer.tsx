@@ -14,7 +14,7 @@ import type { TopicGroup } from '@/editor/useDrawer'
 
 export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
   openTopic, setOpenTopic, openPoint, pointQs, loadingPt, togglePoint,
-  addQuestion, previewQuestion }: {
+  addQuestion, previewQuestion, head }: {
   handoutQs: Q[]
   q: string; setQ: (s: string) => void
   searchResults: Q[] | null
@@ -26,6 +26,9 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
   togglePoint: (pv: string) => void
   addQuestion: (qq: Q) => void
   previewQuestion: (qq: Q) => void
+  /** 面板头里的来源开关「题库 / 知识清单」（由 CanvasEditor 给，
+   *  两个来源共用同一个开关，不各画一份） */
+  head?: React.ReactNode
 }) {
   return (
     // data-qdrawer：右侧的悬空详情靠它认出「这是左栏的点击」——
@@ -34,7 +37,7 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
       {/* ── 面板头 ── */}
       <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
         <LibraryBig size={15} className="shrink-0 text-brand" />
-        <span className="text-[14px] font-semibold tracking-tight">题库</span>
+        {head}
         <span className="ml-auto shrink-0 text-[11px] text-ink-faint">（点题看详情）</span>
       </div>
 

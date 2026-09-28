@@ -159,6 +159,21 @@ body {
 .q-box { margin: 0.6em 0; }
 .q-center, .q-figure, .q-table-env { text-align: center; }
 
+/* ── 知识清单讲解块（`.kl-body`）────────────────────────────────
+   书的表格/盒子与题库的**不是一回事**，这里把口径拉回与导出一致
+   （另一条路径是后端 `slidev_handout._ir_table` / `ir_blocks`）。
+   ① 题库表格用 `white-space:nowrap` + 横向滚动 —— 那是对付"数阵"的，
+      一行十几个数不能折行。书的表格是**文字表**（一格一句话），
+      nowrap 会让它比纸还宽、只能横着拖，而导出那边是 `width:100%` 排好的 ——
+      这就是"预览要横着拖、PDF 是排好的"那种前后端分叉。
+   ② 同理补 width:100%。
+   ③ 书的 notebox 导出时左框描边，预览也要有同一个标记。 */
+.kl-body .q-table { width: 100%; }
+.kl-body .q-table td { white-space: normal; }
+.kl-body .q-quote {
+  border-left: 3px solid #c9a227; padding: 2px 12px; margin: 0.6em 0;
+}
+
 /* 题图 */
 .q-fig { margin: 0.7em 0; text-align: center; }
 .q-img {

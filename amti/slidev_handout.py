@@ -1554,11 +1554,209 @@ def render_canvas_block(b: dict, *, with_answers: bool = False,
     elif kind == "blank":
         inner = f'<div class="p-space"></div>'
 
+    elif kind == "klist":
+        # 知识清单讲解块：内容**存在块里**（插入时把块级 IR 快照存进去），
+        # 所以导出既不依赖书的源文件，也不依赖生成物还在不在。
+        inner = ir_blocks(b.get("ir") or [])
+
     else:  # text
         inner = f'<div class="p-t">\n\n{text}\n\n</div>'
 
     sty = ";".join(outer)
     return f'<div style="{sty}">\n\n{inner}\n\n</div>\n'
+
+
+# ══════════════════════════════════════════════════════════════
+#  块级 IR → 讲义 HTML（知识清单讲解块）
+# ══════════════════════════════════════════════════════════════
+
+# 正文里的 markdown 元字符：前端 `renderBlocks` 是**字面**显示，Slidev 这边要过
+# markdown 解析器 —— 不转义就会「预览是 `a_b`、导出变斜体」这种前后端分叉。
+# `$` 不能转（公式靠它），`|` 不用转（表格一律走 HTML，不进 markdown 表格）。
+_MD_META = re.compile(r"([\\`*_\[\]~])")
+
+
+def _md_text(s: str) -> str:
+    return _MD_META.sub(r"\\\1", s).replace("<", "&lt;").replace(">", "&gt;")
+
+
+def ir_fig(fid: str, width: str = "") -> str:
+    r"""IR 里的图 → `<img>`（先把 PNG 复制进 Slidev 的 `public/img/`）。
+
+    `display:inline-block` 是必须的：Slidev 的 CSS reset 把 `img` 设成 block，
+    而书里大量「…如图 <img> 所示」是**行内图**，会各占一行、把句子劈成两半。
+    """
+    name = Path(str(fid or "")).name
+    if not name:
+        return ""
+    src = AMTIKU / "图片" / name
+    if not src.is_file():
+        log.warning("讲解配图不在库里：%s", name)
+        return ""
+    try:
+        PUBLIC_IMG.mkdir(parents=True, exist_ok=True)
+        dst = PUBLIC_IMG / name
+        if not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
+            _copy_trimmed(src, dst)
+    except Exception:
+        log.warning("讲解配图复制失败：%s", name, exc_info=True)
+        return ""
+    w = str(width or "").strip() or "auto"
+    return (f'<img src="/img/{name}" style="width:{w};max-width:100%;height:auto;'
+            f'display:inline-block;vertical-align:middle" />')
+
+
+def ir_inline(nodes: list) -> str:
+    """行内 IR → markdown 片段。"""
+    out = []
+    for n in nodes or []:
+        t = n.get("t")
+        if t == "s":
+            out.append(_md_text(n.get("s", "")))
+        elif t == "m":
+            tex = n.get("s", "")
+            out.append(("$$%s$$" if n.get("display") else "$%s$") % tex)
+        elif t == "fig":
+            out.append(ir_fig(n.get("id", ""), n.get("width", "")))
+        elif t == "blank":
+            out.append("＿＿＿＿")
+        elif t == "paren":
+            out.append("（　　）")
+        elif t == "br":
+            out.append("\n")
+        elif t == "sp":
+            out.append(" ")
+        elif t == "raw":
+            out.append("`%s`" % str(n.get("s", "")).replace("`", ""))
+    return "".join(out)
+
+
+def _ir_indent(s: str, pad: str) -> str:
+    """整段缩进（空行不缩）。
+
+    列表项里的**块级**内容（盒子、表格）必须缩进到该项的内容缩进之后，
+    否则 markdown 会认为列表已经结束 —— 那时表格会被踢到列表外面，
+    排版就散了。
+    """
+    return "\n".join((pad + ln) if ln.strip() else ln for ln in s.split("\n"))
+
+
+def _ir_list(b: dict, depth: int = 0) -> str:
+    r"""列表 → **markdown 原生列表**（不用 HTML）。
+
+    为什么不用 `<ul><li>`：HTML 块里的 `$公式$` 解析不了，而书里的列表项
+    大量是公式（诱导公式那节 110 项全是）。markdown 列表还天然支持缩进嵌套。
+    缩进用 4 空格：`- ` 要 ≥2、`10. ` 要 4，取 4 两种都安全。
+    """
+    pad = "    " * depth
+    ordered = bool(b.get("ordered"))
+    lines: list[str] = []
+    for i, item in enumerate(b.get("items") or [], 1):
+        head: list[str] = []
+        subs: list[str] = []
+        for x in item or []:
+            t = x.get("t")
+            if t == "p":
+                head.append(ir_inline(x.get("in")))
+            elif t == "math":
+                head.append("$$%s$$" % x.get("tex", ""))
+            elif t == "box":
+                # ⚠️ 盒子里的东西**不能拍平成一行** —— 书的列表项里常有
+                # `minipage`/`center` 盒子，盒子里是表格（实测：常见公式手册
+                # 那几节的对照表）。拍平就是把整张表丢掉，而且丢得没声音。
+                # 正确的做法是当**子块**缩进着跟在列表项后面。
+                subs.append(_ir_indent(ir_blocks(x.get("blocks")), pad + "    "))
+            elif t == "list":
+                subs.append(_ir_list(x, depth + 1))
+            elif t == "table":
+                subs.append(_ir_indent(_ir_table(x), pad + "    "))
+            elif t == "fig":
+                head.append(ir_fig(x.get("id", ""), x.get("width", "")))
+        text = " ".join(s for s in head if s).strip()
+        marker = ("%d. " % i) if ordered else "- "
+        # ① 项文本里的换行要按**内容缩进**补上。不补的话续行掉到第 0 列，
+        #    markdown 把它当"懒惰续行"收下，紧接着的缩进 HTML 块（表格）
+        #    就把它顶爆 —— 实测 Slidev 直接解析报错、整份讲义导不出来。
+        indent = pad + " " * len(marker)
+        lines.append(("%s%s%s" % (pad, marker, text)).replace("\n", "\n" + indent))
+        # ② 子块（盒子里的表、嵌套表）前面**必须空一行**：不空行的话
+        #    `<table>` 会被当成上一段的一部分，后面的行全被转义进 <pre><code>。
+        for s in subs:
+            if s.strip():
+                lines.append("")
+                lines.append(s)
+    return "\n".join(lines)
+
+
+def _ir_table(b: dict) -> str:
+    r"""表格 → 裸 HTML table。
+
+    不用 markdown 管道表格：书里的表格有**嵌套表**（格子里再套一个表）、
+    **格子里放图**（示意图那一列）、**格子里的多段文字**，管道表格表达不了。
+
+    ⚠️ 每个单元格必须多行 + 空行包裹，否则格子里 `$公式$` 不解析
+    （与 `_render_table` 同一个坑）。
+    """
+    rows = b.get("rows") or []
+    parts = ['<table style="border-collapse:collapse;width:100%;line-height:1.6;'
+             'border-top:1.5px solid #333;border-bottom:1.5px solid #333">', ""]
+    for ri, row in enumerate(rows):
+        head = ri == 0                      # 书的表头都在第一行（\thead 拆壳后）
+        parts.append("<tr>")
+        for c in row or []:
+            try:
+                span = max(1, int(c.get("span") or 1))
+            except (TypeError, ValueError):
+                span = 1
+            inner = (ir_blocks(c.get("blocks")) if "blocks" in c
+                     else ir_inline(c.get("in")))
+            extra = "background:#f3efe3;font-weight:700;" if head else ""
+            parts.append('<td%s style="padding:4px 8px;vertical-align:middle;'
+                         'text-align:center;%s">\n\n%s\n\n</td>'
+                         % (' colspan="%d"' % span if span > 1 else "", extra, inner))
+        parts.append("</tr>")
+        parts.append("")
+    parts.append("</table>")
+    return "\n".join(parts)
+
+
+def ir_blocks(blocks: list) -> str:
+    r"""块级 IR → 讲义 HTML/markdown。
+
+    **必须与前端 `web/src/lib/render.tsx::renderBlocks` 同源同形** ——
+    讲解块在画布上是它画、导出 PDF 是这里画；两边一旦分叉，
+    就是「编辑器看着对、PDF 不一样」这个反复踩的坑。
+
+    几条与前端对齐的硬规矩：
+      · 段落/公式各包一层 `<div class="p-t">`，**前后留空行** ——
+        不留空行 markdown 不解析里面的 `$公式$`（实测踩过）。
+      · 表格裸 HTML（见 `_ir_table`），列表走 markdown 原生列表（见 `_ir_list`）。
+      · 行内图 `display:inline-block`，且图先复制进 `slidev/public/img/`。
+      · `raw` 块（没渲染出来的 TikZ）导出这边画不了，跳过 ——
+        生成物自检保证正常情况下不会剩下（`stats.unknown_macros == 0`）。
+    """
+    parts: list[str] = []
+    for b in blocks or []:
+        t = b.get("t")
+        if t == "p":
+            parts.append('<div class="p-t">\n\n%s\n\n</div>' % ir_inline(b.get("in")))
+        elif t == "math":
+            parts.append('<div class="p-t">\n\n$$%s$$\n\n</div>' % b.get("tex", ""))
+        elif t == "list":
+            parts.append(_ir_list(b))
+        elif t == "table":
+            parts.append(_ir_table(b))
+        elif t == "box":
+            inner = ir_blocks(b.get("blocks"))
+            if b.get("kind") == "quote":            # 书的 notebox
+                parts.append('<div style="border-left:3px solid #c9a227;'
+                             'padding:2px 12px;margin:6px 0">\n\n%s\n\n</div>' % inner)
+            else:                                    # center / minipage / multicols
+                parts.append(inner)
+        elif t == "fig":
+            parts.append('<div style="text-align:center;margin:6px 0">\n\n%s\n\n</div>'
+                         % ir_fig(b.get("id", ""), b.get("width", "")))
+    return "\n\n".join(x for x in parts if x.strip())
 
 
 def _render_table(b: dict, fs: float) -> str:

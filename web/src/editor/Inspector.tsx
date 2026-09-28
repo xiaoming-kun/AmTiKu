@@ -8,7 +8,7 @@
  */
 import { ArrowUpToLine, FileText, Minus, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
 import {
-  blockFontSize, CB_TYPES, EMOJIS, DEFAULT_FS, DEFAULT_LH,
+  blockFontSize, BLOCK_LABEL, EMOJIS, DEFAULT_FS, DEFAULT_LH,
   RESIZE_SLACK_PCT, type CBlock,
 } from '@/editor/shared'
 
@@ -78,7 +78,7 @@ export default function Inspector({ selBlock, patch, remove, bringToFront,
               <div className="flex items-center gap-2">
                 <span className="rounded-md bg-brand-soft px-1.5 py-[2px] text-[11px] font-medium
                                  text-brand-ink">
-                  {CB_TYPES.find((k) => k.v === selBlock.type)?.label || selBlock.type}
+                  {BLOCK_LABEL[selBlock.type] || selBlock.type}
                 </span>
                 <button onClick={() => remove(selBlock.id)}
                   className="press ml-auto inline-flex items-center gap-1 rounded-lg px-1.5 py-1
@@ -192,6 +192,14 @@ export default function Inspector({ selBlock, patch, remove, bringToFront,
                       <Minus size={11} />行
                     </button>
                   </div>
+                </div>
+              ) : selBlock.type === 'klist' ? (
+                // 讲解块的内容**不是手打的**，是知识清单里搬过来的快照 ——
+                // 给个编辑框只会让人以为改了能生效（改了导出也不变）。
+                <div className="space-y-1.5 text-[11.5px] leading-snug text-ink-faint">
+                  <div className="text-ink-soft">「{selBlock.text || '知识清单'}」整段讲解</div>
+                  <div>图 / 表 / 公式一起搬过来的，在画布上只能整体移动缩放。</div>
+                  <div>要改内容得回知识清单里改，重新生成后再插一次。</div>
                 </div>
               ) : selBlock.type !== 'question' && selBlock.type !== 'blank' && (
                 <textarea value={selBlock.text || ''} rows={3}

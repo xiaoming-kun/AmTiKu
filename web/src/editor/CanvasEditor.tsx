@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FileText, GripHorizontal, Plus } from 'lucide-react'
 import type { Q } from '@/lib/types'
+import type { Block } from '@/lib/render'
 import { api, reportErr } from '@/lib/api'
 import { Detail } from '@/app/Detail'
 import { CloseBtn } from '@/app/ui'
@@ -16,6 +17,7 @@ import { useDrawer } from '@/editor/useDrawer'
 import { useCanvas } from '@/editor/useCanvas'
 import { useHandoutIo } from '@/editor/useHandoutIo'
 import PointDrawer from '@/editor/PointDrawer'
+import KlistDrawer from '@/editor/KlistDrawer'
 import CanvasStage from '@/editor/CanvasStage'
 import Inspector from '@/editor/Inspector'
 import { RATIO_BOX, DEFAULT_TITLE_FONT, DEFAULT_BODY_FONT } from '@/editor/shared'
@@ -42,6 +44,8 @@ export default function CanvasEditor({ handoutQs, facets }: {
   /** 面板被拖到哪儿了（px，相对编辑器内容区）。null = 还停在默认位（上方居中）。
    *  拖动后**记住**：换一道题看时不会又跳回默认位。 */
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  /** 左栏内容源：题库的题 / 知识清单的讲解（同一栏切换） */
+  const [src, setSrc] = useState<'bank' | 'klist'>('bank')
   // 左栏（考点树 / 搜索 / 懒加载）→ useDrawer
   const {
     q, setQ, searchResults, topics, openTopic, setOpenTopic,
@@ -146,17 +150,41 @@ export default function CanvasEditor({ handoutQs, facets }: {
 
   const selBlock = blocks.find((b) => b.id === sel) || null
 
+  /** 左栏来源：题库 / 知识清单。两个来源**共用同一个开关** ——
+   *  各画一份的话，改样式就要记得改两处（这个项目栽过的 DUP 坑）。 */
+  const switchSrc = (
+    <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5">
+      {([['bank', '题库'], ['klist', '知识清单']] as const).map(([v, label]) => (
+        <button key={v} onClick={() => setSrc(v)}
+          className={`press rounded-[6px] px-2 py-[3px] text-[11.5px] font-medium transition-colors ${
+            src === v ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,.06)]'
+                      : 'text-ink-faint hover:text-ink-soft'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  /** 知识清单的一节 → 画布上的一整块讲解（块级 IR 快照一并存下去）。 */
+  const addKlist = (n: { id: string; title: string; blocks: Block[] }) =>
+    addBlock({ type: 'klist', text: n.title, nid: n.id, ir: n.blocks })
+
   return (
     // 三栏骨架：左右是 bg-surface 的面板，中间画布区 bg-bg 暗一档，
     // 画布上的白色纸张才浮得起来（分割一律用 border-border）。
     <div ref={hostRef} className="relative flex h-full min-h-0 bg-bg">
-      <PointDrawer
-        handoutQs={handoutQs}
-        q={q} setQ={setQ} searchResults={searchResults} topics={topics}
-        openTopic={openTopic} setOpenTopic={setOpenTopic} openPoint={openPoint}
-        pointQs={pointQs} loadingPt={loadingPt} togglePoint={togglePoint}
-        addQuestion={addQuestion} previewQuestion={setPreview}
-      />
+      {src === 'klist' ? (
+        <KlistDrawer head={switchSrc} onAdd={addKlist} />
+      ) : (
+        <PointDrawer
+          head={switchSrc}
+          handoutQs={handoutQs}
+          q={q} setQ={setQ} searchResults={searchResults} topics={topics}
+          openTopic={openTopic} setOpenTopic={setOpenTopic} openPoint={openPoint}
+          pointQs={pointQs} loadingPt={loadingPt} togglePoint={togglePoint}
+          addQuestion={addQuestion} previewQuestion={setPreview}
+        />
+      )}
       <CanvasStage
         title={title} setTitle={setTitle} name={name} setName={setName}
         titleFont={titleFont} setTitleFont={setTitleFont}

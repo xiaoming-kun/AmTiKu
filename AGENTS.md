@@ -15,7 +15,8 @@
 ```bash
 python3 amti.py accept          # 四层：单元自检 / 规范审查 / 端到端渲染 / 快照——必须全绿
 python3 测试/接口测试.py         # 接口回归 18 项
-python3 测试/讲义测试.py         # 讲义导出与出处标签 18 项
+python3 测试/讲义测试.py         # 讲义导出与出处标签 19 项
+python3 测试/知识清单测试.py     # 知识清单：解析/接口/前后端一致/md 过得了 Slidev 解析器 17 项
 cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run build
 ```
 
@@ -31,6 +32,7 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | `amti/images.py` | 图片入库 | 唯一处理图片处（内容寻址命名） |
 | `amti/ingest.py` | 录入 | 承诺**存量题目一个字不变**；不要拿它做批量修改 |
 | `amti/chain.py` | 知识链路（`知识链路.json`） | 考点之间的关系只此一处解析；别处再写一份 → 环路/悬空引用没人拦 |
+| `amti/klist.py` | 知识清单（`讲义/知识清单.json`） | 讲义讲解内容源。书方言展开、TikZ 预渲染、考点映射只此一处；前端/Slidev 都只消费展开后的块级 IR，谁再写一份解析 → 必然分叉 |
 
 > 新增功能前先问：这件事是不是已经有唯一入口了？有 → 改那个模块；没有 → 才新建。
 

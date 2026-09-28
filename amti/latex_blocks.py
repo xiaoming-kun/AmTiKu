@@ -100,6 +100,7 @@ _DROP_ARG = _DROP_ARG | {"phantom", "hphantom", "vphantom", "smash", "rlap",
                          "llap", "mathstrut", "strut", "vspace", "hspace"}
 # 无参数、直接丢
 _DROP_BARE = {"noindent", "centering", "small", "large", "Large", "LARGE", "huge",
+              "Huge", "footnotesize", "scriptsize",
               "normalsize", "tiny", "bfseries", "itshape", "rmfamily", "sffamily",
               "ttfamily", "rm", "bf", "it", "tt", "newline", "par", "hline",
               "toprule", "midrule", "bottomrule", "hdashline", "left", "right",
@@ -659,14 +660,23 @@ def _take_minipage_args(body: str):
 
 
 def _cell_has_table(cell: str) -> bool:
-    r"""单元格里有没有**嵌套的表格**。
+    r"""单元格里有没有**只能按块解析的东西**。
 
     老卷子常拿 `tabular` 套 `tabular` 做排版：外面两列放两张数表、
     表头单元格里再套一个两行的小表。`inline()` 认不出嵌套的
     `\begin{tabular}`，会把它们当普通文字漏出去
     （实测：2026 北京卷#21、2016 天津卷（文）#16）。
+
+    同一类问题还有三种：格子里画 TikZ（"示意图"那一列）、格子里放
+    `align` 这种行间公式环境、格子里用 `minipage`/`center` 做左右分栏。
+    `inline()` 只认行内数学，环境名会连同里面的 `\node` `\draw`
+    一起漏成 raw 宏。所以这里一并判掉。
+
+    **不判** `MATH_ONLY_ENVS`（`array`/`cases`/…）——它们本来就写在
+    `$…$` 里，`inline()` 的数学扫描会整段收走，按块解析反而拆坏了。
     """
-    return bool(re.search(r"\\begin\{(?:%s)\}" % "|".join(TABLE_ENVS), cell))
+    return bool(re.search(r"\\begin\{(?:%s)\}" % "|".join(
+        TABLE_ENVS | RAW_ENVS | DISPLAY_MATH_ENVS | BOX_ENVS), cell))
 
 
 def _make_table(env: str, src: str, bs: int, be: int) -> dict:
@@ -784,9 +794,9 @@ def parse_blocks(src: str) -> list[dict]:
 
 def blocks_to_text(blocks: list[dict]) -> str:
     """IR → 纯文本（搜索/摘要用）。"""
-    out: list[str] = []
 
-    def walk(bs: list[dict]) -> None:
+    def walk(bs: list[dict]) -> list[str]:
+        out: list[str] = []
         for b in bs:
             t = b["t"]
             if t == "p":
@@ -795,19 +805,24 @@ def blocks_to_text(blocks: list[dict]) -> str:
                 out.append(b["tex"])
             elif t == "list":
                 for it in b["items"]:
-                    walk(it)
+                    out.extend(walk(it))
             elif t == "table":
                 for row in b["rows"]:
-                    out.append(" ".join(inlines_to_text(c["in"]) for c in row))
+                    cells = []
+                    for c in row:
+                        # 格子可能是**整格按块解析**的（格内套小表、画图、
+                        # 放行间公式），那种格子没有 "in" 键。以前这里写死
+                        # `c["in"]`，碰到就 KeyError 整个摘要崩掉。
+                        cells.append(" ".join(walk(c["blocks"])) if "blocks" in c
+                                     else inlines_to_text(c.get("in", [])))
+                    out.append(" ".join(cells))
             elif t == "box":
-                walk(b["blocks"])
-            elif t == "fig":
-                pass
+                out.extend(walk(b["blocks"]))
             elif t == "raw":
                 out.append(b.get("env") or b.get("tex", ""))
+        return out
 
-    walk(blocks)
-    return re.sub(r"\s+", " ", " ".join(out)).strip()
+    return re.sub(r"\s+", " ", " ".join(walk(blocks))).strip()
 
 
 def inlines_to_text(nodes: list[dict]) -> str:

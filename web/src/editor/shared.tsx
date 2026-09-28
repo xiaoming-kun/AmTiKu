@@ -8,6 +8,8 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, Plus } from 'lucide-react'
 import katex from 'katex'
 import { transformStem, transformOption } from '@/lib/qlatex'
+import { renderBlocks } from '@/lib/render'
+import type { Block } from '@/lib/render'
 import type { Q } from '@/lib/types'
 
 /** 轻量 LaTeX 渲染：把 $行内$ 与 $$独立$$ 转成 KaTeX。 */
@@ -192,7 +194,7 @@ export function RichText({ text, className = '' }: { text: string; className?: s
 
 export type CBlock = {
   id: string
-  type: string        // chapter|section|point|text|formula|question|blank
+  type: string        // chapter|section|point|text|formula|table|emoji|blank|question|klist
   text?: string
   key?: string
   x: number; y: number; w: number; h: number
@@ -202,6 +204,13 @@ export type CBlock = {
   headers?: string[]   // 表格：表头
   rows?: string[][]    // 表格：数据行
   showSource?: boolean // 高考题是否标出处（不设则跟讲义级开关）
+  /** 知识清单讲解块：来源节点 id，以及**块级 IR 快照**。
+   *
+   *  快照（而不是运行时按 id 去查）是刻意的：讲义是**成品**，不该因为
+   *  书被重新生成、节点被改名就变样；导出也因此不依赖书在不在。
+   *  `text` 存节点标题，属性栏显示用。 */
+  nid?: string
+  ir?: Block[]
 }
 
 /* ══ 调参常量 ══════════════════════════════════════
@@ -232,6 +241,17 @@ export const CB_TYPES: { v: string; label: string; hint: string }[] = [
   { v: 'emoji', label: '表情', hint: '大号表情标记（难度/易错）' },
   { v: 'blank', label: '留白', hint: '占位空白区' },
 ]
+
+/** 块类型 → 中文名（选中时显示在属性栏）。
+ *
+ *  `CB_TYPES` 是「工具栏上能手动加的块」；`klist`（知识清单讲解块）只能从
+ *  左栏插入，放进菜单里就成了"能加一个空讲解"这种没意义的操作。
+ *  但它被选中时仍要有个人话名字，所以标签在这里合一次。
+ */
+export const BLOCK_LABEL: Record<string, string> = {
+  ...Object.fromEntries(CB_TYPES.map((k) => [k.v, k.label])),
+  klist: '知识清单',
+}
 
 /** 可选字体（标题 / 正文）。
  *
@@ -537,6 +557,20 @@ export function CBlockView({ b, qmap, fs, withAnswers = false }:
             ))}
           </div>
         )}
+      </div>
+    )
+  }
+  if (b.type === 'klist') {
+    // 知识清单讲解块：**整段讲解一个块**（图/表/公式一起搬过来）。
+    // 渲染直接交给题库题目用的同一个 IR 渲染器 —— 前端没有第二套解析。
+    // `kl-body`：把书里那种"文字表"的排版口径拉回与导出一致，见 index.css。
+    return (
+      <div className="kl-body" style={{ margin: 0, fontSize: fs * 0.92, lineHeight: lh }}>
+        {b.ir?.length
+          ? renderBlocks(b.ir)
+          : <span className="text-[11px] text-ink-faint">
+              讲解「{b.nid || '?'}」没有正文
+            </span>}
       </div>
     )
   }

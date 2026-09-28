@@ -192,12 +192,17 @@ export function useCanvas(ratio: string) {
   const addBlock = (b: Partial<CBlock>) => {
     const nb: CBlock = {
       id: uid(), type: b.type || 'text', text: b.text || '',
-      key: b.key, x: b.x ?? 6, y: b.y ?? nextTop(), w: b.w ?? 40, h: b.h ?? 0,
+      key: b.key, nid: b.nid, ir: b.ir,
+      x: b.x ?? 6, y: b.y ?? nextTop(), w: b.w ?? 40, h: b.h ?? 0,
       z: blocks.length, fontSize: b.fontSize,
     }
     // 题目：默认满宽靠左 —— 题目是一整块内容，
     // 给 40% 宽会让选项挤成多行、字号也变小（用户截图反馈）
     if (nb.type === 'question') {
+      nb.x = DEFAULT_Q_X; nb.w = DEFAULT_Q_W
+    }
+    // 知识清单讲解块：和题目一样是**整段内容**（自带段落/图/表），也要满宽
+    if (nb.type === 'klist') {
       nb.x = DEFAULT_Q_X; nb.w = DEFAULT_Q_W
     }
     // 表情：默认小尺寸，方便放到题目旁边

@@ -1072,6 +1072,82 @@ def chain_node(pid: str) -> dict:
     return d
 
 
+@app.get("/api/klist/stats")
+def klist_stats() -> dict:
+    """知识清单现状：生成物在不在、过不过期、映射体检。"""
+    from amti import klist
+    st = klist.load()
+    if not st:
+        return {"ok": False, "error": "还没有生成物：%s" % klist.STORE.name}
+    return {"ok": True, "stats": st.get("stats", {}),
+            "built_at": st.get("built_at", ""), "book_dir": st.get("book_dir", ""),
+            "files": st.get("files", []), "stale": klist.stale(),
+            "map": klist.map_report()}
+
+
+@app.get("/api/klist/tree")
+def klist_tree() -> dict:
+    """书的目录树（不带正文 —— 全量正文 1MB，一次拉完是浪费）。"""
+    from amti import klist
+    return {"tree": klist.tree(), "stats": klist.load().get("stats", {})}
+
+
+@app.get("/api/klist/search")
+def klist_search(q: str = "", limit: Annotated[int, Query(ge=1, le=200)] = 60) -> dict:
+    """按标题 + **正文原话**找节点。"""
+    from amti import klist
+    return {"items": klist.search(q, limit=limit)}
+
+
+@app.get("/api/klist/by-point/{pid:path}")
+def klist_by_point(pid: str) -> dict:
+    """某个考点对应的讲解节点（人工核定的映射）。"""
+    from amti import klist
+    ids = klist.load_map().get(pid) or []
+    out = []
+    for nid in ids:
+        n = klist.get_node(nid)
+        if n:
+            out.append({"id": n["id"], "title": n["title"], "chars": n["chars"],
+                        "n_fig": n["n_fig"], "n_table": n["n_table"]})
+    return {"point": pid, "nodes": out}
+
+
+@app.get("/api/klist/node/{nid:path}")
+def klist_node(nid: str) -> dict:
+    """一个讲解节点：块级 IR（前端直接画，不再自己解析 LaTeX）。"""
+    from amti import klist
+    n = klist.get_node(nid)
+    if not n:
+        raise HTTPException(404, "知识清单里没有这个节点：%s" % nid)
+    return n
+
+
+class KlistBuildBody(BaseModel):
+    figs: bool = False          # 连图一起重画（要书 + TeX Live，很慢）
+
+
+@app.post("/api/klist/build")
+def klist_build(body: KlistBuildBody) -> dict:
+    """重新解析书（**要书在**）。
+
+    ⚠️ 不走导出串行锁：它读的是 `待解/知识清单/*.tex`，不碰题库，
+    与导出互不相干；但**图和生成物**要一起更新，所以先画图再解析。
+    """
+    from amti import klist
+    if not klist.book_files():
+        raise HTTPException(400, "找不到书：%s（见 数据/知识清单位置.txt）"
+                            % klist.book_dir())
+    r: dict = {"ok": True}
+    if body.figs:
+        f = klist.render_figures()
+        r["figs"] = {k: f[k] for k in ("total", "todo", "ok", "fail")}
+        if f["fail"]:
+            r["errors"] = f["errors"][:5]
+    r.update(klist.build(verbose=False))
+    return r
+
+
 class GenerateBody(BaseModel):
     """组卷。`pool` 是筛选条件，和 `/api/questions` 一致。
 
