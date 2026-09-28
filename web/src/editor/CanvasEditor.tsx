@@ -22,6 +22,16 @@ import CanvasStage from '@/editor/CanvasStage'
 import Inspector from '@/editor/Inspector'
 import { RATIO_BOX, DEFAULT_TITLE_FONT, DEFAULT_BODY_FONT } from '@/editor/shared'
 
+/** 知识清单来源（讲解拖进画布）**暂时隐藏** —— 用户 2026-09-28 看过之后：
+ *  「不实用」。放出来把这里改成 `true` 即可，代码与接口都还在原位：
+ *  `KlistDrawer.tsx` / `lib/klist.ts` / `amti/klist.py` / `/api/klist/*`。
+ *
+ *  为什么用开关而不是删掉：删了要恢复就得 revert 整个提交；后端那套解析
+ *  管线（252 节 + 208 张图 + 152 条考点映射）跟界面是两件事，留着不占
+ *  运行时开销（路由里的 `from amti import klist` 是**函数内**导入，
+ *  不进启动路径），17 项测试也继续守着那份生成物。 */
+const KLIST_UI: boolean = false
+
 /** 讲义编辑器。
  *
  *  `facets` 只透传给右侧的题目详情（考点树一样要能展开，
@@ -152,7 +162,7 @@ export default function CanvasEditor({ handoutQs, facets }: {
 
   /** 左栏来源：题库 / 知识清单。两个来源**共用同一个开关** ——
    *  各画一份的话，改样式就要记得改两处（这个项目栽过的 DUP 坑）。 */
-  const switchSrc = (
+  const switchSrc = KLIST_UI ? (
     <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5">
       {([['bank', '题库'], ['klist', '知识清单']] as const).map(([v, label]) => (
         <button key={v} onClick={() => setSrc(v)}
@@ -163,7 +173,7 @@ export default function CanvasEditor({ handoutQs, facets }: {
         </button>
       ))}
     </div>
-  )
+  ) : null
 
   /** 知识清单的一节 → 画布上的一整块讲解（块级 IR 快照一并存下去）。 */
   const addKlist = (n: { id: string; title: string; blocks: Block[] }) =>
@@ -173,7 +183,7 @@ export default function CanvasEditor({ handoutQs, facets }: {
     // 三栏骨架：左右是 bg-surface 的面板，中间画布区 bg-bg 暗一档，
     // 画布上的白色纸张才浮得起来（分割一律用 border-border）。
     <div ref={hostRef} className="relative flex h-full min-h-0 bg-bg">
-      {src === 'klist' ? (
+      {KLIST_UI && src === 'klist' ? (
         <KlistDrawer head={switchSrc} onAdd={addKlist} />
       ) : (
         <PointDrawer

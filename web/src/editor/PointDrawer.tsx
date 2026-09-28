@@ -27,7 +27,9 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
   addQuestion: (qq: Q) => void
   previewQuestion: (qq: Q) => void
   /** 面板头里的来源开关「题库 / 知识清单」（由 CanvasEditor 给，
-   *  两个来源共用同一个开关，不各画一份） */
+   *  两个来源共用同一个开关，不各画一份）。
+   *  现在知识清单来源是隐藏的（`CanvasEditor.KLIST_UI`），所以这里是 null ——
+   *  没有开关时退回原来的「题库」标题，界面与加这个功能之前一模一样。 */
   head?: React.ReactNode
 }) {
   return (
@@ -37,7 +39,7 @@ export default function PointDrawer({ handoutQs, q, setQ, searchResults, topics,
       {/* ── 面板头 ── */}
       <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
         <LibraryBig size={15} className="shrink-0 text-brand" />
-        {head}
+        {head || <span className="text-[14px] font-semibold tracking-tight">题库</span>}
         <span className="ml-auto shrink-0 text-[11px] text-ink-faint">（点题看详情）</span>
       </div>
 
