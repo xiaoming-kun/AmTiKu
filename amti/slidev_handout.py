@@ -391,14 +391,51 @@ def convert_tabular(text: str) -> str:
     return text
 
 
+# 作答位 `\paren[` / `\fillin[`。**收尾不许用 `\[[^\]]*\]` 这种正则**——
+# `\sqrt[3]{\frac{3}{2}}` 的 `[3]`、区间 `$[0,1]$` 的第一个 `]` 都会让它提前收尾，
+# 残尾（`$]`、`{\frac{3}{2}}$]`）就漏进产物：预览里红一条乱码、讲义里印源码。
+# 收尾统一走 `latex_ir.bracket_arg`（配对扫描，与读答案用的是同一把尺子）。
+_SLOT_ARG_RE = re.compile(r"\\(paren|fillin)(?![a-zA-Z])\s*\[")
+
+
+def _slot_args(text: str):
+    r"""产出 `(起, 止, 命令, 槽内容)`；`止` 是右括号**之后**的下标。"""
+    from . import latex_ir as _li
+    i = 0
+    while True:
+        m = _SLOT_ARG_RE.search(text, i)
+        if not m:
+            return
+        body, nxt = _li.bracket_arg(text, m.end() - 1)
+        if body is None:                   # 配不平：原样留着，交给下面的兜底分支
+            i = m.end()
+            continue
+        yield m.start(), nxt, m.group(1), body
+        i = nxt
+
+
+def _replace_slots(text: str, on_paren, on_fillin) -> str:
+    out: list[str] = []
+    i = 0
+    for st, en, cmd, body in _slot_args(text):
+        out.append(text[i:st])
+        out.append(on_paren(body) if cmd == "paren" else on_fillin(body))
+        i = en
+    out.append(text[i:])
+    return "".join(out)
+
+
 def strip_answers(text: str) -> str:
     r"""\paren[A] → （　　）；\fillin[答案] → ＿＿＿＿"""
-    text = re.sub(r"\\paren\s*\[[^\]]*\]", "（　　）", text)
-    text = re.sub(r"\\fillin\s*\[[^\]]*\]", "＿＿＿＿", text)
+    text = _replace_slots(text, lambda _a: "（　　）", lambda _a: "＿＿＿＿")
     # \\fillin{{}} / \\fillin{{答案}} —— 花括号变体要一起吃掉，
     # 否则留下孤立 {{}}（实测 708 道题受影响）
     text = re.sub(r"\\fillin\s*\{[^}}]*\}", "＿＿＿＿", text)
-    text = re.sub(r"\\fillin\b", "＿＿＿＿", text)
+    # 光杆 `\fillin`：判据用 `(?![a-zA-Z])`，**不能用 `\b`**——
+    # Python 的 `\b` 是 Unicode 词边界，`\fillin后` 里 `n` 与 `后` 之间**没有**边界，
+    # 于是后端不换、前端（JS 的 `\b` 只认 ASCII）换 ⇒ 预览有空位、讲义却印字面
+    # `\fillin`。全项目其它地方（`latex_ir.FILLIN_CMD_RE`）一直都是这个判据。
+    text = re.sub(r"\\fillin(?![a-zA-Z])", "＿＿＿＿", text)
     # 兜底：紧跟在空位后面的孤立 {} （数据里自带的多余花括号）
     text = re.sub(r"＿＿＿＿\s*\{\}", "＿＿＿＿", text)
     return text
@@ -451,15 +488,16 @@ def show_answers(text: str) -> str:
 
     \paren[A] → （ $\textcolor{…}{\text{A}}$ ）    \fillin[答案] → 红色的答案
     """
-    text = re.sub(r"\\paren\s*\[([^\]]*)\]",
-                  lambda m: "（ %s ）" % red_answer(m.group(1)), text)
-    text = re.sub(r"\\fillin\s*\[([^\]]*)\]",
-                  lambda m: red_answer(m.group(1)), text)
+    text = _replace_slots(text,
+                          lambda a: "（ %s ）" % red_answer(a),
+                          red_answer)
     # 空花括号：没答案就显示空位；有答案就显示红色答案
     text = re.sub(r"\\fillin\s*\{\}", "＿＿＿＿", text)
     text = re.sub(r"\\fillin\s*\{([^}}]*)\}",
                   lambda m: red_answer(m.group(1)), text)
-    return text
+    # 光杆 `\fillin`：前端 `qlatex.showAnswers` 一直有这一条，后端漏了——
+    # 漏了就把字面 `\fillin` 印在讲义上（一对转换函数必须逐字一致，见模块顶部）。
+    return re.sub(r"\\fillin(?![a-zA-Z])", "＿＿＿＿", text)
 
 
 def extract_figures(text: str) -> tuple[str, list[str]]:

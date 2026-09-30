@@ -353,6 +353,15 @@ def test_frontend_backend_answer_red_parity():
         r"$\fillin[2 或 3]$",
         r"\paren[ACD]",
         r"$\fillin[]$",                      # 空答案：不该被染
+        # 槽里自带 `]` 的三种形态：`\sqrt[3]`、区间 `[0,1]`、`\left[…\right]`。
+        # 老实现用 `\[[^\]]*\]` 取槽，在第一个 `]` 就断，残尾（`$]`、
+        # `{\frac{3}{2}}$]`）漏进产物——用户报障：导出编译报
+        # «Argument of \fillin has an extra }»，整份卷子出不来。
+        r"则 $q$ 的最大值为\fillin[$\sqrt[3]{\frac{3}{2}}$]．",
+        r"值域为\fillin[$[0,1]$]。",
+        r"范围为\fillin[$\left[-1,3\right]$] 。",
+        r"范围 $\left(\fillin[$\left(e, \frac{e^2}{2}\right]$]\right)$ 内",
+        r"光杆空位\fillin后面还有字",
     ]
     backend = [sh.show_answers(s) for s in samples]
 
@@ -367,8 +376,14 @@ def test_frontend_backend_answer_red_parity():
         probe.unlink(missing_ok=True)
     for s, b, f in zip(samples, backend, frontend):
         assert b == f, "答案渲染前后端不一致：\n  输入 %r\n  后端 %r\n  前端 %r" % (s, b, f)
-    # 红色必须真的出现在结果里（防止两边"一致地都不染红"）
-    assert all(sh.ANS_RED in b for s, b in zip(samples, backend) if "fillin[]" not in s), backend
+    # 红色必须真的出现在结果里（防止两边"一致地都不染红"）。
+    # 两个例外：空槽 `\fillin[]`（没答案可染）和光杆 `\fillin`（根本没槽）。
+    no_red = ("fillin[]", r"\fillin后面")
+    assert all(sh.ANS_RED in b for s, b in zip(samples, backend)
+               if not any(t in s for t in no_red)), backend
+    # 槽里带 `]` 的题：残尾一个字符都不许漏（漏出来就是预览/讲义里那条乱码）
+    for s, b in zip(samples, backend):
+        assert "$]" not in b, "作答位读短了，残尾漏进产物：%r → %r" % (s, b)
 
 
 def test_frontend_backend_label_parity():
