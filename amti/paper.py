@@ -711,6 +711,38 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                        total_score=total_score, show_source=show_source)
 
 
+_BARE_NUMBER = re.compile(r"^[-+]?\d+(?:\.\d+)?$")
+
+
+def _tex_len(v: str, fallback: str = "0.6em") -> str:
+    r"""把「间距」这类参数规范成**带单位**的 LaTeX 长度。
+
+    ⚠️ 踩过的坑（用户真实遇到）：界面上「题目间距」是个自由输入框，**标签里没写单位**
+    （旁边那个写的是「解答留白 cm」，有单位），所以填 `6` 再自然不过。而后端拿到
+    什么就原样塞什么，于是产出的导言区是：
+
+        \examsetup{ ... question/bottom-sep = 6, ... }
+
+    `bottom-sep` 在 exam-zh 里是**长度**，裸数字是致命错误：
+
+        ! Illegal unit of measure (pt inserted).
+
+    配合 `-halt-on-error`，整个导出当场失败，用户只看到一句看不懂的 TeX 报错
+    ——实测有人这么填过一次，202 KB 的卷子白编。
+
+    TeX 自己在遇到裸数字时会「插入 pt」继续跑，所以这里按 **pt** 补，
+    语义上也正好：默认值 `0.6em` 在 10pt 字号下约等于 6pt。
+
+    `fallback`：传空串时用默认值（不是留空就是"0"）。
+    """
+    s = str(v or "").strip()
+    if not s:
+        return fallback
+    if _BARE_NUMBER.match(s):
+        return s + "pt"
+    return s
+
+
 def _preamble(*, title: str = "", graphicspath: str = "",
               show_answers: bool = False, answers_at_end: bool = False,
               bottom_sep: str = "0.6em", columns: int = 4,
@@ -798,8 +830,8 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"  fillin/no-answer-type=none,",
         "  solution/show-solution=" + ("show-stay," if show_answers else "hide,"),
         r"  solution/label-indentation=false,",
-        f"  question/bottom-sep = {bottom_sep},",
-        f"  problem/bottom-sep = {bottom_sep},",
+        f"  question/bottom-sep = {_tex_len(bottom_sep)},",
+        f"  problem/bottom-sep = {_tex_len(bottom_sep)},",
         f"  choices/columns = {columns},",
         r"}",
         "",

@@ -600,9 +600,11 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
             <Group title="间距与留白">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <div className="text-[11px] text-ink-soft">题目间距</div>
+                  <div className="text-[11px] text-ink-soft">
+                    题目间距 <span className="text-ink-faint">（带单位）</span>
+                  </div>
                   <input value={sep} onChange={(e) => setSep(e.target.value)}
-                    className={`${INPUT} font-mono`} />
+                    placeholder="0.6em" className={`${INPUT} font-mono`} />
                 </div>
                 <div className="space-y-1">
                   <div className="text-[11px] text-ink-soft">
@@ -613,8 +615,9 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                 </div>
               </div>
               <div className="text-[11px] leading-relaxed text-ink-faint">
-                填 <b>0</b>：按难度自动留 —— 简单 3 · 中档 5 · 难题 8 cm。
+                留白填 <b>0</b>：按难度自动留 —— 简单 3 · 中档 5 · 难题 8 cm。
                 填正数则一律用它。
+                间距要写单位，如 <b>0.6em</b>、<b>8pt</b>；只填数字按 pt 算。
               </div>
             </Group>
 
