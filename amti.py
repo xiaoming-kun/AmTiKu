@@ -23,6 +23,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+
+def _safe_console() -> None:
+    r"""把标准输出/错误改成容错编码。
+
+    ⚠️ **Windows 控制台默认 cp1252/cp936，本文件里到处是 `✓` `✗` `⚠` 这类符号，
+    只要输出被重定向（`> log.txt`、`| more`、被别的进程捕获）或系统是英文版，
+    print 就会抛 UnicodeEncodeError 把整个命令打崩** —— 实测 `amti.py diff`
+    在中文 Windows 上重定向输出就直接死在 `print("\n✓ ...")` 那一行。
+
+    同样的坑在 `packaging/amti_frozen.py` / `tex_complete.py` /
+    `win_smoke_api.py` 里各防过一次，**唯独主入口漏了**。这里补上，
+    并在 `main()` 一开始就调用（而不是等某个子命令自己想起来）。
+
+    `errors="replace"`：编码不下的字符退化成 `?`，而不是让程序挂掉。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:                                  # noqa: BLE001
+            pass
+
+
 from amti import store                                    # noqa: E402
 from amti.schema import QTYPE_LABEL                        # noqa: E402
 from amti.render_tex import question_to_tex                # noqa: E402
@@ -647,6 +669,7 @@ def cmd_ingest(a) -> int:
 
 
 def main() -> int:
+    _safe_console()          # 必须在任何 print 之前：中文 Windows 上 ✓/✗ 会打崩
     ap = argparse.ArgumentParser(description="AmTiKu 题库工具")
     sub = ap.add_subparsers(dest="cmd")
 
