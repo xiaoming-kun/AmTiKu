@@ -442,7 +442,7 @@ def cmd_accept(_a) -> int:
     # **逐个 `-m` 跑**，不能只 import——自检写在 `__main__` 里，
     # import 一下什么都不执行，那一层就成了摆设（实测踩过）。
     for m in ("schema", "latex_blocks", "render_tex", "images", "dedup",
-              "ingest", "generate", "normalize", "chain"):
+              "ingest", "generate", "normalize"):
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
     run("题目解析回归", [_s.executable, "-m", "amti.latex_ir", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")

@@ -29,9 +29,6 @@ def _ensure_data(root: Path) -> None:
         shutil.copytree(demo / "图片", root / "图片")
     if (demo / "知识点.json").exists():
         shutil.copy2(demo / "知识点.json", root / "知识点.json")
-    # 知识链路是可选的：没有它「知识链路」页是空图，但程序照常跑
-    if (demo / "知识链路.json").exists():
-        shutil.copy2(demo / "知识链路.json", root / "知识链路.json")
 
 
 def _safe_console() -> None:

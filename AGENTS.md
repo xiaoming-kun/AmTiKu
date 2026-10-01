@@ -29,7 +29,6 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | `amti/normalize.py` | 规范化 | 全库唯一改题目形态的地方；绕过 → 规范审查失败 |
 | `amti/images.py` | 图片入库 | 唯一处理图片处（内容寻址命名） |
 | `amti/ingest.py` | 录入 | 承诺**存量题目一个字不变**；不要拿它做批量修改 |
-| `amti/chain.py` | 知识链路（`知识链路.json`） | 考点之间的关系只此一处解析；别处再写一份 → 环路/悬空引用没人拦 |
 
 > 新增功能前先问：这件事是不是已经有唯一入口了？有 → 改那个模块；没有 → 才新建。
 

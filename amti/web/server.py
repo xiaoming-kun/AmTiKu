@@ -1014,60 +1014,6 @@ def _point_counts() -> Counter:
     return c
 
 
-@app.get("/api/chain/audit")
-def chain_audit() -> dict:
-    """知识链路体检：环路 / 悬空引用 / 无理由边 / 待补清单。
-
-    ⚠️ **必须声明在 `/api/chain/{pid}` 之前**——FastAPI 按声明顺序匹配，
-    反过来的话 `audit` 会被当成一个考点 id 吃掉。
-    """
-    from amti import chain
-    a = chain.audit()
-    # 待补清单里的 id 补上名称，前端不用再查一次
-    a["todo"] = {k: [{"id": i, "title": knowledge.title_of(i)} for i in v]
-                 for k, v in a["todo"].items()}
-    return a
-
-
-@app.get("/api/chain")
-def chain_graph() -> dict:
-    """整张知识链路图：节点（带大类/星级/拓扑深度/题量）+ 边 + 统计。"""
-    from amti import chain
-    g = chain.graph()
-    cnt = _point_counts()
-    for n in g["nodes"]:
-        n["n"] = cnt.get(n["id"], 0)
-    return g
-
-
-@app.get("/api/chain/{pid}")
-def chain_node(pid: str) -> dict:
-    """单个考点：五段式字段 + 直接前置/后续 + 全部祖先/后代。
-
-    前置/后续列表里带上名称与题量——前端侧栏要把它们做成可点的链接，
-    只有 id 的话每条都要再打一次接口。
-    """
-    from amti import chain
-    d = chain.node_detail(pid)
-    if not d:
-        raise HTTPException(404, "知识点库里没有这个考点：%s" % pid)
-    cnt = _point_counts()
-
-    def _rich(ids: list) -> list:
-        return [{"id": i, "title": knowledge.title_of(i),
-                 "stars": knowledge.stars_of(i), "n": cnt.get(i, 0)} for i in ids]
-
-    d["n"] = cnt.get(pid, 0)
-    for k in ("pre", "post"):
-        for e in d[k]:
-            other = e["pre"] if k == "pre" else e["post"]
-            e["title"] = knowledge.title_of(other)
-            e["n"] = cnt.get(other, 0)
-    d["ancestors"] = _rich(d["ancestors"])
-    d["descendants"] = _rich(d["descendants"])
-    return d
-
-
 class GenerateBody(BaseModel):
     """组卷。`pool` 是筛选条件，和 `/api/questions` 一致。
 

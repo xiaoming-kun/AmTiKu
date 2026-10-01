@@ -95,11 +95,6 @@ export const api = {
   reveal: (path: string) => request('/api/reveal?path=' + enc(path)),
   /* ── 试卷存档 / 合集 ────────────────────────────
      存档里只存**题号**，所以任何时候都能原样还原那套卷。 */
-  /* ── 知识链路 ────────────────────────────────────
-     节点现取自知识点库，这里只取「边」和派生出来的深度/体检。 */
-  chain: () => request('/api/chain'),
-  chainAudit: () => request('/api/chain/audit'),
-  chainNode: (pid: string) => request('/api/chain/' + enc(pid)),
   papers: () => request('/api/papers'),
   paperSave: (body: any) => send('/api/papers', 'POST', body),
   paperDelete: (name: string) => send(`/api/papers/${enc(name)}`, 'DELETE'),
