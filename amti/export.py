@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from .paths import ROOT
 import datetime as _dt
+import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -105,6 +107,75 @@ def _prepare_ascii_build(tex_path: Path) -> Path:
     return build_tex
 
 
+# ── 内置 LaTeX 的「中文路径」绕行 ────────────────────────────────────────
+#
+# kpathsea 启动时**按引擎自身的位置**推 `SELFAUTOPARENT`。路径里有非 ASCII 字符
+# 时它连 `texmf.cnf` 都找不到，进而找不到 `xelatex.fmt`，于是现场跑 `mktexfmt`
+# 重建格式，最后死在
+#     runscript.tlu:952: unable to change environment
+#         [C]: in function 'os.setenv'
+# —— `os.setenv` 处理不了非 ASCII 路径。
+#
+# ⚠️ **光把 .tex 拷到 ASCII 目录不够**（那只解决"文件名是中文"）；
+#    这一条是"**引擎本体**待在中文路径下"，引擎必须从一个 ASCII 路径启动。
+#
+# 做法：在 `%TEMP%` 下给 TeX 安装根建一个**目录联接**（junction：不占空间、
+# 不需要管理员权限），从联接里启动同一份引擎。
+# 实测对比：直连 → 崩（找不到 texmf.cnf / fmt）；经联接 → 正常编出 PDF。
+_ASCII_LINK_CACHE: dict[str, str] = {}
+
+
+def _drop_link(p: Path) -> None:
+    r"""摘掉目录联接本身。
+
+    ⚠️ **绝不能用 `shutil.rmtree`**：它会顺着联接递归进去，把**真的** TeX 目录
+    整个删掉。`os.rmdir` 走 RemoveDirectoryW，只摘链接、不动目标。
+    """
+    try:
+        os.rmdir(p)
+    except OSError:
+        pass
+
+
+def ascii_engine(engine: str) -> tuple[str, str]:
+    r"""引擎路径含非 ASCII 时，返回「经 ASCII 联接启动的引擎路径」。
+
+    返回 `(要执行的引擎路径, 联接路径)`；不需要绕行、或绕不了时，第二个值为空串
+    （调用方据此决定要不要给用户那句"请移到英文路径"的提示）。
+    """
+    if not any(ord(c) > 127 for c in engine):
+        return engine, ""                      # 本来就是纯 ASCII，不折腾
+    if engine in _ASCII_LINK_CACHE:
+        return _ASCII_LINK_CACHE[engine], ""
+    try:
+        exe = Path(engine).resolve()
+    except OSError:
+        return engine, ""
+    # TeX Live 布局：<root>/bin/<platform>/xelatex.exe → root = bin 的上一级
+    root = exe.parent.parent.parent
+    if not (root / "bin").is_dir():
+        return engine, ""                      # 不是随包 TeX 的布局，别乱建联接
+    tag = hashlib.sha1(str(root).encode("utf-8")).hexdigest()[:8]
+    link = Path(tempfile.gettempdir()) / ("amti_tex_" + tag)
+    if link.exists():
+        try:
+            if os.path.samefile(link, root):   # 上次建过、且指对了 → 直接复用
+                out = str(link / exe.relative_to(root))
+                _ASCII_LINK_CACHE[engine] = out
+                return out, str(link)
+        except OSError:
+            pass
+        _drop_link(link)                       # 指错了 → 摘掉重来
+    r = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(root)],
+                       capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if r.returncode != 0 or not link.exists():
+        return engine, ""                      # 建不出来 → 退回原提示，不假装成功
+    out = str(link / exe.relative_to(root))
+    _ASCII_LINK_CACHE[engine] = out
+    return out, str(link)
+
+
 def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple[bool, str]:
     r"""xelatex 编译。跑两遍（第二遍才能定页码/交叉引用）。
 
@@ -123,24 +194,28 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
                       "安装方法见项目根目录的《TeXLive安装.md》（含国内镜像与常见报错处理）。\n"
                       "不装不影响浏览、编辑、组卷与预览。")
     # **内置 LaTeX 自己不能待在中文路径里**：kpathsea 启动时就要按自身位置推
-    # `SELFAUTOPARENT`，路径里有非 ASCII 字符时直接 fatal
-    # （`(null): fatal: Can't get long name for D:\?? ??\AmTiKu.`，30 毫秒就退出，
-    # 报错里连个 `!` 都没有）。这不是"把 .tex 放到英文目录"能解决的——
-    # 引擎本体在中文路径下根本起不来。所以这里直接把话说明白，
-    # 而不是丢一句用户看不懂的 fatal。
+    # `SELFAUTOPARENT`，路径里有非 ASCII 字符时连 texmf.cnf 都找不到
+    # （报错长这样：`runscript.tlu:952: unable to change environment`，
+    # 或者更早的 `(null): fatal: Can't get long name for D:\?? ??\AmTiKu.`）。
+    #
+    # ⚠️ 以前这里只是**检测并告知**（让用户自己把文件夹移到英文路径），
+    #    实测发现**可以自动绕开**：给 TeX 安装根建一个 ASCII 目录联接，
+    #    从联接里启动引擎即可（见 `ascii_engine`）。绕不了才回落到那句提示。
+    xe = shutil.which("xelatex") or "xelatex"
+    xe_run, link = ascii_engine(xe)
     xe_hint = ""
-    try:
-        xe = shutil.which("xelatex") or ""
-        if any(ord(c) > 127 for c in xe):
-            xe_hint = ("检测到内置 LaTeX 位于含中文/非 ASCII 字符的路径：\n"
-                       f"    {xe}\n"
-                       "这个引擎（kpathsea）在这种路径下**无法启动**，导出必定失败。\n"
-                       "两个办法，任选其一：\n"
-                       "  1) 把整个程序文件夹移到**纯英文路径**，例如 D:\\AmTiKu，再导出；\n"
-                       "  2) 自己装一份 TeX Live（见项目里的《TeXLive安装.md》）——它会装在\n"
-                       "     英文路径下，程序检测到就优先用它，这样程序放哪儿都能导出。\n")
-    except Exception:                          # noqa: BLE001
-        pass
+    if link:
+        xe_hint = ("检测到内置 LaTeX 在含中文/非 ASCII 的路径下：\n"
+                   f"    {xe}\n"
+                   f"    已自动改用 ASCII 目录联接启动：{link}\n")
+    elif any(ord(c) > 127 for c in xe):
+        xe_hint = ("检测到内置 LaTeX 位于含中文/非 ASCII 字符的路径：\n"
+                   f"    {xe}\n"
+                   "这个引擎（kpathsea）在这种路径下**无法启动**，导出必定失败。\n"
+                   "两个办法，任选其一：\n"
+                   "  1) 把整个程序文件夹移到**纯英文路径**，例如 D:\\AmTiKu，再导出；\n"
+                   "  2) 自己装一份 TeX Live（见项目里的《TeXLive安装.md》）——它会装在\n"
+                   "     英文路径下，程序检测到就优先用它，这样程序放哪儿都能导出。\n")
     try:
         build_tex = _prepare_ascii_build(tex_path)
     except OSError as e:
@@ -151,7 +226,7 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
     try:
         for _ in range(passes):
             r = subprocess.run(
-                ["xelatex", "-interaction=nonstopmode", "-halt-on-error",
+                [xe_run, "-interaction=nonstopmode", "-halt-on-error",
                  build_tex.name],
                 cwd=build_dir, capture_output=True, text=True,
                 # 显式指定 UTF-8：默认按系统 locale 解码（英文 Windows 是 cp1252），
