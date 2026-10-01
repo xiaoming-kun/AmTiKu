@@ -1,34 +1,66 @@
 @import "tailwindcss";
 @import "katex/dist/katex.min.css";
 
-/* AmTiKu 设计令牌
-   粉色主题（沿用旧项目用户指定的主色），但做了三处减法：
-   1. 字号分三层：题干 15px / 选项 14px / 元信息 11px
-   2. 补语义色：有(绿) 缺(灰) 注意(琥珀) —— 旧 UI 只有品牌粉，看不出状态
-   3. 留白放大：题目间距 16px，筛选组间距 20px */
+/* ══ AmTiKu 设计令牌 ═══════════════════════════════════════════════
+   主色仍是粉色（用户指定），但**粉色不再承担"到处都在"的角色**：
+   界面骨架走中性灰阶（画布 / 卡片 / 描边），粉色只出现在
+   「选中」「主按钮」「关键数字」三处。这样一屏里的粉色数量从几十个
+   降到两三个，剩下的靠留白和层次说话。
+
+   三处结构性调整：
+   1. 画布≠卡片。画布是浅灰（0.9765），卡片是纯白 —— 卡片的边界
+      由明度差给出来，不靠描边，视觉负担立刻轻一半。
+   2. 字号分四层：标题 19 / 题干 15 / 正文 13 / 元信息 11.5。
+      旧的三层里 11 和 12.5 挤在一起，读起来是一团。
+   3. 语义色补全：有(绿) 缺(灰) 注意(琥珀) 危险(红)，
+      并且都配 soft 底 —— 状态用"底色+文字"成对出现，不靠单色硬顶。
+   ══════════════════════════════════════════════════════════════════ */
 @theme {
-  --color-bg:        oklch(0.9935 0.005 350);
-  --color-surface:   oklch(1 0 0);
-  --color-border:    oklch(0.926 0.011 348);
-  --color-muted:     oklch(0.972 0.010 348);
-  --color-ink:       oklch(0.235 0.032 342);
-  --color-ink-soft:  oklch(0.482 0.030 342);
-  --color-ink-faint: oklch(0.645 0.026 344);
+  /* ── 灰阶骨架 ── */
+  --color-bg:            oklch(0.9765 0.0025 340);
+  --color-surface:       oklch(1 0 0);
+  --color-surface-2:     oklch(0.988 0.003 345);
+  --color-border:        oklch(0.922 0.006 340);
+  --color-border-strong: oklch(0.862 0.009 340);
+  --color-muted:         oklch(0.963 0.006 345);
+  --color-ink:           oklch(0.225 0.014 340);
+  --color-ink-soft:      oklch(0.435 0.014 340);
+  --color-ink-faint:     oklch(0.618 0.010 340);
 
-  --color-brand:      oklch(0.585 0.205 351);
-  --color-brand-soft: oklch(0.958 0.033 348);
-  --color-brand-ink:  oklch(0.498 0.196 351);
+  /* ── 品牌粉：只在选中/主按钮/关键数字出现 ── */
+  --color-brand:        oklch(0.585 0.205 351);
+  --color-brand-deep:   oklch(0.505 0.196 351);
+  --color-brand-soft:   oklch(0.966 0.026 350);
+  --color-brand-line:   oklch(0.885 0.062 351);
+  --color-brand-ink:    oklch(0.498 0.196 351);
 
-  /* 语义色：状态一眼可辨 */
-  --color-has:      oklch(0.62 0.14 158);   /* ✓ 有 */
-  --color-has-soft: oklch(0.962 0.030 158);
-  --color-gap:      oklch(0.70 0.012 340);  /* ✗ 缺（灰，不刺眼） */
-  --color-gap-soft: oklch(0.965 0.006 340);
-  --color-warn:      oklch(0.70 0.15 72);   /* ⚠ 注意 */
-  --color-warn-soft: oklch(0.972 0.040 80);
+  /* ── 语义色 ── */
+  --color-has:       oklch(0.585 0.125 158);
+  --color-has-soft:  oklch(0.963 0.030 158);
+  --color-has-line:  oklch(0.885 0.060 158);
+  --color-gap:       oklch(0.640 0.012 340);
+  --color-gap-soft:  oklch(0.958 0.005 340);
+  --color-warn:      oklch(0.640 0.145 66);
+  --color-warn-soft: oklch(0.968 0.042 80);
+  --color-warn-line: oklch(0.895 0.075 78);
+  --color-danger:      oklch(0.575 0.196 25);
+  --color-danger-soft: oklch(0.966 0.028 22);
+
+  /* ── 层次：卡片靠明度差 + 极轻投影立起来 ── */
+  --shadow-card: 0 1px 2px oklch(0.3 0.02 340 / .045);
+  --shadow-hover: 0 4px 14px -4px oklch(0.3 0.02 340 / .10), 0 1px 3px oklch(0.3 0.02 340 / .05);
+  --shadow-pop: 0 12px 32px -10px oklch(0.3 0.02 340 / .18), 0 2px 8px oklch(0.3 0.02 340 / .06);
+  --shadow-brand: 0 6px 18px -6px oklch(0.585 0.205 351 / .40);
 
   --radius-card: 12px;
-  --font-sans: "Inter", -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --radius-pop: 14px;
+
+  /* ── 缓动：一套到底，不要每个组件各写一条 ── */
+  --ease-soft: cubic-bezier(.22, .61, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.32, .64, 1);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
 }
 
@@ -38,31 +70,47 @@ body {
   background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* 滚动条低调一点 */
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb {
-  background: oklch(0.88 0.012 348); border-radius: 5px;
-  border: 2px solid transparent; background-clip: content-box;
+/* 键盘可达性：只有键盘操作才画焦点圈，鼠标点击不画（不然满屏蓝框） */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 1.5px;
+  border-radius: 6px;
 }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.80 0.02 348); background-clip: content-box; }
+
+/* 数字列对齐（题量、分数、页码）—— 不对齐的数字读起来要重新找位 */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* 滚动条低调一点 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: oklch(0.86 0.008 340); border-radius: 6px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: oklch(0.76 0.02 345); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ── 题目排版 ─────────────────────────────────────── */
 
-/* 题干：主字号 */
-.q-stem { font-size: 15px; line-height: 1.85; }
-/* 选项：次字号，悬挂缩进 */
-.q-options { font-size: 14px; line-height: 1.9; }
+.q-stem { font-size: 15px; line-height: 1.8; }
+.q-options { font-size: 14px; line-height: 1.85; }
 .q-options li { list-style: none; display: flex; gap: 8px; }
 .q-options .lbl {
   flex: 0 0 auto; font-weight: 600; color: var(--color-ink-soft);
   min-width: 1.3em;
 }
-/* 解析：与题干同字号但配色略淡 */
-.q-solution { font-size: 14px; line-height: 1.9; color: var(--color-ink-soft); }
+.q-solution { font-size: 14px; line-height: 1.85; color: var(--color-ink-soft); }
+
+/* 列表卡里的紧凑排版：题干行高略收，避免一张卡占掉半屏 */
+.q-compact .q-p { margin: 0.25em 0; }
+.q-compact .q-list { margin: 0.25em 0; padding-left: 1.5em; }
+.q-compact .q-math, .q-compact .q-fig, .q-compact .q-table-wrap { margin: 0.4em 0; }
 
 /* KaTeX 行间公式：居中 + 上下留白 */
 .katex-display { margin: 0.7em 0; overflow-x: auto; overflow-y: hidden; }
@@ -74,20 +122,16 @@ body {
   border-bottom: 1.2px solid var(--color-ink-soft);
   vertical-align: -0.12em; margin: 0 2px;
 }
-/* exam-zh 的 \paren：一对空括号 */
 .q-paren { color: var(--color-ink-soft); }
-/* \quad：行内空白 */
 .q-sp { display: inline-block; width: 1.1em; }
 
 /* ══ 块级 IR（amti/latex_blocks.py 的输出） ══════════════
    前端只画块，不做语法解析。下面每条规则对应 IR 里的一种块。 */
 
-/* 段落 */
 .q-p { margin: 0.4em 0; }
 .q-p:first-child { margin-top: 0; }
 .q-p:last-child { margin-bottom: 0; }
 
-/* 行间公式：宽公式横向滚动，不撑破三栏布局 */
 .q-math { margin: 0.7em 0; overflow-x: auto; overflow-y: hidden; }
 
 /* 列表：支持任意层嵌套。
@@ -112,9 +156,21 @@ body {
 .q-table tr:first-child td { background: var(--color-muted); font-weight: 500; }
 .q-table .q-p { margin: 0; }
 
-/* center / minipage / figure 等容器 */
 .q-box { margin: 0.6em 0; }
 .q-center, .q-figure, .q-table-env { text-align: center; }
+
+/* ── 书的表格/盒子与题库的不是一回事，这里把口径拉回一致
+    ① 题库表格用 `white-space:nowrap` + 横向滚动 —— 那是对付"数阵"的，
+      一行十几个数不能折行。书的表格是**文字表**（一格一句话），
+      nowrap 会让它比纸还宽、只能横着拖，而导出那边是 `width:100%` 排好的 ——
+      这就是"预览要横着拖、PDF 是排好的"那种前后端分叉。
+    ② 同理补 width:100%。
+    ③ 书的 notebox 导出时左框描边，预览也要有同一个标记。 */
+.kl-body .q-table { width: 100%; }
+.kl-body .q-table td { white-space: normal; }
+.kl-body .q-quote {
+  border-left: 3px solid #c9a227; padding: 2px 12px; margin: 0.6em 0;
+}
 
 /* 题图 */
 .q-fig { margin: 0.7em 0; text-align: center; }
@@ -123,8 +179,7 @@ body {
   max-width: 100%; height: auto; border-radius: 6px;
 }
 
-/* TikZ 等 HTML 画不了的内容：显式说明，不静默消失。
-   PDF 走 XeLaTeX 编译，那边是正常渲染的。 */
+/* TikZ 等 HTML 画不了的内容：显式说明，不静默消失。 */
 .q-raw {
   display: flex; align-items: center; gap: 8px;
   margin: 0.6em 0; padding: 8px 12px;
@@ -142,44 +197,104 @@ body {
 }
 .latex-err { color: oklch(0.55 0.2 25); font-size: 12px; }
 
+/* 列表卡里的题目：**封顶高度 + 截断标记**。
+   题干长短差十倍，不封顶一屏只看得到两道题；封顶之后要能看出"下面还有"。
+
+   这里**不用白色渐变**。渐变是我先前的主意，但它有两个毛病：
+   ① 画在文字上会被读成"题目自带一层雾"（用户提过两次）；
+   ② 它本身有 22px 高，短题干不截断时也会盖住唯一一行。
+   现在改成 line-clamp 那种**省略号**：右下角一个小「…」，只有真截断时才出现。
+   它是文字，不会被误认成渲染瑕疵。 */
+.q-clamp { position: relative; overflow: hidden; }
+.q-clamp::after { content: none; }
+.q-clamp[data-over='1']::after {
+  content: '…';
+  position: absolute; right: 0; bottom: 0;
+  padding: 0 3px 0 6px;
+  background: var(--color-surface);
+  color: var(--color-ink-faint);
+  line-height: 1.5;
+}
+
 /* ══ 动效 ══════════════════════════════════════════════════════════
-   库里 17,000 多道题，筛选、翻页、编译都是几百毫秒到几十秒的事。
-   没有过渡的话，界面会「跳」——人看不出发生了什么，只觉得卡。
+   库里两万多道题，筛选、翻页、编译都是几百毫秒到几十秒的事。
+   没有过渡的话界面会「跳」——人看不出发生了什么，只觉得卡。
    动效在这里不是装饰，是**让人知道东西在动、还在动、动完了**。
-   三条原则：① 短（120–220ms，超过 300ms 就嫌慢）；
-   ② 只动 opacity/transform（合成层，不触发重排）；
-   ③ 尊重系统的「减少动态效果」设置。 */
 
-@keyframes fade-up   { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-@keyframes fade-in   { from { opacity: 0; } to { opacity: 1; } }
-@keyframes pop-in    { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
-@keyframes slide-in-r{ from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
-@keyframes spin      { to { transform: rotate(360deg); } }
-@keyframes shimmer   { from { background-position: -200% 0; } to { background-position: 200% 0; } }
-@keyframes bar-slide { 0% { left: -35%; width: 35%; } 50% { left: 40%; width: 45%; } 100% { left: 100%; width: 30%; } }
-@keyframes pulse-soft{ 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+   四条原则：
+   ① 短：交互反馈 90–140ms，入场 160–220ms，面板 220–280ms。
+   ② 只动 opacity/transform（合成层），不动 width/height/top/left。
+   ③ 一个动作只动一次。悬停同时抬升+放大+变色=廉价。
+   ④ 尊重系统的「减少动态效果」——这是无障碍要求，不是可选项。
+   ══════════════════════════════════════════════════════════════════ */
 
-.anim-fade-up  { animation: fade-up 180ms cubic-bezier(.22,.61,.36,1) both; }
+@keyframes fade-up    { from { opacity: 0; transform: translateY(6px); }  to { opacity: 1; transform: none; } }
+@keyframes fade-in    { from { opacity: 0; }                              to { opacity: 1; } }
+@keyframes pop-in     { from { opacity: 0; transform: scale(.965); }      to { opacity: 1; transform: none; } }
+@keyframes slide-in-r { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes slide-down { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+/* ── 退场 ──
+   进场有动画、退场"啪"地消失，是最容易露怯的一处：抽屉、弹层、提示
+   全都瞬间不见，界面显得生硬。**退场要比进场快**（约 65%）——
+   人已经决定关掉它了，多等一帧都是拖沓。 */
+@keyframes fade-out    { from { opacity: 1; } to { opacity: 0; } }
+@keyframes pop-out     { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.97); } }
+@keyframes slide-out-r { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(16px); } }
+@keyframes toast-out   { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(.96); } }
+/* 数字滚动：给"数量变了"一个看得见的过渡 */
+@keyframes check-pop   { 0% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
+/* 细目表横条：从 0 长到目标宽度 */
+@keyframes grow-x      { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes spin       { to { transform: rotate(360deg); } }
+@keyframes shimmer    { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes bar-slide  { 0% { left: -35%; width: 35%; } 50% { left: 40%; width: 45%; } 100% { left: 100%; width: 30%; } }
+@keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+/* 保存成功／加入卷子：一次轻微的"跳一下"，表示收到了 */
+@keyframes bump       { 0% { transform: scale(1); } 38% { transform: scale(1.14); } 100% { transform: scale(1); } }
+/* 高亮闪一下：内容被程序改动时用（比 toast 轻） */
+@keyframes flash      { from { background-color: var(--color-brand-soft); } to { background-color: transparent; } }
+/* 提示条的倒计时细线。时长由 JS 传进来（见 app/Toast.tsx），
+   用 `animation-play-state` 做鼠标悬停暂停。 */
+@keyframes toast-bar  { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+/* 展开：折叠区从 0 高度拉开。用 grid-template-rows 0fr→1fr，
+   不写死高度，所以内容多长都行 */
+@keyframes reveal     { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
+
+.anim-fade-up  { animation: fade-up 190ms var(--ease-soft) both; }
 .anim-fade-in  { animation: fade-in 140ms ease-out both; }
-.anim-pop      { animation: pop-in 150ms cubic-bezier(.22,.61,.36,1) both; }
-.anim-slide-r  { animation: slide-in-r 200ms cubic-bezier(.22,.61,.36,1) both; }
+.anim-pop      { animation: pop-in 150ms var(--ease-soft) both; }
+.anim-slide-r  { animation: slide-in-r 210ms var(--ease-soft) both; }
+.anim-slide-d  { animation: slide-down 200ms var(--ease-soft) both; }
 .anim-pulse    { animation: pulse-soft 1.6s ease-in-out infinite; }
+.anim-bump     { animation: bump 320ms var(--ease-spring) both; }
+.anim-fade-out { animation: fade-out 130ms ease-in both; }
+.anim-pop-out  { animation: pop-out 140ms ease-in both; }
+.anim-slide-r-out { animation: slide-out-r 160ms ease-in both; }
+.anim-toast-out   { animation: toast-out 150ms ease-in both; }
+.anim-check    { animation: check-pop 200ms var(--ease-spring) both; }
+/* 横条生长：`transform: scaleX` 而不是 width —— 只走合成层，不触发重排 */
+.bar-grow { transform-origin: left; animation: grow-x 420ms var(--ease-soft) both; }
+.anim-flash    { animation: flash 900ms ease-out both; }
+
+/* 折叠区展开。外层给 `.reveal`，内层必须是唯一子元素且 overflow:hidden */
+.reveal { display: grid; animation: reveal 220ms var(--ease-soft) both; }
+.reveal > * { min-height: 0; overflow: hidden; }
 
 /* 列表逐条入场。**只给前 12 条**延迟，再多就是"等动画"而不是"看内容" */
-.anim-stagger > * { animation: fade-up 200ms cubic-bezier(.22,.61,.36,1) both; }
+.anim-stagger > * { animation: fade-up 200ms var(--ease-soft) both; }
 .anim-stagger > *:nth-child(1) { animation-delay: 0ms }
-.anim-stagger > *:nth-child(2) { animation-delay: 18ms }
-.anim-stagger > *:nth-child(3) { animation-delay: 36ms }
-.anim-stagger > *:nth-child(4) { animation-delay: 54ms }
-.anim-stagger > *:nth-child(5) { animation-delay: 72ms }
-.anim-stagger > *:nth-child(6) { animation-delay: 90ms }
-.anim-stagger > *:nth-child(7) { animation-delay: 108ms }
-.anim-stagger > *:nth-child(8) { animation-delay: 126ms }
-.anim-stagger > *:nth-child(9) { animation-delay: 144ms }
-.anim-stagger > *:nth-child(10){ animation-delay: 162ms }
-.anim-stagger > *:nth-child(11){ animation-delay: 180ms }
-.anim-stagger > *:nth-child(12){ animation-delay: 198ms }
-.anim-stagger > *:nth-child(n+13){ animation-delay: 210ms }
+.anim-stagger > *:nth-child(2) { animation-delay: 16ms }
+.anim-stagger > *:nth-child(3) { animation-delay: 32ms }
+.anim-stagger > *:nth-child(4) { animation-delay: 48ms }
+.anim-stagger > *:nth-child(5) { animation-delay: 64ms }
+.anim-stagger > *:nth-child(6) { animation-delay: 80ms }
+.anim-stagger > *:nth-child(7) { animation-delay: 96ms }
+.anim-stagger > *:nth-child(8) { animation-delay: 112ms }
+.anim-stagger > *:nth-child(9) { animation-delay: 128ms }
+.anim-stagger > *:nth-child(10){ animation-delay: 144ms }
+.anim-stagger > *:nth-child(11){ animation-delay: 160ms }
+.anim-stagger > *:nth-child(12){ animation-delay: 176ms }
+.anim-stagger > *:nth-child(n+13){ animation-delay: 190ms }
 
 /* 加载骨架：比转圈更早给出「内容大概长这样」 */
 .skeleton {
@@ -190,8 +305,7 @@ body {
   border-radius: 6px;
 }
 
-/* 不定长进度条：编译耗时不可预知，**不假装知道百分比**，
-   只表示"还在动"。 */
+/* 不定长进度条：编译耗时不可预知，**不假装知道百分比**，只表示"还在动" */
 .progress-track {
   position: relative; overflow: hidden;
   height: 3px; border-radius: 2px; background: var(--color-brand-soft);
@@ -202,19 +316,54 @@ body {
   animation: bar-slide 1.5s ease-in-out infinite;
 }
 
-/* 交互反馈：按下去要有回应 */
-.press { transition: transform 90ms ease-out, background-color 140ms ease-out; }
-.press:active { transform: scale(.97); }
+/* 交互反馈：按下去要有回应（90ms，快到不觉得延迟） */
+.press { transition: transform 90ms ease-out, background-color 140ms ease-out,
+                     border-color 140ms ease-out, color 140ms ease-out; }
+.press:active { transform: scale(.975); }
+
+/* 卡片：悬停只做一件事——抬起 1px + 描边变深。不缩放，不换底色 */
+.card-lift {
+  transition: box-shadow 170ms var(--ease-soft), border-color 170ms var(--ease-soft),
+              transform 170ms var(--ease-soft);
+}
+.card-lift:hover { box-shadow: var(--shadow-hover); border-color: var(--color-border-strong); }
 
 /* 面板/弹层出现 */
-.pop { animation: pop-in 140ms cubic-bezier(.22,.61,.36,1) both;
-       transform-origin: top left; }
+.pop { animation: pop-in 150ms var(--ease-soft) both; transform-origin: top left; }
+.pop-c { animation: pop-in 150ms var(--ease-soft) both; transform-origin: center; }
+
+/* 图标按钮：悬停时底色浮出来，而不是一上来就有个框 */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; color: var(--color-ink-faint);
+  transition: background-color 140ms var(--ease-soft), color 140ms var(--ease-soft);
+}
+.icon-btn:hover { background: var(--color-muted); color: var(--color-ink); }
+
+/* 侧栏导航项：选中态用左侧一道粉色竖条 + 浅粉底，
+   比整块填色克制，也更容易在长列表里定位 */
+.nav-item {
+  position: relative;
+  transition: background-color 140ms var(--ease-soft), color 140ms var(--ease-soft);
+}
+.nav-item::before {
+  content: ''; position: absolute; left: 0; top: 50%; width: 3px; height: 0;
+  border-radius: 0 3px 3px 0; background: var(--color-brand);
+  transform: translateY(-50%);
+  transition: height 200ms var(--ease-spring);
+}
+.nav-item[data-on='1']::before { height: 18px; }
 
 /* 尊重系统的「减少动态效果」——这不是可选项，是无障碍要求 */
 @media (prefers-reduced-motion: reduce) {
-  .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r, .anim-pulse,
-  .anim-stagger > *, .skeleton, .progress-track::after, .pop {
+  .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r,
+  .anim-slide-d, .anim-pulse, .anim-bump, .anim-flash,
+  .anim-fade-out, .anim-pop-out, .anim-slide-r-out, .anim-toast-out,
+  .anim-check, .bar-grow,
+  .anim-stagger > *, .skeleton, .progress-track::after, .pop, .pop-c, .reveal {
     animation: none !important;
   }
   .press:active { transform: none; }
+  .card-lift:hover { transform: none; }
+  .nav-item::before { transition: none; }
 }

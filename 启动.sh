@@ -16,7 +16,16 @@
 #   ./启动.sh status     看现在跑着什么
 #   ./启动.sh stop       全停
 
-cd "$(dirname "$0")" || exit 1
+# 进到题库目录。**先把软链走到底**——被软链到 PATH 上时 `dirname "$0"`
+# 给的是软链所在目录，不是题库目录（同样的坑在 ./AmTiKu 里踩过一次，
+# 详细解释见那个文件）。
+SELF="$0"
+while [ -L "$SELF" ]; do
+  link_dir="$(cd "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  case "$SELF" in /*) ;; *) SELF="$link_dir/$SELF" ;; esac
+done
+cd "$(dirname "$SELF")" || exit 1
 
 # ── PROJECT PYTHON ────────────────────────────────────────────────
 # **项目自带的 Python。**

@@ -225,6 +225,9 @@ def clean_fields(stem: str, solution: str, *, qtype: str, opts: dict,
     return stem2, sol2, opts, notes
 
 
+_BS_WS = set(chr(92) + " \t\r\n")     # 「只剩反斜杠和空白」的字符集
+
+
 def gate(qtype: str, stem: str, opts: dict, answer: str,
          solution: str) -> list[str]:
     r"""校验闸门：**不过就拒收**，不静默入库。返回问题清单（空 = 通过）。"""
@@ -253,6 +256,15 @@ def gate(qtype: str, stem: str, opts: dict, answer: str,
         for pat, name in BAD_TEX:
             if pat.search(txt or ""):
                 why.append("%s 有%s（KaTeX 会报错）" % (tag, name))
+        # 数学段里**只剩反斜杠和空白** = 原卷此处印漏了一整个式子（实测 328 宝鸡 #3，
+        # 卷面印成「“$ac>bc$” 是        ” 的」）。KaTeX 报 `Unexpected character: '\'`。
+        # ⚠️ 必须按 `$` 切段再判，不能直接写正则：`$9$\\` 换行 `$7$` 这种
+        #    「闭段$ + 反斜杠 + 开段$」会被跨段配对误判，实测误伤存量表题 35 道；
+        #    也不能用 `seg.strip() == ""`——strip() 不去反斜杠，`"\\ "` 永远非空。
+        for i, seg in enumerate((txt or "").split("$")):
+            if i % 2 and seg and set(seg) <= _BS_WS and "\\" in seg:
+                why.append("%s 有只含反斜杠的空数学段（原卷此处印漏，KaTeX 会报错）" % tag)
+                break
         if (txt or "").count(r"\{") != (txt or "").count(r"\}"):
             why.append("%s 的 `\\{` 与 `\\}` 不配平" % tag)
     return why

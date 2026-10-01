@@ -70,6 +70,33 @@ class Figure:
     source: str = ""            # 来源标注（如 "tikz-original"）
 
 
+_LEFT_CMD = re.compile(r"\\left(?![a-zA-Z])")
+_RIGHT_CMD = re.compile(r"\\right(?![a-zA-Z])")
+_MIDDLE_CMD = re.compile(r"\\middle(?![a-zA-Z])")
+
+
+def _math_braces_bad(seg: str) -> bool:
+    r"""数学段里的**未转义**花括号配不配对。
+
+    `\{`、`\}` 是内容（集合括号、印出来的 `\}`），不算配对关系——
+    不跳开转义的话 `$\{1,2\}$`、`$\}$` 会被整片误伤。
+    """
+    d, i = 0, 0
+    while i < len(seg):
+        c = seg[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "{":
+            d += 1
+        elif c == "}":
+            d -= 1
+            if d < 0:
+                return True
+        i += 1
+    return d != 0
+
+
 @dataclass
 class Question:
     key: str                    # 自然键，如 "高考真题汇编/2025/全国II卷#4"
@@ -173,6 +200,7 @@ class Question:
         只报告，不修正。修不修由人决定——这是与旧项目最大的区别。
         """
         bad: list[str] = []
+        _BS_WS = set(chr(92) + " \t\r\n")   # 「只剩反斜杠和空白」的字符集
 
         if self.type not in QTYPES:
             bad.append(f"题型非法：{self.type!r}（只能是 {QTYPES}）")
@@ -226,6 +254,45 @@ class Question:
         # 实测：2024 全国甲卷（文）#18、（理）#17 就中过这个假阳性。
         if self.type == "detailed_answer" and has_fillin and not _fillin_in_table(self.stem):
             bad.append("解答题的题干里不该有 \\fillin{}")
+
+        # 数学段里**只剩反斜杠和空白** = 原卷此处印漏了一整个式子。
+        # 实测：入库 102 题后层③ 唯一那处 KaTeX 报错就是它——
+        # 宝鸡市 2026 届（二）#3 卷面印成「“$ac>bc$” 是        ” 的」，
+        # 转录留下 `$\ $`，KaTeX 报 `Unexpected character: '\\'`。
+        # 四道闸原先没有一条认得它：`$` 个数是偶的、没有裸 `%`、conform 也不查这个。
+        # ⚠️ 两个坑：① 不能直接写正则跨全文找 `$\ $`，`$9$\\` 换行 `$7$` 这种
+        #    「闭段$ + 反斜杠 + 开段$」会被误判（存量表题误伤 35 道）——必须按 `$`
+        #    切段、只看奇数段；② 不能用 `strip() == ""`，`strip()` 不去反斜杠。
+        for _fld, _txt in (("题干", self.stem), ("答案", self.answer),
+                           ("解析", self.solution),
+                           *(("选项 %s" % o.label, o.text) for o in self.options)):
+            for _i, _seg in enumerate((_txt or "").split("$")):
+                if not (_i % 2 and _seg):
+                    continue
+                if set(_seg) <= _BS_WS:
+                    bad.append("%s 里有只含反斜杠的空数学段（原卷此处印漏，KaTeX 会报错）" % _fld)
+                    break
+                # 第六种杀手：数学段里**花括号配不平**，尾巴掉回正文。
+                # 实测那处入库后 layer③ 唯一报错的是 `}]`——「填空位跟随答案」把
+                # `\fillin[{$(2,3]$}]` 从中间截断（正则不认 `{…}` 分组），`}$}]` 漏成正文。
+                if _math_braces_bad(_seg):
+                    bad.append("%s 的数学段里花括号配不平（KaTeX 会报错）：%r"
+                               % (_fld, _seg[:40]))
+                    break
+                # 第七、八种：`\left` 与 `\right` 不成对（跨了两个数学段＝同一个错），
+                # 以及 `\middle` 前面根本没有 `\left`。都是 KaTeX 直接报错的写法。
+                # ⚠️ 只数**个数**，不做嵌套检查：试过写一个按 `{…}` 深度配对的正斜体
+                # 定界符检查器，全库 29,885 道误伤 7,626 道——漏报代价远小于误伤
+                # （误伤会把一整场好题拒收）。嵌套跨组那一族留给层③ 端到端渲染兜。
+                nl, nr = len(_LEFT_CMD.findall(_seg)), len(_RIGHT_CMD.findall(_seg))
+                if nl != nr:
+                    bad.append("%s 的数学段里 \\left 有 %d 个、\\right 有 %d 个，不成对"
+                               % (_fld, nl, nr))
+                    break
+                if _MIDDLE_CMD.search(_seg) and not nl:
+                    bad.append("%s 的数学段里有 \\middle 却没有 \\left（KaTeX 报 "
+                               "\\middle without preceding \\left）" % _fld)
+                    break
 
         # 图片：`figures` 是**从正文推导**的（见 latex_ir.parse_question），
         # 所以两个方向都要成立，而且两边必须扫**同一批字段**：
@@ -316,6 +383,12 @@ if __name__ == "__main__":
                   answer="A"), []),
         (Question(key="t/2", type="fill_in_blank", stem=r"$1+1=$\fillin{}."), []),
         (Question(key="t/3", type="detailed_answer", stem="已知函数 $f(x)=x^2$。"), []),
+        # ⚠️ 两条**合法**对照：新加的两道数学段闸门必须放过它们
+        # （误伤一道＝一整场好题被拒收，代价比漏报大得多）。
+        (Question(key="t/4", type="detailed_answer",
+                  stem=r"已知 $\left(2x-1\right)>0$，则 $\left|x\right|$ 为"), []),
+        (Question(key="t/5", type="detailed_answer",
+                  stem=r"集合 $A=\left\{x\mid x^{2}-1=0\right\}$ 有 $\{2\}$ 个元素"), []),
         # 错误样例
         (Question(key="e/1", type="single_choice", stem="x",
                   options=[Option("A", "a")], answer="A"),
@@ -331,6 +404,11 @@ if __name__ == "__main__":
         (Question(key="e/5", type="detailed_answer",
                   stem=r"如图 \includegraphics{a1b2c3d4e5f60718.png} 所示"),
          ["figures 里没有它"]),
+        # 第七、八种 KaTeX 杀手（实测入库 8,952 题后层③ 报的就是这两族）
+        (Question(key="e/6", type="detailed_answer", stem=r"求 $P(A\middle| B)$ 的值。"),
+         [r"有 \middle 却没有"]),
+        (Question(key="e/7", type="detailed_answer", stem=r"解得 $\left|x-1=2$。"),
+         ["不成对"]),
     ]
     ok = 0
     for q, want in samples:

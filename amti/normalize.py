@@ -578,23 +578,48 @@ def sentence_period(q: Question) -> bool:
 
 
 _SLOT_ANS = re.compile(r"\\(?:paren|fillin)\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]")
+_SLOT_CMD = re.compile(r"\\(?:paren|fillin)(?![a-zA-Z])")
+
+
+def iter_slots(text: str, cmd: re.Pattern = _SLOT_CMD):
+    r"""按 **TeX 可选参数的规矩**数括号，读出 `\fillin[…]`／`\paren[…]` 的槽位。
+
+    返回 `[(命令起点, `[` 的下标, 参数内容, 右括号之后的下标)]`；
+    **括号配不平就返回 None**——读不准就一处都不改，别猜。
+
+    ⚠️ 为什么不用正则：`_SLOT_ANS` 那类 `(?:[^\[\]]|\[[^\]]*\])*` 只认一层方括号、
+    **不认 `{…}` 分组**，于是 `\fillin[{$(2,3]$}]`（答案里带右闭区间）会从中间被截断，
+    截断点后面的 `}$}]` 掉回正文——实测端到端渲染那处 KaTeX 报错就是这么来的
+    （`数学段只剩闭合符` 那族残形）。本模块只有 `scan_bracket` 懂 TeX，
+    槽位也必须由它读。
+    """
+    out = []
+    for m in cmd.finditer(text):
+        i = text.find("[", m.end())
+        if i < 0 or i - m.end() > 4:
+            continue
+        arg, end, ok = scan_bracket(text, i)
+        if not ok:
+            return None
+        out.append((m.start(), i, arg, end))
+    return out
 
 
 def _slot_period(stem: str) -> bool:
-    r"""把 `\fillin[…X.]` 里末尾那个 `.` 改成 `。`。返回改没改。"""
+    r"""把 `\fillin[…X.]` 里末尾那个 `.` 改成 `。`。返回新串（没改就返回假值）。"""
     if not stem or "." not in stem:
         return False
-
-    def sub(m):
-        body = m.group(1)
-        if not body.endswith("."):
-            return m.group(0)
-        return m.group(0)[:m.start(1) - m.start(0)] + body[:-1] + "。" + "]"
-
-    new = _SLOT_ANS.sub(sub, stem)
-    if new != stem:
-        return new
-    return False
+    slots = iter_slots(stem)
+    if not slots:
+        return False
+    out, pos, changed = [], 0, False
+    for start, bracket, arg, end in slots:
+        body = arg[:-1] + "。" if arg.endswith(".") else arg
+        changed = changed or body != arg
+        out.append(stem[pos:bracket] + "[" + body + "]")
+        pos = end
+    out.append(stem[pos:])
+    return "".join(out) if changed else False
 
 
 @rule(name="行内公式统一用 $…$", scope=ENTRY,
@@ -711,17 +736,35 @@ def drop_leftover_blank(q: Question) -> bool:
         ……则 $f^{-1}(2)$ 的值是（$\quad$） \paren[A]
 
     ——卷面上就是两个括号。这条规则专门收拾它。
+
+    还有一种**反过来**的写法（VLM 转录讲义时很常见）：
+
+        ……则函数 $y=f(x)$ 的图象可能为（ \paren[] ）
+
+    作答位被**原来那个空括号包在里面**了。这时不能删括号（它是题干的一部分），
+    要**把作答位掏出来**：`……可能为 \paren[]`。不掏出来就还是印两个括号，
+    而且 `_ANY_PAREN` 也匹配不到它（括号里不是空的），整条规则白跑。
     """
     s = q.stem or ""
     if not re.search(r"\\(paren|fillin)\s*(\[[^\]]*\])?", s):
         return False
-    hits = list(_ANY_PAREN.finditer(s))
-    if not hits:
-        return False
-    # 从后往前删，避免下标错位；顺带把删完留下的多余空格收一收
-    out = s
+    # ① 作答位被空括号包着 → 掏出来（先做，否则下面 `_ANY_PAREN` 认不出）
+    out = re.sub(r"[（(]\s*(\\paren\s*\[[^\]]*\]|\\fillin\s*\[[^\]]*\])\s*[）)]",
+                 r"\1", s)
+    # ② 空括号**自己带着一对 `$…$`** 时，要连那对 `$` 一起删。
+    # 只删括号会留下 `$$`：
+    #     函数 $f(x)=…$ 的最小正周期为 $(\quad)$ \paren[]
+    #   → 函数 $f(x)=…$ 的最小正周期为 $$ \paren[]
+    # `$$` 是规范明令不许的、LaTeX 直接报「Display math should end with $$」，
+    # 而 `chk_delim` **查不出来**（`$` 还是偶数个，配对"通过"）。
+    # 实测：赵礼显讲义 p073 第 17 题就是这么坏掉的，全库两道检查都没报。
+    out = re.sub(r"\$\s*[（(]\s*(?:\$?\s*(?:\\quad|\\qquad)?\s*\$?)\s*[）)]\s*\$",
+                 "", out)
+    # ③ 残留的**真正空**括号 → 删掉
+    hits = list(_ANY_PAREN.finditer(out))
     for m in reversed(hits):
         out = out[:m.start()] + out[m.end():]
+    out = re.sub(r"\$\$", r"\$", out)         # 兜底：删完不该再有相邻 `$`
     out = re.sub(r"[ \t]{2,}", " ", out)
     if out == s:
         return False
@@ -800,10 +843,43 @@ def ensure_fillin(q: Question) -> bool:
     if m0:
         before = q.stem[:m0.start()]
         if before.count("$") % 2 == 1:                     # 在数学模式里 → 挪出来
-            after = q.stem[m0.end():]
+            # ⚠️ **公式里有环境或 `\left…\right` 时不能就地切。**
+            # 就地补一个 `$ ` 会把这个公式从中间截断：`\begin{cases}` 和
+            # `\end{cases}` 落到两段公式里，直接坏掉。实测：
+            #     `$a_n=\begin{cases} n, & \fillin[] \\ 1, & x>0 \end{cases}$`
+            #   → `$a_n=\begin{cases} n, & $ \fillin[] \\ 1, & x>0 \end{cases}$`
+            # `$` 个数还是偶数、`\begin/\end` 也都在，**两道检查都不会报**，
+            # 但 `\end{cases}` 已经掉到数学模式外面了。
+            # 这种情况交给 `填空位移出数学模式`（它有那条"有环境就不切、
+            # 只把答案自带的 `$` 脱掉"的守卫），别在这里抢着做。
+            if re.search(r"\\begin\{|\\left|\\right", before):
+                return False
+            raw_after = q.stem[m0.end():]
+            # ⚠️ **空位必须是这一段公式的最后一样东西**，否则不能在这里切。
+            # 公式里还有别的空位时切一刀，后半段就掉到数学模式外面：
+            #     `$BD = \fillin[], \cos\angle ABD = \fillin[]$`
+            #   → `$BD = $ \fillin[], \cos\angle ABD = \fillin[]$`
+            # `$` 剩奇数个、整道题坏掉。这种交给 `填空位移出数学模式`，
+            # 它**按整段公式重写**、在每个命令处切开，是对的。
+            # 判断必须在下面"吃掉收尾 `$`"**之前**做——吃掉以后就看不出
+            # 空位后面还有没有内容了。
+            if raw_after.strip() and not raw_after.lstrip().startswith("$"):
+                return False
+            after = raw_after
             if after.startswith("$"):
                 after = after[1:]
-            q.stem = before + "$ " + r"\fillin[]" + after
+            # ⚠️ 两种"在数学模式里"要分开处理，混作一种会印出 `$$`：
+            #   ① `则 $b=\fillin[]$。` —— 空位挂在**原来那个**公式的尾巴上，
+            #      得就地给公式收尾：`则 $b=$ \fillin[]。`
+            #   ② `…的值为 $\fillin[]$。` —— 空位被**单独**包了一对 `$…$`
+            #      （VLM 转录最爱这么写）。这时 `before` 的末尾那个 `$`
+            #      就是开这对的，再补一个 `$ ` 会得到 `$$`——KaTeX 直接报错，
+            #      而且 `$$` 本身也是规范明令不许的。正确做法是**删掉这对**。
+            if before.rstrip().endswith("$"):
+                before = before.rstrip()[:-1].rstrip() + " "
+            else:
+                before = before + "$ "
+            q.stem = before + r"\fillin[]" + after
             return True
         return False
     # **没答案就别补新空位**（补了也永远填不上）。注意这段必须排在
@@ -862,6 +938,195 @@ def answer_for_detailed(q: Question) -> bool:
     return True
 
 
+# 落单的 `$$`：不是行间公式（没有配对的收尾），却会**开一个数学模式**
+# 把后面整段正文吞进去。实测（济南一模那道）：
+#
+#     …则椭圆 $\Gamma$ 的离心率为 $$ \fillin[$\frac{\sqrt{3}}{2}$]。
+#
+# xelatex 报 `Command \end{question} invalid in math mode`、**整份卷子出不来 PDF**；
+# 而网页预览只是句号位置怪，看着像没事（`latex_blocks.scan_math` 找不到收尾
+# `$$` 时把它当空公式处理）。`chk_delim` 也抓不到——`$$` 是两个美元符，
+# 加进去 `$` 的**奇偶不变**，配对检查照样"通过"。
+_LONE_DD = re.compile(r"(?<!\\)\$\$")
+
+
+# 作答位参数里被塞进了**续段**——页脚、章节标题、QQ 群广告、答案册标题、解析正文。
+# 实测 14 道，形状完全一样：
+#
+#     \fillin[$\sqrt{3}$ 或 $\sqrt{6}+\sqrt{3}$\n\n四、解答题:]
+#
+# TeX 的可选参数**不允许空行**，于是 xelatex 报
+# «Paragraph ended before \fillin was complete»、**整份卷子出不来**；
+# 而网页预览照常（块级 IR 自己找 `]`），所以三层验收全是绿的。
+#
+# 续段分三种处置，都无损：
+#   ① 像卷面噪声 → 删（页脚/章节标题/群广告，永远不是题面内容）
+#   ② `solution` 里已经有一份 → 删（重复）
+#   ③ 其余 → 挪进 `solution`
+_NOISE_HEAD = re.compile(
+    r"^\s*(?:[一二三四五六七八九十]+\s*[、.．]?\s*(?:选择题|填空题|解答题|题)"
+    r"|.{0,10}参考答案|答案第\s*\d+\s*页|第\s*\d+\s*页|共\s*\d+\s*页"
+    r"|QQ\s*[教师学生]{0,2}群|教师群|学生群|部分小题答案详解|答案详解"
+    r"|微信号|扫码|关注公众号|部分小题)")
+_SLOT_ARGC = re.compile(r"\\(?:fillin|paren)(?![a-zA-Z])\s*\[")
+
+
+@rule(name="作答位参数里的续段挪出参数", scope=MIGRATE,
+      why="TeX 规则 + 规范 §2.2：`\\fillin[…]`／`\\paren[…]` 的可选参数**不能含空行**"
+          "（TeX 的可选参数扫描器遇到空段就停），含了 xelatex 报 "
+          "«Paragraph ended before \\fillin was complete»，**该题所在的整份卷子出不来**")
+def split_blank_arg_tail(q: Question) -> bool:
+    r"""`\fillin[答案\n\n后面的东西]` → 参数只留第一段；续段按上面三条处置。"""
+    moved: list[str] = []
+    changed = False
+    for fld in ("stem", "answer", "solution"):
+        t = getattr(q, fld) or ""
+        if not t:
+            continue
+        pos, out, hit = 0, [], False
+        for m in _SLOT_ARGC.finditer(t):
+            if m.start() < pos:                # 落在上一个参数内部
+                continue
+            arg, nxt, balanced = scan_bracket(t, m.end() - 1)
+            if not balanced:
+                continue
+            mt = re.search(r"\n[ \t]*\n", arg)
+            if not mt:
+                pos = nxt
+                continue
+            out.append(t[pos:m.end()])         # `\fillin[`
+            out.append(arg[:mt.start()].rstrip())
+            out.append("]")
+            tail = arg[mt.end():].strip()
+            if tail:
+                moved.append(tail)
+            pos, hit = nxt, True
+        if hit:
+            out.append(t[pos:])
+            setattr(q, fld, "".join(out))
+            changed = True
+    # `answer` 栏**本身**也要同步截断：答案是从题干那个槽**推导**出来的
+    # （`latex_ir` 的 `fillin_answers`/`paren_answers`），槽截了、字段不截，
+    # 元数据就和卷面不一致了。规范里答案段用 `；` 分隔，**合法答案不含空行**，
+    # 所以遇到空行必然是续段。
+    ans = q.answer or ""
+    ma = re.search(r"\n[ \t]*\n", ans)
+    if ma:
+        moved.append(ans[ma.end():].strip())
+        q.answer = ans[:ma.start()].rstrip()
+        changed = True
+    if moved:
+        sol = (q.solution or "").strip()
+        if sol == "解析无":
+            sol = ""
+        extra = [x for x in moved
+                 if not _NOISE_HEAD.match(x) and x not in sol]
+        if extra:
+            add = "\n\n".join(extra)
+            q.solution = (sol + "\n\n" + add) if sol else add
+            changed = True
+    return changed
+
+
+@rule(name="落单的美元符双写", scope=MIGRATE,
+      why="规范 §2.3：行间公式写 `\\[ … \\]`。落单的 `$$` 会吞掉后面整段正文，"
+          "xelatex 直接报 `Command \\end{question} invalid in math mode`——"
+          "**这一道题所在的那份卷子整个出不来**")
+def strip_lone_double_dollar(q: Question) -> bool:
+    r"""字段里有**恰好一个** `$$` → 删掉它。
+
+    ⚠️ **只碰"恰好一个"的情形**：这时哪个多余一目了然，删掉就恢复正常。
+    出现 3 个、5 个（凑不成对、又不只一个）的**一律不动**——那说明还丢过公式，
+    得回原卷看，不是能自动拍板的（宁缺勿错）。
+
+    成对的 `$$…$$` **不归这条管**：它能正常渲染，只是不合规范 §2.3，
+    属于风格问题，不该混进"批量改数据"里（`conform.style_double_dollar`
+    会提示，但不拦验收）。
+    """
+    hit = False
+    for fld in ("stem", "answer", "solution"):
+        t = getattr(q, fld) or ""
+        if len(_LONE_DD.findall(t)) != 1:
+            continue
+        t2 = re.sub(r"[ \t]{2,}", " ", _LONE_DD.sub("", t))
+        if t2 != t:
+            setattr(q, fld, t2)
+            hit = True
+    return hit
+
+
+@rule(name="解答题答案栏统一「见解析」", scope=MIGRATE,
+      why="规范 §2.2 定的是解答题答案栏写「见解析」，可存量里有 500 道把结果写进了答案栏"
+          "（实测还有写成「解答题」「C」这种占位/串到选择题栏的）——同一个字段两种口径，"
+          "组卷答案页与界面就没法一视同仁地印。⚠️ **只归一解析栏真有推导的那些**："
+          "答案栏是唯一载体的（解析空／「解析无」）一律不动，那等于把答案删了")
+def unify_detailed_answer(q: Question) -> bool:
+    if q.type != "detailed_answer":
+        return False
+    a = (q.answer or "").strip()
+    if not a or a == "见解析":
+        return False
+    s = (q.solution or "").strip()
+    if not s or s == "解析无":
+        return False                      # 答案栏是唯一载体，动了就是丢信息
+    q.answer = "见解析"
+    return True
+
+
+_PART_HEAD = re.compile(r"^[ \t]*[（(]\s*([1-4])\s*[)）][ \t]*")
+
+
+@rule(name="解答题小问改用 enumerate", scope=ENTRY,
+      why="库里 4385 道解答题的小问都是 `\\begin{enumerate}\\item …`，前端 `qlatex.ts:convertEnumerate` "
+          "按这一种实现（成对的转换函数，只统一一半就会"
+          "预览和导出不一致）。新录的题里另有 847 道写成手写 `(1)(2)`，形制分叉")
+def parts_to_enumerate(q: Question) -> bool:
+    r"""解答题题干里行首的 `(1)(2)…` 分问 → `\\begin{enumerate}\\item …\\end{enumerate}`。
+
+    四道保险，缺一条就不改（宁可留着原样，也不能把题干改坏）：
+
+    1. **已经有 `\\item`／`enumerate` 的不动**——那是目标形制，重复包裹会套娃。
+    2. **数学段里出现过 `(数字)` 的整题不动**。`$f(1)=2$`、`$a_1(1)$` 这类括号
+       和分问编号长得一样；实测全库有 35 道解答题踩这个。
+    3. **编号必须从 1 起严格递增**（1,2 / 1,2,3 / 1,2,3,4），至少两问。
+       题干里引用上一问的「由(1)得」会被行首正则捞到，实测有 29 道长成
+       `121`、`122`、`13`、`1212` 这种序列——这些一律不改。
+    4. 编号必须**在行首**，不在句中（句中出现的多半是「高一（1）班」这类内容）。
+    """
+    if q.type != "detailed_answer":
+        return False
+    st = q.stem or ""
+    if r"\item" in st or r"\begin{enumerate}" in st:
+        return False
+    for i, seg in enumerate(st.split("$")):                 # 保险 2
+        if i % 2 and re.search(r"[（(]\s*[1-9]\s*[)）]", seg):
+            return False
+    lines = st.split("\n")
+    hits = [(n, int(_PART_HEAD.match(l).group(1)))
+            for n, l in enumerate(lines) if _PART_HEAD.match(l)]
+    if len(hits) < 2:                                       # 保险 3
+        return False
+    if [g for _n, g in hits] != list(range(1, len(hits) + 1)):
+        return False
+    head = "\n".join(lines[:hits[0][0]]).rstrip()
+    parts = []
+    for j, (n, _g) in enumerate(hits):
+        end = hits[j + 1][0] if j + 1 < len(hits) else len(lines)
+        body = "\n".join(lines[n:end])
+        body = _PART_HEAD.sub("", body, count=1).strip()    # 去掉手写编号，编号由环境渲染
+        body = re.sub(r"\n{2,}", "\n", body).strip()
+        if not body:
+            return False
+        parts.append(body)
+    new = ("\n".join(["\\begin{enumerate}"] + ["\\item " + t for t in parts]
+                      + ["\\end{enumerate}"]))
+    stem = (head + "\n" if head else "") + new
+    if stem == st:
+        return False
+    q.stem = stem
+    return True
+
+
 @rule(name="解答题不留空作答位", scope=ENTRY,
       why="规范 §2.2：解答题的答案是「见解析」，题干里不该留空的 `\\paren[]`／`\\fillin[]`"
           "——留着渲染器就以为答案能内联，反而不写「答案：见解析」，答案就丢了")
@@ -904,9 +1169,6 @@ def answer_into_fillin(q: Question) -> bool:
     return True
 
 
-_FILLIN_SLOT = re.compile(r"\\fillin\s*\[((?:[^\[\]]|\[[^\]]*\])*)\]")
-
-
 @rule(name="多空答案分隔符统一", scope=ENTRY, why="规范 §2.2：多空用 `；` 分隔")
 def unify_sep(q: Question) -> bool:
     if q.type != "fill_in_blank" or "；" in q.answer:
@@ -919,6 +1181,65 @@ def unify_sep(q: Question) -> bool:
         return False
     q.answer = "；".join(parts)
     return True
+
+
+@rule(name="填空位跟随答案", scope=ENTRY,
+      why="规范 §2.2：改了 `answer` 就得改卷面上的填空位——"
+          "「答案进填空位」只管空位，已填过的旧值它直接跳过，"
+          "于是改答案只改了字段、卷面印的还是旧答案"
+          "（与「作答括号跟随答案」同一类坑，选择题当年修了、填空题漏了；"
+          "实测 2020新高考I#16 改答案后 `\\fillin` 里还是旧值）")
+def fillin_follows_answer(q: Question) -> bool:
+    r"""已填的填空位内容与答案不一致时，改成答案。
+
+    正文才是答案的真相（读库时 `answer` 由 `\fillin[…]` 推出），字段与卷面
+    不一致＝下次写库就把错的那个固化下来。拆段规则与「答案进填空位」完全
+    一致（`split_answers`）：拆不出与空位数相同的段就**不猜**，原样不动。
+    """
+    if q.type != "fill_in_blank" or not q.answer.strip():
+        return False
+    holes = iter_slots(q.stem, _FILLIN_CMD)
+    if not holes:
+        return False
+    parts = split_answers(q.answer, len(holes))
+    if len(parts) != len(holes):
+        return False
+    if all(arg.strip() == p.strip() for _s, _b, arg, _e, p in zip(holes, parts)):
+        return False                      # 已经一致，不动
+    out, pos = [], 0
+    for (start, _bracket, _arg, end), p in zip(holes, parts):
+        out.append(q.stem[pos:start])
+        out.append(r"\fillin[" + protect(p) + "]")
+        pos = end
+    out.append(q.stem[pos:])
+    q.stem = "".join(out)
+    return True
+
+
+_ARC_CMD = re.compile(r"\\(over|under)paren\s*\{")
+
+
+@rule(name="弧记号改用 overset", scope=ENTRY,
+      why="KaTeX 没有 `\\overparen`／`\\underparen`（那是 amsmath 给 LaTeX 用的），"
+          "录进来端到端渲染就报 `Undefined control sequence: \\overparen`。"
+          "库里已有 44 道写的是 `\\overset{\\frown}{AB}`，同一个意思同一个写法")
+def arc_to_overset(q: Question) -> bool:
+    changed = False
+    for target in ("stem", "answer", "solution"):
+        t = getattr(q, target) or ""
+        if r"\overparen" not in t and r"\underparen" not in t:
+            continue
+        setattr(q, target, _ARC_CMD.sub(
+            lambda mo: (r"\overset" if mo.group(1) == "over" else r"\underset")
+            + r"{\frown}{", t))
+        changed = True
+    for i, o in enumerate(q.options):
+        if r"\overparen" in o.text or r"\underparen" in o.text:
+            o.text = _ARC_CMD.sub(
+                lambda mo: (r"\overset" if mo.group(1) == "over" else r"\underset")
+                + r"{\frown}{", o.text)
+            changed = True
+    return changed
 
 
 @rule(name="方括号参数保护", scope=ENTRY, why="规范 §2.3：不配平的 `[` 会让 TeX 扫到文件末尾")
@@ -1087,6 +1408,30 @@ def move_blanks_out_of_math(q: Question) -> bool:
             continue
         inner = toks[k + 1:j]
         body = "".join(t[1] for t in inner)
+        # ★ 先看一个**安全切法**：空位紧贴在公式收尾的 `$` 前面
+        # （`$\tan\left(\alpha+\frac{\pi}{4}\right) = \paren[]$`）。
+        # 按空位切**不会**把 `\left`/`\right`、`\begin{cases}` 拆散——
+        # 它们整对留在前半段里，所以这一种可以放心切，先于下面那条保守守卫。
+        # 实测来源：赵礼显讲义转录，`\left…\right` 后面跟空作答位的选择题，
+        # 单纯靠"有 `\left` 就不切"会漏掉，空位就一直留在数学模式里。
+        #
+        # ⚠️ **条件必须卡死**，第一版只判了"空位在收尾"，结果一个公式里两个空位时
+        # 从尾巴上切一刀，前一个空位留在数学模式里、后一个跑到外面——
+        # `$BD = \fillin[], \cos\angle ABD = \fillin[]$` 被切成
+        # `$BD = \fillin[], \cos\angle ABD =$` + `\fillin[]`，`$` 还剩奇数个
+        # （实测赵礼显讲义 p132 第 4 题）。所以要求：
+        # 前半段里**没有别的空位**、`\left/\right` 与 `\begin/\end` 都**各配各的**。
+        if "\\begin{" in body or "\\left" in body or "\\right" in body:
+            m_tail = re.search(r"\s*\\(paren|fillin)\s*\[\s*\]\s*$", body)
+            head = body[:m_tail.start()].rstrip() if m_tail else ""
+            if (m_tail and head
+                    and not re.search(r"\\(paren|fillin)\s*[\[\{]", head)
+                    and head.count("\\left") == head.count("\\right")
+                    and head.count("\\begin{") == head.count("\\end{")):
+                out.append("$%s$" % head)
+                out.append("\\" + m_tail.group(1) + "[]")
+                k = j + 1
+                continue
         # ⚠️ 公式里有**环境**（`\begin{cases}`、`array`、`matrix`…）时**不能切开**：
         # `\begin{cases}` 和 `\end{cases}` 会落到两段公式里，直接坏掉。
         # 实测：2004 全国I卷（理）#15 的 `a_n = \begin{cases}…\fillin{}…\end{cases}`
@@ -1426,6 +1771,14 @@ def _selftest() -> int:
                   stem=r"则 $b=\fillin[]$。", answer="2")
     check("补填空位：**在数学模式里的旧空位要挪出来**", ensure_fillin(_q)
           and _q.stem == r"则 $b=$ \fillin[]。", repr(_q.stem))
+    # 空位被**单独**包了一对 `$…$`（VLM 转录的常见写法）。这时不能补
+    # `$ `——`before` 末尾已经是 `$`，补了就是 `$$`（KaTeX 直接报错）。
+    _q = Question(key="t/fill3", type="fill_in_blank",
+                  stem=r"则 $\max M$ 的最小值为 $\fillin[]$。", answer="2")
+    check("补填空位：空位自成一对的 `$…$` 要整对删掉（不许出 `$$`）",
+          ensure_fillin(_q)
+          and _q.stem == r"则 $\max M$ 的最小值为 \fillin[]。"
+          and "$$" not in _q.stem, repr(_q.stem))
     _q = Question(key="t/fill5", type="fill_in_blank",
                   stem=r"则 $b=$ \fillin[]。", answer="2")
     check("补填空位：已在外面就不动", not ensure_fillin(_q), repr(_q.stem))
@@ -1441,6 +1794,34 @@ def _selftest() -> int:
     ensure_fillin(_q)
     check("补填空位：空位在数学模式里要就地收尾（不许嵌套 $）",
           _q.stem.count("$") % 2 == 0 and r"$ \fillin[]" in _q.stem, repr(_q.stem))
+    # 空位紧贴公式收尾 `$`、公式里又有 `\left…\right`：**这一种能安全切开**，
+    # 别被"有 \left 就不切"那条保守守卫拦下（赵礼显讲义转录实测）。
+    _q = Question(key="t/mv1", type="single_choice",
+                  stem=r"已知 $\tan\left(\alpha+\frac{\pi}{4}\right) = \paren[]$ 则 $\alpha=$",
+                  answer="", options=[Option(x, "1") for x in "ABCD"])
+    normalize(_q, ENTRY)
+    check("空位在 `\\left…\\right` 公式尾巴上也要挪出来",
+          r"=$\paren[]" in _q.stem and _q.stem.count("$") % 2 == 0, repr(_q.stem))
+    # 反例：`\begin{cases}` 里的空位**不能**切（切了环境会分家）
+    _q = Question(key="t/mv2", type="fill_in_blank",
+                  stem=r"$a_n=\begin{cases} n, & \fillin[] \\ 1, & x>0 \end{cases}$",
+                  answer="")
+    normalize(_q, ENTRY)
+    # 反例要求的是"`\begin{cases}` 和 `\end{cases}` **在同一段公式里**"——
+    # 只查两个串在不在，等于没查（第一版就是这么放的，实际已经被切成两段了）
+    _seg = (_q.stem[_q.stem.index(r"\begin{cases}"):_q.stem.index(r"\end{cases}")]
+            if r"\begin{cases}" in _q.stem and r"\end{cases}" in _q.stem else "$")
+    # 空括号**自己带着一对 `$…$`**（`$(\quad)$`）：只删括号会留下 `$$`，
+    # 而 `chk_delim` 查不出来（`$` 还是偶数个）。实测赵礼显讲义 p073 第 17 题。
+    _q = Question(key="t/dd", type="single_choice",
+                  stem=r"函数 $f(x)=\frac{\tan x}{1+\tan^2 x}$ 的最小正周期为 $(\quad)$ \paren[]",
+                  answer="", options=[Option(x, "1") for x in "ABCD"])
+    normalize(_q, ENTRY)
+    check("空括号自带 `$…$` 时要连 `$` 一起删（不许出 `$$`）",
+          "$$" not in _q.stem and _q.stem.endswith(r"\paren[]"),
+          repr(_q.stem))
+    check("反例：`\\begin{cases}` 里的空位不切（环境不许分家）",
+          _q.stem.count("$") % 2 == 0 and "$" not in _seg, repr(_q.stem))
     _dq = Question(key="t/det3", type="detailed_answer",
                     stem="求 $x$ 的最小值\\paren[]。", answer="", solution="……")
     normalize(_dq, ENTRY)
@@ -1471,6 +1852,81 @@ def _selftest() -> int:
     normalize(_y, ENTRY)
     check("答案进填空位：已填的括号不许被重复插入",
           _y.stem.count(r"\fillin") == 1, repr(_y.stem))
+
+    # ⚠️ **答案里带 `]`（右闭区间）的那一类**：槽位必须由 `iter_slots` 按 TeX 的
+    # 可选参数规则读。以前用正则 `(?:[^\[\]]|\[[^\]]*\])*` 数括号，它不认 `{…}` 分组，
+    # 于是 `\fillin[{$(2,3]$}]` 从中间被截断，尾巴 `}$}]` 掉回正文——
+    # 入库后端到端渲染就那一处 KaTeX 报错（长沙湖南师大附中月考（五）#13）。
+    _z = Question(key="t/bracket", type="fill_in_blank",
+                  stem=r"取值范围为\fillin[]。", answer=r"$(2,3]$", solution="解析无")
+    normalize(_z, ENTRY)
+    check("答案带右闭区间：填进槽位后没有尾巴掉回正文",
+          _z.stem.endswith(r"\fillin[{$(2,3]$}]。"), repr(_z.stem))
+    _again = _z.stem
+    normalize(_z, ENTRY)
+    check("答案带右闭区间：再规范化一遍**不叠尾巴**（正文才是答案的真相）",
+          _z.stem == _again, repr(_z.stem))
+    _w = Question(key="t/paren-br", type="fill_in_blank",
+                  stem=r"解集为\fillin[{$[0,1]$}]。", answer=r"{$[0,1]$}",
+                  solution="解析无")
+    normalize(_w, ENTRY)
+    check("槽位里已有配对花括号时不被截断",
+          _w.stem.endswith(r"\fillin[{$[0,1]$}]。"), repr(_w.stem))
+    check("iter_slots：配不平的槽位返回 None（读不准就不改）",
+          iter_slots(r"x\fillin[$\left[0,1$]。") is None,
+          str(iter_slots(r"x\fillin[$\left[0,1$]。")))
+
+    # KaTeX 没有 `\overparen`（那是 amsmath 给 LaTeX 的），库里 44 道用的是
+    # `\overset{\frown}{}`——入库时必须自动换掉，否则层③ 端到端渲染就红
+    _arc = Question(key="t/arc", type="fill_in_blank",
+                    stem=r"弧 $\overparen{AB}$ 所对圆心角为 $\dfrac{\pi}{3}$",
+                    answer=r"$\dfrac{\pi}{3}$", solution="解析无")
+    arc_to_overset(_arc)
+    check("弧记号：\\overparen 换成 \\overset{\\frown}{}",
+          r"\overset{\frown}{AB}" in _arc.stem and "overparen" not in _arc.stem,
+          repr(_arc.stem))
+    _arc2 = Question(key="t/arc2", type="single_choice",
+                     stem=r"$\overparen{AB}$、$\underparen{CD}$ 相等吗",
+                     options=[Option("A", r"$\overparen{AB}$"), Option("B", "是")],
+                     answer="A", solution="解析无")
+    arc_to_overset(_arc2)
+    check("弧记号：选项里也换、underparen 也换",
+          "overparen" not in _arc2.stem and "underparen" not in _arc2.stem
+          and "overparen" not in _arc2.options[0].text,
+          repr(_arc2.stem + _arc2.options[0].text))
+    # MIGRATE 落单的 `$$`：**恰好一个**才删；3 个（说明还丢过公式）不动；
+    # 成对的 `$$…$$` 不归这条管（那是风格，不是错）。
+    _dd = Question(key="t/dd2", type="fill_in_blank",
+                   stem=r"则椭圆 $\Gamma$ 的离心率为 $$ \fillin[$\frac{\sqrt{3}}{2}$]。",
+                   answer="")
+    check("MIGRATE 落单 `$$`：删掉且不留双空格",
+          strip_lone_double_dollar(_dd) and "$$" not in _dd.stem
+          and _dd.stem == r"则椭圆 $\Gamma$ 的离心率为 \fillin[$\frac{\sqrt{3}}{2}$]。",
+          repr(_dd.stem))
+    check("MIGRATE 落单 `$$`：幂等（再跑一次不报改动）",
+          not strip_lone_double_dollar(_dd), repr(_dd.stem))
+    _dd2 = Question(key="t/dd3", type="fill_in_blank", stem="$a$$ + $$b$", answer="")
+    check("MIGRATE 落单 `$$`：3 个时**不动**（还丢过公式，得回原卷看）",
+          not strip_lone_double_dollar(_dd2), repr(_dd2.stem))
+    _dd3 = Question(key="t/dd4", type="fill_in_blank", stem="$$x=1$$", answer="")
+    check("MIGRATE 落单 `$$`：成对的 `$$…$$` 不算落单，不动",
+          not strip_lone_double_dollar(_dd3), repr(_dd3.stem))
+
+    # MIGRATE「解答题答案栏统一见解析」：解析栏有推导才收口，答案栏是唯一载体的不动
+    _u1 = Question(key="t/unify1", type="detailed_answer", stem="求 $f(x)$ 的极值。",
+                   answer="(1) $1$；(2) $-1$", solution="对 $f(x)$ 求导得 $f'(x)=2x$，\
+故极大值为 $1$，极小值为 $-1$。")
+    check("MIGRATE 解答题答案栏：解析有推导 → 收口成「见解析」",
+          unify_detailed_answer(_u1) and _u1.answer == "见解析", repr(_u1.answer))
+    _u2 = Question(key="t/unify2", type="detailed_answer", stem="解不等式。",
+                   answer="$x>2$", solution="解析无")
+    check("MIGRATE 解答题答案栏：解析空着 → **不动**（答案栏是唯一载体，动了就是丢信息）",
+          not unify_detailed_answer(_u2) and _u2.answer == "$x>2$", repr(_u2.answer))
+    _u3 = Question(key="t/unify3", type="detailed_answer", stem="见解析样。",
+                   answer="见解析", solution="推导略。")
+    check("MIGRATE 解答题答案栏：已经是「见解析」→ 不报改动",
+          not unify_detailed_answer(_u3), repr(_u3.answer))
+
     _q = Question(key="t/fill3", type="fill_in_blank", stem="求 $b$。", answer="")
     check("补填空位：没答案就不补（免得造出永远填不上的空位）",
           not ensure_fillin(_q), repr(_q.stem))

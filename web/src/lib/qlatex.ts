@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════
-//  题目 LaTeX 转换（**必须与后端 amti/slidev_handout.py 保持一致**）
+//  题目 LaTeX 转换（**必须与后端 amti/paper.py / render_tex.py 保持一致**）
 //
 //  为什么需要：题库是 LaTeX + newtxmath，有些东西 KaTeX 不认，
 //  直接渲染会显示成源码。而且「预览」与「导出 PDF」必须一致 ——
@@ -37,19 +37,89 @@ function normalizeDelims(t: string): string {
     .replace(/\\\(([\s\S]+?)\\\)/g, (_, x) => `$${String(x).trim()}$`)
 }
 
+// ── 作答位 `\paren[…]` / `\fillin[…]` 的配对读法 ──────────────
+//
+// ⚠️ **不许用 `\\fillin\s*\[[^\]]*\]` 这种正则取槽内容**：`\sqrt[3]{\frac{3}{2}}`
+// 的 `[3]`、区间 `$[0,1]$` 的第一个 `]` 都会让它提前收尾，残尾（`$]`、
+// `{\frac{3}{2}}$]`）就漏在预览里变成乱码。收尾统一走配对扫描。
+// 后端对应实现：`amti/latex_ir.py::bracket_arg`。
+
+/** `\left`/`\right` 家族：紧跟其后的那个字符是「画出来的」定界符，不参与配对 */
+const DELIM_CMD_RE =
+  /^\\(?:left|right|middle|bigl?|Bigl?|biggl?|Biggl?|bigr|Bigr|biggr|Biggr)(?![a-zA-Z])/
+
+/** 从 `text[start] === '['` 开始按 TeX 可选参数的规矩配对扫描。
+ *  返回 `[内容, 右括号之后的下标]`；配不平返回 `[null, start]`。
+ *  ⚠️ 与后端 `amti/latex_ir.bracket_arg` 是**同一把尺子**，改一处必须改两处。 */
+function matchBracketArg(text: string, start: number): [string | null, number] {
+  if (text[start] !== '[') return [null, start]
+  let depth = 0
+  let j = start
+  const n = text.length
+  while (j < n) {
+    const c = text[j]
+    if (c === '\\') {
+      const m = DELIM_CMD_RE.exec(text.slice(j))
+      if (m) {
+        j += m[0].length
+        while (j < n && (text[j] === ' ' || text[j] === '\t')) j++
+        if (text[j] === '\\') j += 2
+        else if (j < n) j += 1
+        continue
+      }
+      j += 2
+      continue
+    }
+    if (c === '{') {
+      let k = j
+      let d = 0
+      while (k < n) {
+        if (text[k] === '\\') { k += 2; continue }
+        if (text[k] === '{') d++
+        else if (text[k] === '}') { d--; if (d === 0) break }
+        k++
+      }
+      j = k + 1
+      continue
+    }
+    if (c === '[') depth++
+    else if (c === ']') {
+      depth--
+      if (depth === 0) return [text.slice(start + 1, j), j + 1]
+    }
+    j++
+  }
+  return [null, start]
+}
+
+const SLOT_ARG_RE = /\\(paren|fillin)(?![a-zA-Z])\s*\[/g
+
+/** 把每个 `\paren[…]`／`\fillin[…]` 整块换成 `repl(命令, 槽内容)`。 */
+function replaceSlots(t: string, repl: (cmd: string, body: string) => string): string {
+  let out = ''
+  let i = 0
+  SLOT_ARG_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = SLOT_ARG_RE.exec(t))) {
+    const [body, next] = matchBracketArg(t, m.index + m[0].length - 1)
+    if (body === null) continue                 // 配不平：原样留着，走下面的兜底
+    out += t.slice(i, m.index) + repl(m[1], body)
+    i = next
+    SLOT_ARG_RE.lastIndex = next
+  }
+  return out + t.slice(i)
+}
+
 /** 答案宏 → 卷面空位（学生版） */
 function stripAnswers(t: string): string {
-  let s = t
-    .replace(/\\paren\s*\[[^\]]*\]/g, '（　　）')
-    .replace(/\\fillin\s*\[[^\]]*\]/g, '＿＿＿＿')
-    // ⚠️ 花括号变体必须一起吃掉，否则留下孤立 {}（后端实测 708 道题受影响）
+  const s = replaceSlots(t, (cmd) => (cmd === 'paren' ? '（　　）' : '＿＿＿＿'))
     .replace(/\\fillin\s*\{[^}]*\}/g, '＿＿＿＿')
-    .replace(/\\fillin\b/g, '＿＿＿＿')
+    .replace(/\\fillin(?![a-zA-Z])/g, '＿＿＿＿')
   // 兜底：紧跟在空位后面的孤立 {} （数据自带的多余花括号）
   return s.replace(/＿＿＿＿\s*\{\}/g, '＿＿＿＿')
 }
 
-/** 答案标红用的红（与讲义配色 --hc-accent 同值；和后端 `ANS_RED` 必须一致） */
+/** 答案标红用的红（和后端 `paper.ANS_RED_HEX` 必须一致） */
 export const ANS_RED = '#d22116'
 
 /** 非数学的一段文字 → 红色数学（装进 `\text{}`，顺手转义 & % #） */
@@ -64,8 +134,7 @@ function redSeg(s: string): string {
  *
  * ⚠️ 只能走数学模式（`\textcolor`），**不能塞 HTML**：编辑器预览的
  * `RichText` 只把 `$…$` 交给 KaTeX、不解析 HTML，塞 `<span>` 会显示成字面量。
- * 后端 `slidev_handout.red_answer` 是**同一条规则**，改一处必须改两处
- * （`测试/讲义测试.py` 会逐字比对）。
+ * 后端 `paper.red_answer_macros` 是**同一条规则**，改一处必须改两处。
  */
 export function redAnswer(ans: string): string {
   const a = String(ans || '').trim()
@@ -83,17 +152,16 @@ export function redAnswer(ans: string): string {
   return out.filter(Boolean).join('')
 }
 
-/** 答案宏 → 显示**红色**答案（教师版）
+/** 答案宏 → 显示**红色**答案（答案卷 / 详情页）
  *
- *  导出是为了让 `测试/讲义测试.py` 把它和后端 `show_answers` 逐字比对——
- *  两边不一致的后果很隐蔽：**预览是红的、导出到 PDF 就不是**（或反过来）。 */
+ *  与后端 `paper.red_answer_macros` 是同一条规则——两边不一致的后果很隐蔽：
+ *  **预览是红的、导出到 PDF 就不是**（或反过来）。 */
 export function showAnswers(t: string): string {
-  return t
-    .replace(/\\paren\s*\[([^\]]*)\]/g, (_, a) => `（ ${redAnswer(a)} ）`)
-    .replace(/\\fillin\s*\[([^\]]*)\]/g, (_, a) => redAnswer(a))
+  return replaceSlots(t, (cmd, body) =>
+    cmd === 'paren' ? `（ ${redAnswer(body)} ）` : redAnswer(body))
     .replace(/\\fillin\s*\{\}/g, '＿＿＿＿')
     .replace(/\\fillin\s*\{([^}]*)\}/g, (_, a) => redAnswer(a))
-    .replace(/\\fillin\b/g, '＿＿＿＿')
+    .replace(/\\fillin(?![a-zA-Z])/g, '＿＿＿＿')
 }
 
 // ── 配对花括号扫描 ───────────────────────────────────────────
@@ -367,7 +435,6 @@ export function transformStem(stem: string, withAnswers = false): string {
  *  ⚠️ 用户报的 bug：选项写成 `$\includegraphics[width=0.15\paperwidth]{x.png}$`，
  *  不脱定界符的话数学渲染器拿到的是 `\includegraphics` 命令 →
  *  卷面上直接显示 `(A)\includegraphics[...]{...}` 源码。
- *  （后端 `slidev_handout.strip_image_math()` 是同一套规则。）
  */
 export function stripImageMath(t: string): string {
   const re = /\$\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$\$|\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$/g

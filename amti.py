@@ -53,6 +53,7 @@ def cmd_diff(_a) -> int:
     print(f"  录入升级    {len(d.get('录入升级', [])):5}   ← 界面点「用这份更新」改的，有意为之")
     print(f"  界面补录    {len(d.get('界面补录', [])):5}   ← 界面改了答案/解析/题型，有意为之")
     print(f"  规则迁移    {len(d.get('规则迁移', [])):5}   ← 批量规范化改的，有意为之")
+    print(f"  逐题订正    {len(d.get('逐题订正', [])):5}   ← fixups 逐题改的，有意为之")
     print(f"  删除        {len(d['删除']):5}")
     if d.get("回收站"):
         print(f"  进回收站    {len(d['回收站']):5}   ← 人工删的，可恢复")
@@ -183,19 +184,28 @@ def cmd_render_tikz(a) -> int:
     return 0
 
 
+CC_BATCH = 200
+
+
 def cmd_compilecheck(a) -> int:
     r"""全库编译体检：把"抽到才炸"的编译错误提前查出来。"""
     from amti import compilecheck as CC
     if a.keys:
         keys = [k.strip() for k in a.keys.split(",") if k.strip()]
         print("只查指定的 %d 道" % len(keys))
+        r = CC.check(keys, verbose=not a.quiet, batch=a.batch)
     else:
-        keys = None
         from amti import store as _st
-        n = sum(1 for _f, q in _st.iter_questions() if CC.risky(q))
-        print("全库体检：%d 道带 TikZ／配图的题（其余是纯文本，不可能编译不过）" % n)
+        qs = [q for _f, q in _st.iter_questions()]
+        if a.all:
+            print("**全库体检：%d 道**（含纯文本——它们也可能编译不过，见模块说明）"
+                  % len(qs))
+        else:
+            n = sum(1 for q in qs if CC.risky(q))
+            print("全库体检：%d 道带 TikZ／配图的题（加 --all 连纯文本一起查）" % n)
         print("分批编译 + 二分定位，请稍候…")
-    r = CC.check(keys, verbose=not a.quiet)
+        r = CC.check(None, verbose=not a.quiet, batch=a.batch,
+                     scope="all" if a.all else "risky")
     print()
     print("检查 %d 道，用了 %d 次编译" % (r["checked"], r["runs"]))
     if not r["fails"]:
@@ -432,7 +442,7 @@ def cmd_accept(_a) -> int:
     # **逐个 `-m` 跑**，不能只 import——自检写在 `__main__` 里，
     # import 一下什么都不执行，那一层就成了摆设（实测踩过）。
     for m in ("schema", "latex_blocks", "render_tex", "images", "dedup",
-              "ingest", "generate", "normalize"):
+              "ingest", "generate", "normalize", "chain"):
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
     run("题目解析回归", [_s.executable, "-m", "amti.latex_ir", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")
@@ -685,6 +695,11 @@ def main() -> int:
     cc = sub.add_parser("compilecheck", aliases=["编译体检"],
                         help="全库编译体检：提前查出抽到才炸的编译错误")
     cc.add_argument("--keys", default="", help="只查这几道（逗号分隔）")
+    cc.add_argument("--all", action="store_true",
+                    help="连纯文本题一起查（默认只查有图/TikZ 的）")
+    cc.add_argument("--batch", type=int, default=CC_BATCH,
+                    help="一批多少道（默认 %d）。批越大越快，"
+                         "只在失败要二分时才变慢" % CC_BATCH)
     cc.add_argument("--quiet", action="store_true", help="不逐批打印进度")
     cc.set_defaults(fn=cmd_compilecheck)
 

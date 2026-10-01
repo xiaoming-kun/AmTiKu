@@ -29,6 +29,9 @@ def _ensure_data(root: Path) -> None:
         shutil.copytree(demo / "图片", root / "图片")
     if (demo / "知识点.json").exists():
         shutil.copy2(demo / "知识点.json", root / "知识点.json")
+    # 知识链路是可选的：没有它「知识链路」页是空图，但程序照常跑
+    if (demo / "知识链路.json").exists():
+        shutil.copy2(demo / "知识链路.json", root / "知识链路.json")
 
 
 def _safe_console() -> None:
@@ -147,7 +150,7 @@ def _export_smoke() -> bool | None:
     r"""走**程序自己的导出代码**编一份 PDF，而不只是看 xelatex 在不在。
 
     被一个真 bug 逼出来的：server.py 的 export() 里用了 _paper 却没导入，
-    只在 handout_font 为空时触发 NameError——只测 xelatex 的自检完全发现不了。
+    只在某个字段为空时触发 NameError——只测 xelatex 的自检完全发现不了。
     返回 True 通过 / False 失败 / None 跳过（没有数据或没装 TeX）。
     """
     import tempfile
@@ -187,21 +190,6 @@ def _export_smoke() -> bool | None:
         return False
 
 
-def _setup_node(root: Path) -> None:
-    r"""把随包的 Node 与 Chromium 接上（幻灯片式讲义导出要用 npx slidev export）。
-
-    slidev 会 fork node + 自带 chromium 出 PDF，所以三样都得随包：
-    node/bin（便携 Node）、slidev/（工程 + node_modules）、playwright/（浏览器缓存）。
-    """
-    nb = root / "node" / "bin"
-    if nb.is_dir():
-        os.environ["PATH"] = str(nb) + os.pathsep + os.environ.get("PATH", "")
-        print("已加载内置 Node:", nb.parent.name)
-    pw = root / "playwright"
-    if pw.is_dir():
-        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(pw))
-
-
 def main() -> int:
     _safe_console()
     root = _root()
@@ -213,7 +201,6 @@ def main() -> int:
         pass
     _ensure_data(root)
     _setup_tex(root)
-    _setup_node(root)
 
     if "--selftest" in sys.argv:            # CI 冒烟测试用：不启服务
         from amti import conform, knowledge, store

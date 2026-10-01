@@ -4,8 +4,10 @@
  *  「删除」不是真删：移进回收站，随时能恢复。
  */
 import { useEffect, useState } from 'react'
+import { AlertTriangle, Check, Inbox, RotateCcw, Trash2, X } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { api } from '@/lib/api'
+import { CloseBtn } from '@/app/ui'
 
 
 /** 回收站。**删除的题放这儿，随时能放回去。**
@@ -39,85 +41,123 @@ export function Trash({ onChanged }: { onChanged: () => void }) {
   }
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-3">
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-[11.5px]">
-        <span className="font-medium text-ink">{items.length} 道</span>
-        <span className="text-ink-faint">删除的题留在这里，随时能放回去</span>
-        {msg && <span className="text-has">{msg}</span>}
-        {err && <span className="text-warn">✗ {err}</span>}
+    <div className="flex h-full min-h-0 flex-col">
+      {/* ── 页面标题区：是什么 · 有几道 · 能做什么 ── */}
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-5">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-ink-faint">
+          <Trash2 size={16} />
+        </span>
+        <span className="shrink-0 text-[15px] font-semibold tracking-tight text-ink">回收站</span>
+        <span className="tnum shrink-0 rounded-full bg-muted px-2 py-[2px] text-[11.5px]
+                         font-medium text-ink-soft">
+          {items.length} 道
+        </span>
+        <span className="text-[11.5px] text-ink-faint">删除的题留在这里，随时能放回去</span>
+        {msg && (
+          <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-has">
+            <Check size={12} className="shrink-0" />{msg}
+          </span>
+        )}
+        {err && (
+          <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-warn">
+            <X size={12} className="shrink-0" />{err}
+          </span>
+        )}
         {items.length > 0 && (
-          <span className="ml-auto inline-flex gap-1">
+          <span className="ml-auto inline-flex flex-wrap items-center gap-2">
             <button disabled={busy} onClick={() => restore(items.map((x) => x.key))}
-              className="press rounded-md border border-brand/40 bg-brand-soft px-2 py-[3px]
-                         font-medium text-brand-ink hover:bg-brand-soft/70 disabled:opacity-40">
-              全部恢复
+              className="press inline-flex items-center gap-1.5 rounded-lg border border-border
+                         bg-surface px-3 py-2 text-[12.5px] text-ink-soft transition-colors
+                         hover:border-border-strong hover:text-ink disabled:opacity-40">
+              <RotateCcw size={13} className="shrink-0" />全部恢复
             </button>
             {surePurge ? (
-              <span className="inline-flex items-center gap-1">
+              <span className="anim-fade-in inline-flex items-center gap-1.5">
                 <input type="password" value={pw} autoFocus
                   onChange={(e) => setPw(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') purge([]) }}
                   placeholder="口令"
-                  className="w-[76px] rounded-md border border-warn/40 bg-bg px-1.5 py-[2px]
-                             text-[11px] outline-none" />
+                  className="h-[32px] w-[86px] rounded-lg border border-warn-line bg-bg px-2.5
+                             text-[12px] outline-none transition-[border-color,box-shadow] duration-150
+                             placeholder:text-ink-faint focus:bg-surface
+                             focus:shadow-[0_0_0_3px_var(--color-warn-soft)]" />
                 <button disabled={busy} onClick={() => purge([])}
-                  className="press rounded-md border border-warn/50 bg-warn-soft px-2 py-[3px]
-                             font-medium text-warn disabled:opacity-40">
+                  className="press inline-flex items-center gap-1.5 rounded-lg border border-warn-line
+                             bg-warn-soft px-3 py-2 text-[12.5px] font-medium text-warn
+                             transition-colors hover:brightness-[0.98] disabled:opacity-40">
+                  <AlertTriangle size={13} className="shrink-0" />
                   确认永久删除 {items.length} 道
                 </button>
               </span>
             ) : (
               <button onClick={() => setSurePurge(true)} onMouseLeave={() => setSurePurge(false)}
-                className="press rounded-md border border-border px-2 py-[3px] text-ink-faint
-                           hover:border-warn/40 hover:text-warn">
-                清空回收站
+                className="press inline-flex items-center gap-1.5 rounded-lg border border-border
+                           bg-surface px-3 py-2 text-[12.5px] text-ink-faint transition-colors
+                           hover:border-warn-line hover:bg-warn-soft hover:text-warn">
+                <Trash2 size={13} className="shrink-0" />清空回收站
               </button>
             )}
           </span>
         )}
-      </div>
+      </header>
 
-      {items.length === 0 ? (
-        <div className="flex h-[60%] flex-col items-center justify-center gap-2 text-[12.5px] text-ink-faint">
-          <span>回收站是空的</span>
-          <span className="text-[11.5px]">在题目详情里点「删除」，题目会移到这里</span>
-        </div>
-      ) : (
-        <ul className="anim-stagger space-y-1.5">
-          {items.map((x) => (
-            <li key={x.key}
-              className="flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] text-ink">
-                  {x.stem || x.key}
-                </span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10.5px] text-ink-faint">
-                  <span className="font-mono">{x.key}</span>
-                  <span>删于 {x.deleted_at}</span>
-                  {x.reason && <span className="text-warn">原因：{x.reason}</span>}
-                  <span className={x.has_solution ? 'text-has' : ''}>
-                    {x.has_solution ? '✓解析' : '✗解析'}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        {items.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <Inbox size={22} className="text-border-strong" />
+            <span className="text-[12.5px] text-ink-faint">回收站是空的</span>
+            <span className="text-[11.5px] text-ink-faint/80">在题目详情里点「删除」，题目会移到这里</span>
+          </div>
+        ) : (
+          <ul className="anim-stagger space-y-2">
+            {items.map((x) => (
+              <li key={x.key}
+                className="card-lift flex items-start gap-3 rounded-[var(--radius-card)] border
+                           border-border bg-surface p-3.5 shadow-[var(--shadow-card)]">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] leading-relaxed text-ink">
+                    {x.stem || x.key}
+                  </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]
+                                   text-ink-faint">
+                    <span className="font-mono text-[10.5px]">{x.key}</span>
+                    <span>删于 {x.deleted_at}</span>
+                    {x.reason && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-warn-soft px-1.5
+                                       py-[1px] font-medium text-warn">
+                        原因：{x.reason}
+                      </span>
+                    )}
+                    <span className={`inline-flex items-center gap-0.5 ${
+                      x.has_solution ? 'text-has' : 'text-gap'}`}>
+                      {x.has_solution
+                        ? <Check size={11} className="shrink-0" />
+                        : <X size={11} className="shrink-0" />}
+                      解析
+                    </span>
                   </span>
                 </span>
-              </span>
-              <span className="flex shrink-0 gap-1">
-                <button disabled={busy} onClick={() => restore([x.key])}
-                  className="press rounded-md border border-brand/40 bg-brand-soft px-2 py-[3px]
-                             text-[11px] font-medium text-brand-ink hover:bg-brand-soft/70
-                             disabled:opacity-40">
-                  恢复
-                </button>
-                <button disabled={busy} onClick={() => { setSurePurge(true); setPw('') }}
-                  title="永久删除需要口令；先在上面输入口令再点"
-                  className="press rounded-md border border-border px-2 py-[3px] text-[11px]
-                             text-ink-faint hover:border-warn/40 hover:text-warn disabled:opacity-40">
-                  ✕
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <button disabled={busy} onClick={() => restore([x.key])}
+                    className="press inline-flex items-center gap-1 rounded-lg border border-border
+                               bg-surface px-2.5 py-[5px] text-[12px] text-ink-soft transition-colors
+                               hover:border-border-strong hover:text-ink disabled:opacity-40">
+                    <RotateCcw size={12} className="shrink-0" />恢复
+                  </button>
+                  <button disabled={busy} onClick={() => { setSurePurge(true); setPw('') }}
+                    title="永久删除需要口令；先在上面输入口令再点"
+                    className="press inline-flex h-[28px] w-[28px] items-center justify-center
+                               rounded-lg border border-border bg-surface text-ink-faint
+                               transition-colors hover:border-warn-line hover:bg-warn-soft
+                               hover:text-warn disabled:opacity-40">
+                    <Trash2 size={12} />
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }
@@ -166,36 +206,43 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/35 p-4 anim-fade-in"
+    <div className="anim-fade-in fixed inset-0 z-[60] flex items-center justify-center
+                    bg-ink/25 p-4 backdrop-blur-[2px]"
       onClick={onCancel}>
-      <div className="w-[540px] max-w-full overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl anim-pop"
+      <div className="pop-c w-[540px] max-w-full rounded-[var(--radius-pop)] border border-border
+                      bg-surface p-4 shadow-[var(--shadow-pop)]"
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <span className="text-[14px] font-semibold text-warn">
-            {n > 1 ? `删除这 ${n} 道题` : '删除这道题'}
+        <div className="mb-3.5 flex items-start gap-2.5">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-warn-soft text-warn">
+            <AlertTriangle size={15} />
           </span>
-          <span className="text-[11.5px] text-ink-faint">删掉的题会移进回收站，可以恢复</span>
-          <button onClick={onCancel}
-            className="ml-auto text-[18px] leading-none text-ink-faint hover:text-ink">×</button>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-semibold tracking-tight text-warn">
+              {n > 1 ? `删除这 ${n} 道题` : '删除这道题'}
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-ink-faint">删掉的题会移进回收站，可以恢复</div>
+          </div>
+          <CloseBtn onClick={onCancel} className="-mr-1 -mt-0.5" />
         </div>
 
-        <div className="px-4 py-3">
+        <div>
           {/* 删的是哪些题——必须让人看清楚，别删错 */}
           {n === 1 && qs[0] ? (
-            <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2">
-              <div className="line-clamp-3 text-[12.5px] text-ink">{qs[0].stem}</div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10.5px] text-ink-faint">
-                <span className="font-mono">{qs[0].key}</span>
+            <div className="mb-3.5 rounded-lg border border-border bg-bg px-3 py-2.5">
+              <div className="line-clamp-3 text-[12.5px] leading-relaxed text-ink">{qs[0].stem}</div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-ink-faint">
+                <span className="font-mono text-[10.5px]">{qs[0].key}</span>
                 <span>{qs[0].type_label}</span>
                 {qs[0].point_titles?.[0] && <span>{qs[0].point_titles[0]}</span>}
               </div>
             </div>
           ) : (
-            <div className="mb-3 rounded-lg border border-warn/35 bg-warn-soft/40 px-3 py-2">
-              <div className="text-[13px] font-medium text-warn">
+            <div className="mb-3.5 rounded-lg border border-warn-line bg-warn-soft/60 px-3 py-2.5">
+              <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-warn">
+                <AlertTriangle size={13} className="shrink-0" />
                 要删 {n} 道题
               </div>
-              <div className="mt-1 max-h-[132px] space-y-0.5 overflow-y-auto">
+              <div className="mt-1.5 max-h-[132px] space-y-0.5 overflow-y-auto">
                 {(keys || []).slice(0, 40).map((k) => (
                   <div key={k} className="truncate font-mono text-[10.5px] text-ink-soft">{k}</div>
                 ))}
@@ -204,16 +251,16 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
             </div>
           )}
 
-          <div className="mb-1.5 text-[11.5px] font-semibold text-ink-faint">
-            删除原因 <span className="font-normal">（必选）</span>
+          <div className="mb-2 text-[11px] font-semibold tracking-[0.08em] text-ink-faint">
+            删除原因 <span className="font-normal tracking-normal">（必选）</span>
           </div>
-          <div className="mb-3 space-y-1">
+          <div className="mb-3.5 space-y-1.5">
             {reasons.map((r) => (
               <label key={r}
-                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5
+                className={`press flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2
                             text-[12.5px] transition-colors ${
-                  reason === r ? 'border-warn/45 bg-warn-soft font-medium text-warn'
-                               : 'border-border bg-bg text-ink-soft hover:bg-muted'}`}>
+                  reason === r ? 'border-warn-line bg-warn-soft font-medium text-warn'
+                               : 'border-border bg-surface text-ink-soft hover:border-border-strong hover:bg-muted'}`}>
                 <input type="radio" name="del-reason" checked={reason === r}
                   onChange={() => { setReason(r); setErr('') }}
                   className="accent-[var(--color-warn)]" />
@@ -223,26 +270,36 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11.5px] text-ink-faint">口令</span>
+            <span className="shrink-0 text-[11.5px] text-ink-faint">口令</span>
             <input type="password" value={pw} autoFocus
               onChange={(e) => { setPw(e.target.value); setErr('') }}
               onKeyDown={(e) => { if (e.key === 'Enter') ok() }}
               placeholder="删除口令"
-              className="w-[120px] rounded-lg border border-border bg-bg px-2.5 py-1.5
-                         text-[12.5px] outline-none focus:border-warn/50" />
-            <span className="text-[10.5px] text-ink-faint">防误点，不是防人</span>
+              className="h-[32px] w-[132px] rounded-lg border border-border bg-bg px-2.5 text-[12.5px]
+                         outline-none transition-[border-color,box-shadow] duration-150
+                         placeholder:text-ink-faint focus:border-warn-line focus:bg-surface
+                         focus:shadow-[0_0_0_3px_var(--color-warn-soft)]" />
+            <span className="text-[11px] text-ink-faint">防误点，不是防人</span>
           </div>
 
-          {err && <div className="mt-2 text-[11.5px] text-warn">✗ {err}</div>}
+          {err && (
+            <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-warn-line
+                            bg-warn-soft px-2.5 py-2 text-[11.5px] text-warn">
+              <X size={13} className="mt-[1px] shrink-0" />{err}
+            </div>
+          )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border bg-muted/40 px-4 py-3">
+        <div className="mt-4 flex justify-end gap-2 border-t border-border pt-3.5">
           <button onClick={onCancel}
-            className="press rounded-lg border border-border bg-surface px-3 py-1.5
-                       text-[12.5px] text-ink-soft hover:bg-muted">取消</button>
+            className="press rounded-lg border border-border bg-surface px-3 py-2 text-[12.5px]
+                       text-ink-soft transition-colors hover:border-border-strong hover:text-ink">
+            取消
+          </button>
           <button onClick={ok} disabled={busy || !reason || !pw.trim()}
-            className="press rounded-lg bg-warn px-3.5 py-1.5 text-[12.5px] font-medium
-                       text-white disabled:opacity-40">
+            className="press inline-flex items-center gap-1.5 rounded-lg bg-warn px-3.5 py-2 text-[12.5px]
+                       font-medium text-white hover:brightness-105 disabled:opacity-40">
+            <Trash2 size={13} className="shrink-0" />
             {busy ? '删除中…' : n > 1 ? `确认删除 ${n} 道` : '确认删除'}
           </button>
         </div>

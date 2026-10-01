@@ -91,6 +91,26 @@ LEDGER = ROOT / "数据" / "订正台账.json"
 PATCHES: list[dict] = _load_patches()
 
 
+def _load_retired() -> set[str]:
+    r"""注销账目**也从台账读**。
+
+    台账里本来就有 `retired` 字段（记的是"已订正、其后又被别的规则改过"的题），
+    但代码里另有一份写死的 `RETIRED_KEYS`——**两份真相**：往 JSON 里加注销，
+    跑起来不生效，人还以为加上了。这里把台账那份并进来。
+    """
+    if not LEDGER.exists():
+        return set()
+    try:
+        d = json.loads(LEDGER.read_text(encoding="utf-8"))
+        return {str(k) for k in (d.get("retired") or [])}
+    except Exception:
+        log.warning("注销账目读不了（%s）", LEDGER, exc_info=True)
+        return set()
+
+
+RETIRED_KEYS |= _load_retired()
+
+
 # ── 2026-09-19：录题时把**多选题**记成了单选（26 道） ────────────────────
 #
 # 判据（**逐题看过**，不是按规则批改）：
@@ -448,6 +468,7 @@ def run(*, yes: bool = False, quiet: bool = False) -> dict:
                           for s in plan],
                 "changed": [], "written": False}
 
+    stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     for spec in plan:
         q = tgt[spec["key"]]
         try:
@@ -455,6 +476,11 @@ def run(*, yes: bool = False, quiet: bool = False) -> dict:
         except Exception as e:                       # 孪生题找不到之类
             return {"ok": False, "problems": ["%s：%s" % (spec["key"], e)],
                     "changed": [], "written": False}
+        # **盖时间戳**：逐题订正是**人有意改数据**，得和"规则偷偷动存量"分开。
+        # ⚠️ 这一行原来没有，于是每跑一次订正验收的「内容变化」就非 0——
+        # 而那个数字的约定是"必须是 0"。没时间戳时两种改动长得一模一样，
+        # 报警很快就没人看了（`store.diff` 的 `逐题订正` 桶配套读这个键）。
+        q.meta["fixed_at"] = stamp
         results.append({"key": spec["key"], "why": spec["why"], "src": spec["src"],
                         "notes": notes, "hash": q.content_hash()})
 
@@ -465,8 +491,8 @@ def run(*, yes: bool = False, quiet: bool = False) -> dict:
     store.rewrite_all(qs)
 
     CHANGE_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    report = CHANGE_DIR / ("%s_逐题订正.md" % stamp)
+    report = CHANGE_DIR / ("%s_逐题订正.md"
+                           % _dt.datetime.now().strftime("%Y%m%d_%H%M%S"))
     lines = [
         "# 逐题订正报告",
         "",

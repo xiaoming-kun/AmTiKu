@@ -387,8 +387,49 @@ def chk_render_leak(q: Question):
     return None
 
 
+def _double_dollars(text: str) -> list:
+    return list(re.finditer(r"(?<!\\)\$\$", text))
+
+
+def chk_double_dollar(text: str):
+    r"""**落单的 `$$`** —— 会开一个行间公式、把后面所有内容都吞进去。
+
+    这是**真错**，拦验收。实测（济南一模那道）：
+
+        …则椭圆 $\Gamma$ 的离心率为 $$ \fillin[$\frac{\sqrt{3}}{2}$]。
+
+    xelatex 直接 `Command \end{question} invalid in math mode`、出不来 PDF；
+    但**网页预览看着像没事**（`latex_blocks.scan_math` 找不到收尾 `$$` 时
+    把它当空公式，只丢一个句号），所以四层验收里层③ 是绿的。
+
+    ⚠️ 为什么原来的检查抓不到：`chk_delim` 数的是 `$` 的**奇偶**，
+    而 `$$` 是**两个**美元符——加进去奇偶不变，配对检查照样"通过"。
+
+    ⚠️ 只报**落单**的。成对的 `$$…$$` 能正常渲染（`latex_blocks.py` 本来就支持），
+    只是不合规范 §2.3，那是 `style_double_dollar` 的事，**不该拦验收**——
+    把风格问题报成错误，会让人对红灯脱敏，真错反而看不见。
+    """
+    n = len(_double_dollars(text))
+    if n and n % 2:
+        return ("出现**落单的** `$$`（%d 个，凑不成对）——会吞掉后面整段正文，"
+                "行间公式请写 `\\[ … \\]`" % n)
+    return None
+
+
+def style_double_dollar(text: str):
+    r"""**成对的 `$$…$$`**：能渲染，但规范 §2.3 要求写成 `\[ … \]`。
+
+    **风格项，不算错、不拦验收**（见 `chk_double_dollar` 的说明）。
+    """
+    n = len(_double_dollars(text))
+    if n and n % 2 == 0:
+        return "%d 处 `$$…$$` 建议改写成 `\\[ … \\]`" % (n // 2)
+    return None
+
+
 CHECKS = [
     ("环境配对", chk_env, "text"),
+    ("美元符落单", chk_double_dollar, "text"),
     ("定界符配对", chk_delim, "text"),
     ("行内公式定界符", chk_inline_delim, "text"),
     ("句末标点", chk_sentence_period, "text"),
@@ -443,6 +484,20 @@ def main() -> int:
         n = by_check.get(name, 0)
         print("  %-12s %s" % (name, "✓" if not n else "✗ %d 处" % n))
 
+    # 风格项：**列出来，但不影响退出码**。把风格报成错误会让人对红灯脱敏。
+    style = []
+    for q in qs:
+        for f, t in _fields(q):
+            why = style_double_dollar(t)
+            if why:
+                style.append("%s [%s] %s" % (q.key, f, why))
+    if style:
+        print("\n风格提示（%d 处，不拦验收）：" % len(style))
+        for x in style[:10]:
+            print("  %s" % x)
+        if len(style) > 10:
+            print("  … 其余 %d 处" % (len(style) - 10))
+
     if bad:
         print("\n明细（前 20 条）：")
         for b in bad[:20]:
@@ -489,6 +544,13 @@ _CONTROLS: list[tuple[str, object, object]] = [
     # 是非法转义，会出 SyntaxWarning（踩过）。
     ("行内公式定界符", _qs("\\(" + "x=1" + "\\)"),
      _qs("$x=1$")),
+    # 美元符双写：`$$` 是**两个**美元符，`chk_delim` 的奇偶判断抓不到它，
+    # 只有这条能抓（实测赵礼显讲义 981 道题里 2 道，一路穿到编译才炸）。
+    # 干净样本里放一个**转义过的** `\$`，防止这条检查把正文里的美元符也报掉。
+    # ⚠️ 坏样本必须是**落单**的 `$$`（会吞正文、xelatex 报错）；
+    # 成对的 `$$…$$` 不算错，只在 `style_double_dollar` 里提示。
+    ("美元符落单", _qs("$" + "$ 已知 $a=1$。"),
+     _qs(r"已知 $a=1$，则 $b=2$；单价 \$5。")),
     # 句末标点：坏样本是"中文句子用了半角句点"（真实踩过 8 万处）
     ("句末标点", _qs("所以 $x=1$" + chr(46)),
      _qs("所以 $x=1$。")),

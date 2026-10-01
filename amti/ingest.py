@@ -19,9 +19,9 @@ import re
 import time
 from pathlib import Path
 
-from . import dedup, images as im, normalize as norm, store
+from . import dedup, images as im, knowledge as kb, normalize as norm, store
 from .latex_ir import BODY_ENV_RE, parse_question
-from .schema import QTYPE_LABEL, Question
+from .schema import QTYPE_LABEL, Option, Question
 
 # 一个题块 = 题目环境 + 紧跟着的 solution 环境（如果有）
 _BLOCK_RE = re.compile(
@@ -137,12 +137,18 @@ def _auto_key(book: str, label: str, i: int, meta: dict,
 def parse_source(text: str, *, book: str = "手工录入", label: str = "",
                  region: str = "", year: int | None = None,
                  source_no: str = "", points: list[str] | None = None,
-                 difficulty: str = "") -> dict:
+                 difficulty: str = "", qtype: str = "") -> dict:
     r"""解析源材料。返回 `{questions, errors}`。**不写任何东西。**
 
-    `points` / `difficulty` 是**在界面上填的**。源材料的 meta JSON 里也能写
-    这两样，但界面上明明白白选了就该以界面为准（界面覆盖源材料）。
+    `points` / `difficulty` / `qtype` 是**在界面上填的**。源材料的 meta JSON
+    里也能写这几样，但界面上明明白白选了就该以界面为准（界面覆盖源材料）。
     自动打标那条路（LLM 读题干定考点）只在两者都没有时才跑。
+
+    `qtype` 覆盖**从 LaTeX 推断出来的题型**（`\begin{problem}` → 解答题、
+    有选项 → 单选/多选、有 `\fillin` → 填空）。推断看的是正文形态，
+    绝大多数时候对；但录一道还没写答案的多选题时会被判成单选，
+    所以给人留一个明确指定的口子。选错了后端会当场拦下来
+    （填空题不该有选项、多选题答案至少两个字母…），干跑就能看见。
     """
     blocks = split_source(text)
     out: list[Question] = []
@@ -169,8 +175,11 @@ def parse_source(text: str, *, book: str = "手工录入", label: str = "",
                     q.key = d["key"]
             except ValueError:
                 errors.append({"seq": i, "reason": "元数据行不是合法 JSON"})
+        # 优先级：**界面 > 源材料 meta > 从正文推断**
         if q.type and meta.get("type"):
             q.type = meta["type"]
+        if qtype:
+            q.type = qtype
 
         meta.setdefault("book", book)
         # **题号**：单题录入时记原卷的题号。试卷上标来源要用它，
@@ -275,7 +284,8 @@ def merge_plan(old: Question, new: Question, *, force: bool = False) -> dict:
     | 解析 | 旧空、新不空 → 用新的；两个都不空 → **保留旧的**（除非 `force`）|
     | 答案 | 旧空、新不空 → 用新的；两个都非空且不同 → 用新的，旧值记入 `answer_prev` |
     | 考点 | **取并集**，新的排在前面（新的主考点优先）|
-    | 难度 | 旧没有、新的有 → 用新的 |
+    | 难度 | 旧没有、新的有 → 用新的；**考点并集换了主考点 → 按新主考点重算**，
+      但只动「本来就是从考点派生出来」的难度，人手填过的不覆盖 |
 
     `force=True` 时解析也以新为准（界面上的「覆盖已有解析」开关）。
 
@@ -305,8 +315,87 @@ def merge_plan(old: Question, new: Question, *, force: bool = False) -> dict:
 
     if new.difficulty and not old.difficulty:
         plan["difficulty"] = new.difficulty
+    elif "points" in plan and old.points:
+        # 考点换了主考点 ⇒ **派生**的难度得跟着换，否则库里会出现
+        # 「考点已是数列、难度还写着三角」的题（2026-09-26 用户口径：
+        # 重复题的考点、难度以更全的一方为准）。
+        # 只有旧难度本来就是考点派生的才动它；人填过的是判断，不覆盖。
+        hand = old.meta.get("difficulty")
+        if not hand or hand == kb.difficulty_of(old.points[0]):
+            d = kb.difficulty_of(plan["points"][0])
+            if d and d != old.difficulty:
+                plan["difficulty"] = d
+                # 星级跟主考点走，不能留旧主考点那份
+                plan["stars"] = kb.stars_of(plan["points"][0])
 
     return plan
+
+
+def apply_plan(old: Question, plan: dict, *, point_source: str = "") -> list[str]:
+    r"""把 `merge_plan` 的结果落到**库里那一道**上，返回动了哪些字段。
+
+    `commit` 和批次末的 `apply_labels` 共用这一份，两边不许各写一套落账姿势。
+    """
+    fields = [k for k in plan if k in ("solution", "answer", "points", "difficulty")]
+    if plan.get("answer_prev"):
+        old.meta["answer_prev"] = plan["answer_prev"]
+    if "solution" in plan:
+        old.solution = plan["solution"]
+    if "answer" in plan:
+        old.answer = plan["answer"]
+    if "points" in plan:
+        old.points = plan["points"]
+        # 谁的考点写谁的路数：录入线带的是 llm，界面上手填才是 manual
+        old.meta["point_source"] = point_source or "manual"
+    if "difficulty" in plan:
+        old.meta["difficulty"] = plan["difficulty"]
+        old.meta["stars"] = plan.get("stars", {
+            "简单题": 1, "中档题": 2, "难题": 3}.get(plan["difficulty"], 0))
+    if "solution" in plan or "answer" in plan:
+        # 答案/解析变了，作答括号得跟着重排。**只改标签时不重排**——
+        # 那会把一道没动的存量题的正文也改了，等于绕过"存量不变"那条承诺。
+        norm.normalize(old, norm.ENTRY)
+    # **盖时间戳**。这样 `store.diff()` 能把"有意升级"和
+    # "规则偷偷动了存量"分开报——否则每次升级验收都会红。
+    old.meta["upgraded_at"] = time.strftime("%Y-%m-%d %H:%M")
+    old.meta["upgraded_fields"] = fields
+    return fields
+
+
+def apply_labels(entries: list[dict], *, dry_run: bool = False) -> dict:
+    r"""**一批一次**整库重写：把逐场录入攒下的「考点/难度该刷给库里哪道」一次落账。
+
+    为什么要有这条路：`commit` 只要产出一项升级就得 `rewrite_all` 全库
+    （51MB 重写＋52MB 备份），而实测一批 20 场里 18 场都带升级 ⇒
+    逐场重写等于把全库重抄二十遍，每场白搭三十秒。
+    所以录入线的姿势改成：**逐场只追加**（`update_existing=False`），
+    该刷的标签记进 journal，一批跑完再走这里。
+
+    幂等：内部对每条重跑 `merge_plan`（只升不降），刷过的第二遍不会再改，
+    所以 journal 重复、程序中断都可以直接重跑。
+    `entries` 每条要 `dup_key`（库里那道）和 `points`（手里这道标了什么）。
+    """
+    all_qs = store.load_all()
+    by_key = {x.key: x for x in all_qs}
+    done, missing = [], []
+    for e in entries:
+        old = by_key.get(e.get("dup_key") or "")
+        if old is None:
+            missing.append(e)
+            continue
+        new = Question(key=old.key, type=old.type, stem=old.stem,
+                       points=list(e.get("points") or []))
+        plan = {k: v for k, v in merge_plan(old, new).items()
+                if k in ("points", "difficulty", "stars")}
+        if not plan:
+            continue                       # 库里那道已经不差了（多半上一批刷过）
+        fields = apply_plan(old, plan, point_source=e.get("point_source") or "")
+        done.append({"key": old.key, "fields": fields})
+    rep = {"刷了": len(done), "查无此key": len(missing), "dry_run": dry_run,
+           "明细": done[:20]}
+    if done and not dry_run:
+        store.rewrite_all(all_qs)
+    return rep
 
 
 def dup_fingerprint(q: Question) -> str:
@@ -356,6 +445,7 @@ def _incomplete_errors(qs) -> list[dict]:
 def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str = "",
             region: str = "", year: int | None = None, source_no: str = "",
             points: list[str] | None = None, difficulty: str = "",
+            qtype: str = "",
             update_force: bool = False, merge_into: dict | None = None,
             dup_threshold: float = 0.80) -> dict:
     r"""干跑：解析 + 图片预检 + 查重 + 校验 + 影响面。**什么都不写。**
@@ -363,7 +453,8 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
     `src_dirs` 是图片搜索目录（不传则用默认来源目录）。
     """
     parsed = parse_source(text, book=book, label=label, region=region, year=year,
-                          source_no=source_no, points=points, difficulty=difficulty)
+                          source_no=source_no, points=points, difficulty=difficulty,
+                          qtype=qtype)
     qs: list[Question] = parsed["questions"]
     errors = list(parsed["errors"])
     # 「并入这道」：先把 key 改过去，后面的查重/升级才认得出是同一道题
@@ -438,6 +529,10 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
             "type": q.type,
             "type_label": QTYPE_LABEL.get(q.type, q.type),
             "stem": q.stem,
+            # 判重指纹 = 题干 + **选项正文**（见 `dup_fingerprint`）。items 里不带选项，
+            # `dup_fingerprint_of(it)` 就只能算题干那一段 ⇒ 干跑对选择题的 merge 永远报 0，
+            # 而 commit 却照样跳过它们。干跑和落盘必须是一个口径，所以这里带上选项。
+            "options": [{"label": o.label, "text": o.text} for o in q.options],
             "answer": q.answer,
             "solution": q.solution,
             "points": q.points,
@@ -465,10 +560,22 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
     # 口径和 `commit` 一致：**只有 key 相同才算"已在库"**。
     # 内容雷同只是提示——高考题按卷组织，文理卷出同一道题是常态，
     # 按内容判重会把理卷那道丢掉（实测 1992 全国卷（理）少入库 13 道）。
-    existing = {dup_fingerprint(q) for _f, q in store.iter_questions()}
-    existing_keys = {q.key for _f, q in store.iter_questions()}
+    # 库里那份的三个索引，**一趟扫完**。以前这儿是四次 `iter_questions()`
+    # 各扫一遍全库（21,063 道 × 4），而 preview 是逐场调的 —— 体检 571 场
+    # 光重复扫库就多花十几分钟。
+    existing: set[str] = set()
+    existing_keys: set[str] = set()
+    by_key: dict[str, Question] = {}
+    # 指纹 → 库里那道。**另一份卷子上的同一道题，key 必然不同**，
+    # 只按 key 找「库里那份」，重复题的考点/难度就永远对不上账。
+    by_fp: dict[str, Question] = {}
+    for _f, q in store.iter_questions():
+        fp = dup_fingerprint(q)
+        existing.add(fp)
+        by_fp.setdefault(fp, q)
+        existing_keys.add(q.key)
+        by_key[q.key] = q
     idx = dedup.DedupIndex(store.load_all())
-    by_key = {q.key: q for _f, q in store.iter_questions()}
     for it in items:
         # ⚠️ **判据必须和 `commit` 一致**：key 相同 **或** 指纹相同。
         # 只看指纹会漏掉「同一个 key 但内容改了」——干跑说"新题"、
@@ -495,8 +602,15 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
         # **升级判定**：这道题库里已经有了，但手里这份更全？
         # 干跑就要说清楚"会升级还是会被跳过"，否则点下确认才发现白录了。
         old = by_key.get(it["key"])
+        if old is None:
+            old = by_fp.get(dup_fingerprint_of(it))
+        it["dup_key"] = old.key if old is not None else ""
         if old is not None:
             plan = merge_plan(old, _as_question(it), force=update_force)
+            if old.key != it["key"]:
+                # 别处的同一道题（key 不同）：正文一个字都不动，只对考点/难度
+                plan = {k: v for k, v in plan.items()
+                        if k in ("points", "difficulty", "stars")}
             it["update"] = {k: v for k, v in plan.items()
                             if k not in ("solution",)}   # 正文太long，只报字段名
             it["update_fields"] = [k for k in plan
@@ -557,6 +671,7 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
 def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str = "",
            region: str = "", year: int | None = None, source_no: str = "",
            points: list[str] | None = None, difficulty: str = "",
+           qtype: str = "",
            update_existing: bool = True, update_force: bool = False,
            merge_into: dict | None = None,
            skip_dup: bool = True, skip_missing_figures: bool = True) -> dict:
@@ -566,7 +681,8 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     `skip_missing_figures=True` 时跳过缺图的题——**不导入半成品**。
     """
     parsed = parse_source(text, book=book, label=label, region=region, year=year,
-                          source_no=source_no, points=points, difficulty=difficulty)
+                          source_no=source_no, points=points, difficulty=difficulty,
+                          qtype=qtype)
     qs: list[Question] = parsed["questions"]
     if not qs:
         return {"ok": False, "error": "没有解析出任何题目", "added": []}
@@ -622,44 +738,42 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     #   * 指纹（题干+选项）已存在 → 别处的同一道题（文理卷），跳过
     # 只用指纹会漏掉第一种：内容变了（比如补了图）但 key 没变，
     # 指纹判「新」→ append 又写一份 → **重复 key**。实测踩过（92 个重复）。
-    existing_fp = {dup_fingerprint(x) for _f, x in store.iter_questions()}
-    existing_keys = {x.key for _f, x in store.iter_questions()}
-    idx = dedup.DedupIndex(store.load_all())
+    # 库内索引**一次装载、一趟扫完**：这里原先是 `iter_questions()` 两趟
+    # ＋`load_all()` 两趟（每趟把 21,063 道重新解析一遍），
+    # 而 commit 是逐场调的 —— 体检 571 场光重复读库就要多花十几分钟。
+    all_qs = store.load_all()
+    idx = dedup.DedupIndex(all_qs)
     skipped: list[dict] = []
     keep: list[Question] = []
     # **升级**：库里已有这道题，但手里这份更全（带解析／考点更多）。
     # 不新写一份（那会撞 key 或写重复），而是**改库里那一份**。
     upgrades: list[dict] = []
-    all_qs = store.load_all()
-    by_key = {x.key: x for x in all_qs}
+    existing_fp: set[str] = set()
+    existing_keys: set[str] = set()
+    by_key: dict[str, Question] = {}
+    # 指纹 → 库里那道：**另一份卷子上的同一道题，key 必然不同**。
+    # 只按 key 找"库里那份"，这种重复题的考点/难度就永远对不上账
+    # （手里这份标了考点、库里那道空着或标得更少，白白浪费一次录入）。
+    by_fp: dict[str, Question] = {}
+    for x in all_qs:
+        fp = dup_fingerprint(x)
+        existing_fp.add(fp)
+        by_fp.setdefault(fp, x)
+        existing_keys.add(x.key)
+        by_key[x.key] = x
     for q in qs:
         fp = dup_fingerprint(q)
         if skip_dup and (q.key in existing_keys or fp in existing_fp):
-            old = by_key.get(q.key)
+            old = by_key.get(q.key) or by_fp.get(fp)
             plan = merge_plan(old, q, force=update_force) if old is not None else {}
+            if old is not None and old.key != q.key:
+                # 别处的同一道题：正文一个字都不动，只对考点/难度
+                plan = {k: v for k, v in plan.items()
+                        if k in ("points", "difficulty", "stars")}
             if update_existing and plan:
-                fields = [k for k in plan
-                          if k in ("solution", "answer", "points", "difficulty")]
-                if plan.get("answer_prev"):
-                    old.meta["answer_prev"] = plan["answer_prev"]
-                if "solution" in plan:
-                    old.solution = plan["solution"]
-                if "answer" in plan:
-                    old.answer = plan["answer"]
-                if "points" in plan:
-                    old.points = plan["points"]
-                    old.meta["point_source"] = "manual"
-                if "difficulty" in plan:
-                    old.meta["difficulty"] = plan["difficulty"]
-                    old.meta["stars"] = {"简单题": 1, "中档题": 2,
-                                         "难题": 3}.get(plan["difficulty"], 0)
-                # 答案/解析变了，作答括号得跟着重排
-                norm.normalize(old, norm.ENTRY)
-                # **盖时间戳**。这样 `store.diff()` 能把"有意升级"和
-                # "规则偷偷动了存量"分开报——否则每次升级验收都会红。
-                old.meta["upgraded_at"] = time.strftime("%Y-%m-%d %H:%M")
-                old.meta["upgraded_fields"] = fields
-                upgrades.append({"key": q.key, "fields": fields,
+                fields = apply_plan(old, plan, point_source=q.meta.get("point_source") or "")
+                upgrades.append({"key": q.key, "dup_key": old.key,
+                                 "fields": fields,
                                  "why": plan.get("solution_why", ""),
                                  "answer_prev": plan.get("answer_prev", "")})
             else:
@@ -676,6 +790,14 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
         if hits:
             q.meta["dup_of"] = hits[0]["key"]          # 和谁雷同，记录下来
             q.meta["dup_score"] = hits[0]["score"]
+            # 反方向的对账：手里这道**没标考点**，而库里那道雷同的标了 ⇒ 拿它当参考
+            # （用户 2026-09-26 口径）。只在 `并入` 档（≥ MERGE_SCORE）抄：
+            # 0.80 那一档只是"像"，照抄会把考点挂到别的题上。
+            if not q.points and dedup.classify(hits[0]["score"]) == "并入":
+                src = by_key.get(hits[0]["key"])
+                if src is not None and src.points:
+                    q.points = list(src.points)
+                    q.meta["point_source"] = "库里同题"
         existing_fp.add(fp)          # 同一批里也不许重复
         keep.append(q)
 
@@ -684,7 +806,11 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     if upgrades:
         # 升级动的是**库里已有的题**，`append` 只追加、改不了旧题，
         # 所以走整库重写（`rewrite_all` 会按 PER_VOLUME 重新分卷）。
-        store.rewrite_all(all_qs)
+        # ⚠️ 必须把本批新增**一起**写回去：`all_qs` 是 `append` 之前抓的快照，
+        # 只传 `all_qs` 等于按"追加前"的样子整库重写 —— 本次新增会被整批抹掉，
+        # 而 commit 照样返回 ok、`added_count` 变成 0。
+        # （worker C 2026-09-23 沙盒实证：8 道全新 key 的题 0 道幸存。）
+        store.rewrite_all(all_qs + keep)
     after_keys = {q.key for _f, q in store.iter_questions()}
 
     return {
@@ -749,6 +875,20 @@ def _selftest() -> int:
     check("第 1 道是单选", qs[0].type == "single_choice", qs[0].type)
     check("单选题答案从 \\item* 得出", qs[0].answer == "A", qs[0].answer)
     check("第 2 道是解答", qs[1].type == "detailed_answer", qs[1].type)
+
+    # 界面上明确选的题型**覆盖**从正文推断出来的（`qtype=`）：
+    # 录一道还没写答案的多选题时，正文推断会判成单选，得能手动改过来。
+    _ov = parse_source(src, book="测试录入", label="第1套",
+                       qtype="multi_choice")["questions"]
+    check("界面选的题型覆盖推断结果",
+          [_q.type for _q in _ov] == ["multi_choice", "multi_choice"],
+          str([_q.type for _q in _ov]))
+    _ov2 = parse_source(src, book="测试录入", label="第1套",
+                        qtype="detailed_answer")["questions"]
+    check("覆盖对每一道都生效", _ov2[0].type == "detailed_answer", _ov2[0].type)
+    check("不传 qtype 时行为不变",
+          parse_source(src, book="测试录入", label="第1套")["questions"][0].type
+          == "single_choice")
     check("key 自动生成", qs[0].key == "测试录入/第1套#1", qs[0].key)
     check("book 写进 meta", qs[0].meta.get("book") == "测试录入", str(qs[0].meta))
 
@@ -811,6 +951,17 @@ def _selftest() -> int:
     # 反例三：考点不能变少（并集只会多不会少）
     pl = merge_plan(_q(pts=["1.1.1", "1.1.2"]), _q(pts=["1.1.1"]))
     check("新考点更少 → 不动考点", "points" not in pl, str(pl))
+
+    # 正例四：并集换了**主考点** ⇒ 派生难度得跟着走，
+    #         否则库里留下「考点是根的分布、难度还写着集合」的错配
+    pl = merge_plan(_q(pts=["1.1.1"]), _q(pts=["2.2.2"]))
+    check("换主考点 → 难度按新主考点重算",
+          pl.get("difficulty") == kb.difficulty_of("2.2.2")
+          and pl.get("stars") == kb.stars_of("2.2.2"), str(pl))
+
+    # 反例五：难度是人手填的（和它自己主考点对不上就是填的）→ 那是判断，不覆盖
+    pl = merge_plan(_q(pts=["1.1.1"], diff="难题"), _q(pts=["2.2.2"]))
+    check("人填的难度不覆盖", "difficulty" not in pl, str(pl))
 
     # 答案不同：以新的为准，但旧值要留痕
     pl = merge_plan(_q(ans="A"), _q(ans="B"))

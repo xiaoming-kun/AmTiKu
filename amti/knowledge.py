@@ -64,6 +64,10 @@ def _index() -> dict[str, dict]:
                     "difficulty": p.get("difficulty") or STARS_DIFFICULTY.get(stars, ""),
                     "topic": topic.get("title", ""),
                     "section": sec_name,
+                    # 五要素（核心概念/核心公式/常用方法/常考题型/易错点）——
+                    # 界面要展示它们，索引里顺手带上，
+                    # 免得别处再读一遍 知识点.json。
+                    "fields": p.get("fields") or {},
                 }
     _IDX["key"] = sig
     _IDX["v"] = out
@@ -89,6 +93,11 @@ def title_of(point_id: str) -> str:
 
 def stars_of(point_id: str) -> int:
     return get(point_id).get("stars", 0)
+
+
+def fields_of(point_id: str) -> dict:
+    """考点的五要素 `{核心概念: [...], 常考题型: [...], …}`，没有就返回空。"""
+    return get(point_id).get("fields", {})
 
 
 def difficulty_of(point_id: str) -> str:

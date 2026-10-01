@@ -1,4 +1,4 @@
-"""AmTiKu · 查重
+r"""AmTiKu · 查重
 
 录入前先问一句「库里是不是已经有这道题了」。旧项目在这上面栽过：
 同一道高考题在不同汇编里出现两次，两次都进了库，组卷时一卷两题。
@@ -7,6 +7,11 @@
 
     归一化  →  去掉一切「排版差异」，只留「内容」
     比相似  →  difflib 的字符级比值（标准库，无依赖）
+
+⚠️ **本模块的 docstring 必须加 `r` 前缀（raw 字符串）**：下面正文里有 `$A\cap B$`，
+   不加 `r` 就会被当成转义序列 → 编译期 `SyntaxWarning: invalid escape sequence '\c'`，
+   而 `amti.py accept` 第①层是带 `PYTHONWARNINGS=error::SyntaxWarning` 跑的，
+   **警告在那里升级成错误，模块直接导入失败**（`amti/ingest.py` 也 import 它，一起红）。
 
 阈值（**与 `设计/录入流程.md` 的原始约定不同，这里改严了，理由见下**）：
 

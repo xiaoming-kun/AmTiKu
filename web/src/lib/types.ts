@@ -14,7 +14,7 @@ export type Q = {
   blocks: { stem: Block[]; answer: Block[]; solution: Block[]; options: Block[][] }
   difficulty: string; stars: number; point_titles: string[]
   seq?: number
-  used?: number                       // 被导出（试卷/讲义）的次数
+  used?: number                       // 被导出的次数
   meta: Record<string, any>; hash: string
   missing: string[]; flags: Flags
 }

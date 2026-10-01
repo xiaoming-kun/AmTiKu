@@ -69,15 +69,12 @@ export const api = {
    *  由 `amti/render_tex.py` 生成，前端不再自己拼一遍。 */
   get: (key: string) => request('/api/questions/' + enc(key)),
   baseline: () => request('/api/baseline'),
+  /** 只读设置（导出位置等）。 */
+  settings: () => request('/api/settings'),
   changes: () => request('/api/changes'),
   changeText: (name: string) => request('/api/changes/' + enc(name)),
   statsDetail: () => request('/api/stats/detail'),
   export: (body: any) => send('/api/export', 'POST', body),
-  exportBlocks: (body: any) => send('/api/export/slidev-blocks', 'POST', body),
-  handouts: () => request('/api/handouts'),
-  handout: (name: string) => request(`/api/handouts/${enc(name)}`),
-  saveHandout: (body: any) => send('/api/handouts', 'POST', body),
-  deleteHandout: (name: string) => send(`/api/handouts/${enc(name)}`, 'DELETE'),
   generate: (body: any) => send('/api/generate', 'POST', body),
   ingestPreview: (body: any) => send('/api/ingest/preview', 'POST', body),
   ingestCommit: (body: any) => send('/api/ingest/commit', 'POST', body),
@@ -98,6 +95,11 @@ export const api = {
   reveal: (path: string) => request('/api/reveal?path=' + enc(path)),
   /* ── 试卷存档 / 合集 ────────────────────────────
      存档里只存**题号**，所以任何时候都能原样还原那套卷。 */
+  /* ── 知识链路 ────────────────────────────────────
+     节点现取自知识点库，这里只取「边」和派生出来的深度/体检。 */
+  chain: () => request('/api/chain'),
+  chainAudit: () => request('/api/chain/audit'),
+  chainNode: (pid: string) => request('/api/chain/' + enc(pid)),
   papers: () => request('/api/papers'),
   paperSave: (body: any) => send('/api/papers', 'POST', body),
   paperDelete: (name: string) => send(`/api/papers/${enc(name)}`, 'DELETE'),

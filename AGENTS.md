@@ -14,8 +14,7 @@
 
 ```bash
 python3 amti.py accept          # 四层：单元自检 / 规范审查 / 端到端渲染 / 快照——必须全绿
-python3 测试/接口测试.py         # 接口回归 14 项
-python3 测试/讲义测试.py         # 讲义导出与出处标签 18 项
+python3 测试/接口测试.py         # 接口回归 18 项
 cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run build
 ```
 
@@ -30,6 +29,7 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | `amti/normalize.py` | 规范化 | 全库唯一改题目形态的地方；绕过 → 规范审查失败 |
 | `amti/images.py` | 图片入库 | 唯一处理图片处（内容寻址命名） |
 | `amti/ingest.py` | 录入 | 承诺**存量题目一个字不变**；不要拿它做批量修改 |
+| `amti/chain.py` | 知识链路（`知识链路.json`） | 考点之间的关系只此一处解析；别处再写一份 → 环路/悬空引用没人拦 |
 
 > 新增功能前先问：这件事是不是已经有唯一入口了？有 → 改那个模块；没有 → 才新建。
 
@@ -54,7 +54,7 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 
 | 坑 | 表现 | 防法 |
 |---|---|---|
-| **预览与导出不一致** | 编辑器看着对，PDF 不一样 | 前后端成对的转换函数**必须同步改**（`web/src/lib/qlatex.ts` ↔ `amti/slidev_handout.py`），并有测试逐题比对 |
+| **预览与导出不一致** | 编辑器看着对，PDF 不一样 | 前后端成对的转换函数**必须同步改**（`web/src/lib/qlatex.ts` ↔ `amti/paper.py`），并有测试逐题比对 |
 | **构建成功 ≠ 渲染正确** | 静默失败、出空 PDF / 源码泄漏 | 必须看产物的文本层（`accept` 层③ 就是干这个的） |
 | **改完没重新构建前端** | 界面还是旧行为 | 改 `web/src` 后必须 `npm run build` |
 | **一处漏 catch 就静默失败** | 界面表现成"没数据" | 请求统一走 `lib/api.ts` 的 `request()`，错误有全局提示 |

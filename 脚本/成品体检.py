@@ -33,6 +33,7 @@ def cjk_in_math(text):
 def main():
     out = []
     Z = []
+    LOST = []
     files = sorted(V2.glob("*.成品.json"))
     per = {}
     for f in files:
@@ -117,8 +118,16 @@ def main():
         pf = f.with_name(f.name.replace(".成品.json", ".待复核.json"))
         recs = per[f]
         pend = json.loads(pf.read_text(encoding="utf-8")) if pf.exists() else []
+        # 「已交代」= 进了成品，或在待复核里登记过（任何类型都算）。
+        # 只认 figure/table 会把 missing-option（原卷就没题面）误报成「静默丢题」。
         norec = [e["题号"] for e in pend if e.get("类型") in ("figure", "table")]
-        nos = {int(r["题号"]) for r in recs} | {int(x) for x in norec}
+        told  = [e["题号"] for e in pend]
+        lost  = [e["题号"] for e in pend if "【题面缺失】" in (e.get("原文") or "")]
+        if lost:
+            Z.append("%s 原卷缺题面：%s（答案已抄进待复核，但这几道进不了库）"
+                     % (f.name.split("_")[0], lost))
+            LOST.append((f.name.split("_")[0], len(lost)))
+        nos = {int(r["题号"]) for r in recs} | {int(x) for x in told}
         holes = [i for i in range(1, (max(nos) if nos else 19) + 1) if i not in nos]
         dupno = [n for n, c in Counter(int(r["题号"]) for r in recs).items() if c > 1]
         if holes or dupno:
@@ -146,6 +155,13 @@ def main():
     L.append("")
     L.append("## 提示（不算问题，tidy 会自动修 / 项目惯例）\n")
     L.extend(["- %s" % z for z in Z] or ["- 无"])
+    L.append("")
+    L.append("## 原卷缺题面的题（真进不了库，要另找卷子）\n")
+    if LOST:
+        L.append("- 共 %d 场、%d 道：%s" % (len(LOST), sum(n for _, n in LOST),
+            "；".join("#%s %d 道" % (a, b) for a, b in sorted(LOST))))
+    else:
+        L.append("- 无")
     L.append("")
     L.append("## 跨场重复（同一道题出现在两份成品里）\n")
     if pairs:

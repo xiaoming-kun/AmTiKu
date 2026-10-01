@@ -30,7 +30,23 @@ def main(no, added, pending, note, status="done", minutes=0):
                              "待复核": int(pending), "无答案卷": not it["答案"],
                              "用时分钟": int(minutes), "时间": stamp, "备注": note},
                             ensure_ascii=False) + "\n")
-    # 库内模拟卷清单要跟着长，下一场的撞车预检才准
+    # 库内模拟卷清单要跟着长，下一场的撞车预检才准。
+    # ⚠️ 批量入库时可以跳过（`AMTIKU_SIMLIST=0`）：这一段要把全库读一遍＋写文件，
+    # 逐场做等于每场白搭三四秒——批末由 `--simlist` 单独刷一次就够。
+    if _simlist_wanted():
+        refresh_simlist()
+    todo = [i["序号"] for i in q["队列"] if i["状态"] == "todo"]
+    print("%s → %s（入库 %s，待复核 %s）" % (it["卷名"], status, added, pending))
+    print("剩余 todo %d 场，接下来: %s" % (len(todo), todo[:8]))
+
+
+def _simlist_wanted() -> bool:
+    import os
+    return os.environ.get("AMTIKU_SIMLIST") != "0"
+
+
+def refresh_simlist() -> int:
+    r"""重写 `库内模拟卷清单.json`，返回卷数。"""
     from amti import store
     sims = [x for x in store.load_all() if x.meta.get("book") == "模拟题"]
     out = {}
@@ -45,13 +61,15 @@ def main(no, added, pending, note, status="done", minutes=0):
             d["卷面标题"].append(pt)
     for v in out.values():
         v["卷面标题"].sort()
-    (SRC / "库内模拟卷清单.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
-    todo = [i["序号"] for i in q["队列"] if i["状态"] == "todo"]
-    print("%s → %s（入库 %s，待复核 %s）" % (it["卷名"], status, added, pending))
-    print("剩余 todo %d 场，接下来: %s" % (len(todo), todo[:8]))
+    (SRC / "库内模拟卷清单.json").write_text(
+        json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    return len(out)
 
 
 if __name__ == "__main__":
     a = sys.argv[1:]
+    if a == ["--simlist"]:          # 只刷清单（批量入库的批末用）
+        print("库内模拟卷清单已刷：%d 卷" % refresh_simlist())
+        raise SystemExit(0)
     main(a[0], a[1], a[2], a[3], a[4] if len(a) > 4 else "done",
          a[5] if len(a) > 5 else 0)

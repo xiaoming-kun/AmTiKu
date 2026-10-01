@@ -106,7 +106,7 @@ jobs:
           "@ | Out-File -Encoding ascii tl.profile
           & "$d\install-tl-windows.bat" -profile tl.profile -no-interaction
           & "$tex\bin\windows\tlmgr.bat" option repository https://mirrors.tuna.tsinghua.edu.cn/CTAN/systems/texlive/tlnet
-          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math fandol tex-gyre elegantnote elegantbook makecell pgfplots siunitx varwidth tikzpagenodes environ trimspaces
+          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math fandol tex-gyre makecell pgfplots siunitx varwidth tikzpagenodes environ trimspaces
 
       # 宏包清单靠猜必然漏（本机就漏在 l3draw.sty 上），所以用项目自带的补包工具：
       # 反复编译参考卷 → 缺哪个包就 tlmgr 装哪个 → 直到编出 PDF。本机与 CI 共用同一逻辑。
@@ -119,9 +119,8 @@ jobs:
           Copy-Item demo数据\图片\* 图片\ -Force
 
       - name: 补全 TeX 宏包（编参考卷自检，缓存命中也会跑一遍兜底）
-        run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex packaging/test-handout.tex
-        # 两篇都要编：试卷走 exam-zh、A4 讲义走 elegantnote，
-        # 只编一种就会出现"另一种卷型从没被验证过"（elegantnote.cls 就是这么漏的）
+        run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex
+        # 编参考卷验证 exam-zh 那条出卷路径的宏包齐不齐。
 
       # 保存必须在 TeX 装完之后（放前面会存进一个空/残缺的树，还会让后续轮次
       # 误命中缓存而跳过安装 —— 我第一次就把它放前面了，结果缓存形同虚设）

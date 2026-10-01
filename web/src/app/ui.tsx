@@ -4,10 +4,10 @@
  *  搬出去的子页面反向依赖 App（形成循环）。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { Flags } from '@/lib/types'
+import { ChevronRight, X } from 'lucide-react'
+import type { Flags as FlagMap } from '@/lib/types'
 
-
-export function Flags({ flags, size = 'sm' }: { flags: Flags; size?: 'sm' | 'md' }) {
+export function Flags({ flags, size = 'sm' }: { flags: FlagMap; size?: 'sm' | 'md' }) {
   /**
    * **只把"缺"的标出来，"有"的一律不显示。**
    *
@@ -21,43 +21,69 @@ export function Flags({ flags, size = 'sm' }: { flags: Flags; size?: 'sm' | 'md'
     // 全都有 → 列表里**什么都不画**（干净）；详情页要显式说一句"齐全"，
     // 不然用户会以为这块坏了。
     return size === 'md'
-      ? <span className="rounded bg-has-soft px-1.5 py-[2px] text-[11px] font-medium text-has">
+      ? <span className="rounded-md bg-has-soft px-1.5 py-[2px] text-[11px] font-medium text-has">
           ✓ 答案·解析·图·标签 齐全
         </span>
       : null
   }
-  const cls = size === 'md' ? 'text-[11px] px-1.5 py-[2px]' : 'text-[10px] px-1 py-[1px]'
+  const cls = size === 'md' ? 'text-[11px] px-1.5 py-[2px]' : 'text-[10.5px] px-1.5 py-[1px]'
   return (
     <span className="inline-flex flex-wrap gap-1">
       {missing.map(([k, label]) => (
         <span key={k} title={`缺${k}`}
-          className={`${cls} rounded font-medium bg-gap-soft text-gap`}>{label}</span>
+          className={`${cls} rounded-md bg-gap-soft font-medium text-gap`}>{label}</span>
       ))}
     </span>
   )
 }
 
-export function Panel({ title, children }: any) {
+/** 弹层/抽屉右上角那颗关闭按钮。
+ *
+ *  以前是五个地方各写一行，而且**都是"一个没边框的小灰 ✕"**（图标 14~16px）——
+ *  又小又不显眼，是整个弹层里最难找到、最不好点的一个东西。
+ *  关闭是**逃生通道**，该一眼看到、闭着眼能点到，所以统一成：
+ *  32px 的方块 + 描边 + 图标 18px，悬停时底色浮出来。
+ *
+ *  抽成组件是为了以后不再各写一份——这次就是五处各写各的，一起小。
+ */
+export function CloseBtn({ onClick, title = '关闭', className = '' }: {
+  onClick: () => void; title?: string; className?: string
+}) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-3.5">
-      <div className="mb-2 text-[11.5px] font-semibold text-ink-soft">{title}</div>
-      {children}
+    <button onClick={onClick} title={title} aria-label={title}
+      className={`press grid h-8 w-8 shrink-0 place-items-center rounded-lg border
+                  border-border bg-surface text-ink-soft transition-colors
+                  hover:border-border-strong hover:bg-muted hover:text-ink ${className}`}>
+      <X size={18} strokeWidth={2.2} />
+    </button>
+  )
+}
+
+/** 卡片式面板。`pad` 控不控内边距——有些面板要自己画表头 */
+export function Panel({ title, children, right, pad = true }: any) {
+  return (
+    <div className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-card)]">
+      {title && (
+        <div className="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
+          <span className="text-[12.5px] font-semibold">{title}</span>
+          {right && <span className="ml-auto">{right}</span>}
+        </div>
+      )}
+      <div className={pad ? 'p-3.5' : ''}>{children}</div>
     </div>
   )
 }
 
 export function Report({ n, title, children }: any) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-3">
-      <div className="mb-1.5 text-[11.5px] font-semibold text-ink-soft">
-        <span className="mr-1 text-brand-ink">{n}</span>{title}
+    <div className="rounded-[var(--radius-card)] border border-border bg-surface p-3 shadow-[var(--shadow-card)]">
+      <div className="mb-1.5 text-[12px] font-semibold text-ink-soft">
+        <span className="mr-1.5 text-brand-ink">{n}</span>{title}
       </div>
       {children}
     </div>
   )
 }
-
-/* ══ 三栏拖拽手柄 ══════════════════════════════════ */
 
 export const FLAG_KEYS = [['答案', '答'], ['解析', '析'], ['图', '图'], ['标签', '签']] as const
 
@@ -72,74 +98,65 @@ export const INGEST_SAMPLE = `\\begin{question}
 由交集定义得 $\\{0,1,2\\}$.
 \\end{solution}`
 
-export function Chip({ on, onClick, children, n }: any) {
+/* ══ 筛选用的胶囊 ══════════════════════════════════
+   选中态用**品牌色实心 + 白字**，未选中是白底细描边。
+   参考图里选中的胶囊是黑色的——同理，实心才有"选中"的分量；
+   描边+浅底那套太软，一屏十几个看不出选了哪个。 */
+export function Chip({ on, onClick, children, n, title, size = 'md' }: any) {
+  const pad = size === 'sm' ? 'px-2 py-[3px] text-[11.5px]' : 'px-2.5 py-[5px] text-[12.5px]'
   return (
-    <button onClick={onClick}
-      className={`rounded-lg border px-2 py-1 text-[12px] transition-colors ${
-        on ? 'border-brand/30 bg-brand-soft font-medium text-brand-ink'
-           : 'border-border bg-surface text-ink-soft hover:bg-muted'}`}>
+    <button onClick={onClick} title={title}
+      className={`press inline-flex items-center gap-1 rounded-full border ${pad}
+                  font-medium transition-colors ${on
+                    ? 'border-brand bg-brand text-white shadow-[0_2px_8px_-3px_var(--color-brand)]'
+                    : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
       {children}
-      {n != null && <span className={`ml-1 text-[10px] ${on ? 'text-brand-ink/70' : 'text-ink-faint'}`}>{n}</span>}
+      {n != null && (
+        <span className={`tnum text-[10.5px] font-normal ${on ? 'text-white/75' : 'text-ink-faint'}`}>{n}</span>
+      )}
     </button>
   )
 }
 
-/** 一个筛选维度：平时是按钮，点开是面板。
- *
- *  为什么不做成常驻列表：维度有五个（类别/年份/题型/难度/只看有），
- *  每个都铺开会把左边塞满，考点树就没地方了——而**考点才是总纲**。
- *  收成一格一格，谁选中了谁亮起来，一眼看得出当前筛了什么。 */
-export function FacetMenu({ label, summary, active, onClear, children, wide }: {
-  label: string; summary?: React.ReactNode; active?: boolean
-  onClear?: () => void; children: React.ReactNode; wide?: boolean
+/** 筛选面板里的一个维度。可折叠，折叠状态由父组件持有（这样才能「全部收起」）。 */
+export function Section({ title, hint, right, open, onToggle, children }: {
+  title: string; hint?: React.ReactNode; right?: React.ReactNode
+  open: boolean; onToggle: () => void; children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(false)
-  const box = useRef<HTMLDivElement>(null)
-  // 点外面收起。不做成模态——筛选时经常要一边点一边看列表
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [open])
   return (
-    <div ref={box} className="relative">
-      <button onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-1 rounded-lg border px-2 py-[3px] text-[11.5px]
-                    transition-colors ${active
-                      ? 'border-brand/40 bg-brand-soft font-medium text-brand-ink'
-                      : 'border-border bg-surface text-ink-soft hover:bg-muted'}`}>
-        <span className="text-ink-faint">{label}</span>
-        {summary}
-        <span className="text-[9px] text-ink-faint">{open ? '▴' : '▾'}</span>
-      </button>
-      {open && (
-        <div className={`pop absolute left-0 top-[calc(100%+4px)] z-40 max-h-[380px] overflow-y-auto
-                         rounded-xl border border-border bg-surface p-2.5 shadow-lg
-                         ${wide ? 'w-[420px]' : 'w-[248px]'}`}>
-          {children}
-          {active && onClear && (
-            <button onClick={() => { onClear(); setOpen(false) }}
-              className="mt-2 w-full rounded-md border border-border bg-bg py-1 text-[11px]
-                         text-ink-faint hover:border-warn/40 hover:text-warn">
-              清除这一项
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+    <section>
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <button onClick={onToggle}
+          className="group flex min-w-0 items-center gap-1 text-[11.5px] font-semibold
+                     tracking-wide text-ink-soft hover:text-ink">
+          <ChevronRight size={12} strokeWidth={2.6}
+            className={`shrink-0 text-ink-faint transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
+          <span className="truncate">{title}</span>
+        </button>
+        {hint && <span className="tnum shrink-0 text-[10.5px] text-ink-faint">{hint}</span>}
+        {right && <span className="ml-auto shrink-0">{right}</span>}
+      </div>
+      {open && <div className="anim-fade-in">{children}</div>}
+    </section>
   )
 }
 
-/** 拖动分栏边界。宽度存 localStorage，下次打开还是你调好的比例。 */
+/* ══ 分栏拖拽手柄 ══════════════════════════════════ */
+
+/** 拖动分栏边界。宽度存 localStorage，下次打开还是你调好的比例。
+ *
+ *  做得**几乎看不见**：一条 1px 的线 + 悬停时才浮出来的把手。
+ *  旧版是一条 5px 的灰带，常驻在界面上，是三栏里最显眼的元素——
+ *  它不该有这种分量。 */
 export function Grip({ width, setWidth, min, max }: {
   width: number; setWidth: (w: number) => void; min: number; max: number
 }) {
+  const [hot, setHot] = useState(false)
   const start = useRef({ x: 0, w: 0 })
   return (
     <div
+      onPointerEnter={() => setHot(true)}
+      onPointerLeave={() => setHot(false)}
       onPointerDown={(e) => {
         e.preventDefault()
         start.current = { x: e.clientX, w: width }
@@ -158,12 +175,13 @@ export function Grip({ width, setWidth, min, max }: {
         document.body.style.cursor = 'col-resize'
         document.body.style.userSelect = 'none'
       }}
-      title="拖动调整栏宽"
-      className="group relative w-[5px] shrink-0 cursor-col-resize bg-border/50 transition-colors
-                 hover:bg-brand/50 active:bg-brand"
+      title="拖动调整宽度"
+      className="relative z-10 -mx-[3px] w-[7px] shrink-0 cursor-col-resize"
     >
-      <span className="absolute left-1/2 top-1/2 h-6 w-[2px] -translate-x-1/2 -translate-y-1/2
-                       rounded-full bg-ink-faint/30 group-hover:bg-white/70" />
+      <span className={`absolute left-1/2 top-1/2 h-8 w-[2px] -translate-x-1/2 -translate-y-1/2
+                        rounded-full transition-all duration-150 ${hot
+                          ? 'bg-brand/70 opacity-100'
+                          : 'bg-border-strong opacity-0'}`} />
     </div>
   )
 }
@@ -178,18 +196,94 @@ export function useWidth(key: string, init: number, min: number, max: number) {
   return [w, setW] as const
 }
 
+/** **让退场动画有时间播完**再卸载。
+ *
+ *  React 里 `open=false` 就直接不渲染了，元素"啪"地消失——进场有动画、
+ * 退场没有，界面会显得生硬。这个钩子把"该不该渲染"和"该不该显示"
+ * 拆开：`shown` 管渲染（延迟到动画播完），`closing` 管挂哪个 class。
+ *
+ *  用法：
+ *      const { shown, closing } = useUnmount(open, 160)
+ *      if (!shown) return null
+ *      <div className={closing ? 'anim-slide-r-out' : 'anim-slide-r'}>…</div>
+ *
+ *  `ms` 要和 CSS 里那条退场动画的时长对上（宁可略长一两帧，别短）。
+ */
+export function useUnmount(open: boolean, ms: number) {
+  const [shown, setShown] = useState(open)
+  const [closing, setClosing] = useState(false)
+  useEffect(() => {
+    if (open) { setShown(true); setClosing(false); return }
+    if (!shown) return
+    setClosing(true)
+    const t = setTimeout(() => { setShown(false); setClosing(false) }, ms)
+    return () => clearTimeout(t)
+  }, [open, shown, ms])
+  return { shown, closing }
+}
+
+/** 数字变化时**滚一下**，而不是直接跳。
+ *
+ *  卷子从 2 题变 3 题、36 分变 41 分，直接替换数字人眼是跟不上的；
+ *  300ms 内滚过去，既看得见变化又不会拖。尊重「减少动态效果」——
+ *  那种情况下直接给终值。
+ *
+ *  **幅度大的变化不滚**：从 20934 滚到 1 会一路穿过几千个**任何筛选都给不出**
+ *  的数字。用户盯着屏（或截图）看到的是「搜「断臂」→ 8840 道」这种假答案。
+ *  滚动只在"加了一道题"这种小增量上才有意义，那里也才看得清。
+ */
+const SPIN_MAX = 200
+
+export function Num({ value, className = '' }: { value: number; className?: string }) {
+  const [shown, setShown] = useState(value)
+  // 屏幕上**当前画着**的数字。动画中途来新值就从这里续，
+  // 而不是从上一段的起点跳回去（旧写法只在动画跑完才更新起点）。
+  const cur = useRef(value)
+  const raf = useRef(0)
+  useEffect(() => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const a = cur.current, b = value
+    if (reduce || a === b || Math.abs(b - a) > SPIN_MAX) {
+      cur.current = b; setShown(b); return
+    }
+    const t0 = performance.now(), D = 300
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / D)
+      // easeOutCubic：先快后慢，数字"落"在终值上
+      const e = 1 - Math.pow(1 - k, 3)
+      const v = Math.round(a + (b - a) * e)
+      cur.current = v; setShown(v)
+      if (k < 1) raf.current = requestAnimationFrame(tick)
+      else cur.current = b
+    }
+    raf.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf.current)
+  }, [value])
+  return <span className={`tnum ${className}`}>{shown}</span>
+}
+
+/** 开关型记忆（折叠状态）。懒得每处再写一遍 localStorage。 */
+export function useFlag(key: string, init = false) {
+  const [v, setV] = useState(() => {
+    const s = localStorage.getItem(key)
+    return s === null ? init : s === '1'
+  })
+  useEffect(() => { localStorage.setItem(key, v ? '1' : '0') }, [key, v])
+  return [v, setV] as const
+}
+
 /** 顶栏明细里的一行：名称 + 数字 + 一句解释。 */
 export function BaseRow({ label, n, hint, tone }: {
   label: string; n: number; hint: string; tone?: 'warn'
 }) {
   return (
     <div className="flex items-baseline gap-1.5">
-      <span className={`tabular-nums font-medium ${
+      <span className={`tnum font-medium ${
         n === 0 ? 'text-ink-faint' : tone === 'warn' ? 'text-warn' : 'text-ink-soft'}`}>
         {n}
       </span>
       <span className={n === 0 ? 'text-ink-faint' : 'text-ink'}>{label}</span>
-      <span className="truncate text-[10px] text-ink-faint">{hint}</span>
+      <span className="truncate text-[10.5px] text-ink-faint">{hint}</span>
     </div>
   )
 }

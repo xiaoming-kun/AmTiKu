@@ -9,11 +9,7 @@
     GET  /api/questions/{key} 单题详情
     GET  /api/stats          统计
     GET  /api/facets         筛选项（题型/来源/考点，带计数）
-    POST /api/export         导出套卷（LaTeX/elegantbook）
-    POST /api/export/slidev  导出 Slidev 讲义（幻灯片式）
-    POST /api/export/slidev-blocks  从内容块导出讲义（块模式）
-    POST /api/export/slidev-canvas  从画布导出讲义（绝对定位 + 模板类）
-    GET/POST/DELETE /api/handouts   讲义存档
+    POST /api/export         导出套卷（LaTeX/exam-zh）
     GET  /api/figure         题图
 """
 from __future__ import annotations
@@ -51,7 +47,7 @@ DIFF_ORDER = {"简单题": 1, "中档题": 2, "难题": 3}
 IMG_DIR = PKG / "图片"
 
 # ── 使用频次 ──────────────────────────────────────────────────
-# 记录每道题被导出（试卷/讲义）的次数。存独立 JSON —— **不动题库源
+# 记录每道题被导出（试卷）的次数。存独立 JSON —— **不动题库源
 # 文件**：17249 个 .tex 改起来又慢又险（verify 必须保持全绿）。
 USAGE_PATH = PKG / "数据" / "使用频次.json"
 _usage_lock = threading.Lock()
@@ -93,13 +89,13 @@ def _usage_bump(keys) -> None:
 # （打包后是 `_internal/web/dist`）。
 # 原来写的是 `PKG / "web" / "dist"`，而 PKG 是**数据目录**（exe 旁边）——
 # 那里没有前端，于是 `if UI_DIST.exists()` 整段跳过：接口全通、首页 404。
-OUT_DIR = PKG / "试卷"
+from amti.paths import OUT_DIR      # 导出位置唯一来源（见 amti/paths.py）
 
 log = get_logger(__name__)
 
 # ── 导出串行化 ────────────────────────────────────────────
 # 后端审查报告 Important #6：导出是 30s~分钟级的长任务，且都往同一个
-# Slidev 临时目录写、共用一份 node_modules。并发跑会互相踩（一个在清理
+# 导出目录写、共用同一份临时构建目录。并发跑会互相踩（一个在清理
 # 临时文件，另一个正在读）。用非阻塞锁：忙就回 429，而不是排队堆线程。
 _EXPORT_LOCK = threading.Lock()
 
@@ -129,6 +125,20 @@ def _export_guard() -> threading.Lock:
 
 
 app = FastAPI(title="AmTiKu")
+
+
+@app.middleware("http")
+async def _count_inflight(request, call_next):
+    """进出各加减一次，给看门狗判断"现在有没有活没干完"。
+
+    数**所有**请求而不是只数导出：除了导出，录入、统计、生成
+    也都是几秒到几十秒的长活，中途被 `os._exit` 砍掉一样会留半成品。
+    """
+    _INFLIGHT[0] += 1
+    try:
+        return await call_next(request)
+    finally:
+        _INFLIGHT[0] -= 1
 
 
 @app.middleware("http")
@@ -994,6 +1004,70 @@ def facets() -> dict:
     }
 
 
+def _point_counts() -> Counter:
+    """每个考点有多少道题。口径与 `/api/facets`、`/api/stats/detail` 一致：
+    **按题的 `points` 标签数**（一道题挂两个考点就各算一次）。"""
+    c: Counter = Counter()
+    for q in store.load_cached():
+        for p in q.points:
+            c[p] += 1
+    return c
+
+
+@app.get("/api/chain/audit")
+def chain_audit() -> dict:
+    """知识链路体检：环路 / 悬空引用 / 无理由边 / 待补清单。
+
+    ⚠️ **必须声明在 `/api/chain/{pid}` 之前**——FastAPI 按声明顺序匹配，
+    反过来的话 `audit` 会被当成一个考点 id 吃掉。
+    """
+    from amti import chain
+    a = chain.audit()
+    # 待补清单里的 id 补上名称，前端不用再查一次
+    a["todo"] = {k: [{"id": i, "title": knowledge.title_of(i)} for i in v]
+                 for k, v in a["todo"].items()}
+    return a
+
+
+@app.get("/api/chain")
+def chain_graph() -> dict:
+    """整张知识链路图：节点（带大类/星级/拓扑深度/题量）+ 边 + 统计。"""
+    from amti import chain
+    g = chain.graph()
+    cnt = _point_counts()
+    for n in g["nodes"]:
+        n["n"] = cnt.get(n["id"], 0)
+    return g
+
+
+@app.get("/api/chain/{pid}")
+def chain_node(pid: str) -> dict:
+    """单个考点：五段式字段 + 直接前置/后续 + 全部祖先/后代。
+
+    前置/后续列表里带上名称与题量——前端侧栏要把它们做成可点的链接，
+    只有 id 的话每条都要再打一次接口。
+    """
+    from amti import chain
+    d = chain.node_detail(pid)
+    if not d:
+        raise HTTPException(404, "知识点库里没有这个考点：%s" % pid)
+    cnt = _point_counts()
+
+    def _rich(ids: list) -> list:
+        return [{"id": i, "title": knowledge.title_of(i),
+                 "stars": knowledge.stars_of(i), "n": cnt.get(i, 0)} for i in ids]
+
+    d["n"] = cnt.get(pid, 0)
+    for k in ("pre", "post"):
+        for e in d[k]:
+            other = e["pre"] if k == "pre" else e["post"]
+            e["title"] = knowledge.title_of(other)
+            e["n"] = cnt.get(other, 0)
+    d["ancestors"] = _rich(d["ancestors"])
+    d["descendants"] = _rich(d["descendants"])
+    return d
+
+
 class GenerateBody(BaseModel):
     """组卷。`pool` 是筛选条件，和 `/api/questions` 一致。
 
@@ -1005,6 +1079,11 @@ class GenerateBody(BaseModel):
     mode: str = "gaokao"
     coverage: float = 0.9               # coverage 模式的目标覆盖率
     want: int = 19                      # coverage 模式要几道题
+    # coverage 模式：**要不要保住高考卷面的题型比例**（8 单选 3 多选 3 填空 5 解答，
+    # 按 want 等比缩放）。默认保——不保的话贪心只认考点个数，
+    # 46 道题能挑出 23 道解答题（解答题考点密度最高），那卷子没法用。
+    # 代价是覆盖率约掉 2.6 个百分点（85.5% → 82.9%），说明里会报出来。
+    keep_structure: bool = True
     seed: int | None = None             # 同 seed 出同一套
     q: str = ""
     type: str = ""
@@ -1059,8 +1138,10 @@ def api_generate(body: GenerateBody) -> dict:
     if body.mode == "coverage":
         # **按考点覆盖率组卷**：以「尽量多覆盖考点」为目标挑题，
         # 挑完**按易→难排好**。跟 `gaokao` 那种"填卷面位置"是两回事。
-        r = _gen.generate_by_coverage(pool, want=body.want,
-                                      coverage=body.coverage, seed=body.seed)
+        mix = _gen.gaokao_mix(body.want) if body.keep_structure else None
+        r = _gen.generate_by_coverage(pool, want=body.want, coverage=body.coverage,
+                                      seed=body.seed, type_mix=mix,
+                                      report_cost=bool(mix))
         r["slots"] = []
     else:
         r = _gen.generate(pool, mode=body.mode, seed=body.seed)
@@ -1081,6 +1162,7 @@ class IngestBody(BaseModel):
     src_dir: str = ""                   # 图片来源目录，留空用默认
     points: str = ""                    # 考点 id，逗号分隔（界面上选的）
     difficulty: str = ""                # 简单题/中档题/难题（界面上选的）
+    qtype: str = ""                     # 题型（界面上选的）；留空=按正文推断
     update_existing: bool = True        # 库里已有这道题：手里这份更全就**升级**
     update_force: bool = False          # 连已有的解析也覆盖（默认只补不覆盖）
     merge_into: dict = {}               # {新题key: 库内key} —— 界面上点「并入这道」
@@ -1097,6 +1179,7 @@ def ingest_preview(body: IngestBody) -> dict:
                      region=body.region, year=body.year,
                      source_no=body.source_no, points=pts or None,
                      difficulty=body.difficulty.strip(),
+                     qtype=body.qtype.strip(),
                      update_force=body.update_force,
                      merge_into=body.merge_into or None,
                      dup_threshold=body.dup_threshold)
@@ -1105,7 +1188,8 @@ def ingest_preview(body: IngestBody) -> dict:
             body.text, book=body.book, label=body.label,
             region=body.region, year=body.year,
             source_no=body.source_no, points=pts or None,
-            difficulty=body.difficulty.strip())["questions"]):
+            difficulty=body.difficulty.strip(),
+            qtype=body.qtype.strip())["questions"]):
         it["blocks"] = {
             "stem": lb.parse_blocks(q.stem),
             "answer": lb.parse_blocks(q.answer),
@@ -1125,6 +1209,7 @@ def ingest_commit(body: IngestBody) -> dict:
                       region=body.region, year=body.year,
                       source_no=body.source_no, points=pts or None,
                       difficulty=body.difficulty.strip(),
+                      qtype=body.qtype.strip(),
                       update_existing=body.update_existing,
                       update_force=body.update_force,
                       merge_into=body.merge_into or None)
@@ -1204,10 +1289,8 @@ def reveal(path: str):
 def figure(path: str, raw: int = 0):
     r"""题库图片。
 
-    默认做**白底转透明** —— 题库的图多是白底，贴在米色讲义上会显出一个
-    白方块，很突兀。讲义导出时（slidev_handout._copy_trimmed）也做同样处理，
-    这样**编辑器预览与导出 PDF 一致**。
-    传 ?raw=1 拿原图。
+    默认做**白底转透明** —— 题库的图多是白底，直接贴在页面上会显出一个
+    白方块，很突兀。传 ?raw=1 拿原图。
     """
     p = (IMG_DIR / path).resolve()
     if not str(p).startswith(str(IMG_DIR.resolve())) or not p.exists():
@@ -1243,79 +1326,9 @@ class ExportBody(BaseModel):
     keys: list[str] = []                # 选的题
     show_answers: bool = False
     answers_at_end: bool = False        # 答案与解析统一放卷末（真高考卷的做法）
-    handout_font: str = ""              # 讲义字号，见 paper.HANDOUT_SIZES
     bottom_sep: str = ""                # 题目间距，如 "0.6em"
     problem_blank_cm: float | None = None
-    mode: str = "gaokao"                # gaokao 高考卷 / test 纯测试题 / handout 讲义
-    compile: bool = True
-
-
-class BlocksBody(BaseModel):
-    """讲义内容块列表（讲义编辑器用）。
-
-    块类型：chapter/section/point/text/formula/question
-    其中 question 只存 key，引用题库；其余是老师自己写的内容。
-    """
-    title: str = ""
-    out: str = ""
-    blocks: list[dict] = []
-    ratio: str = "16:9"
-    density: str = "normal"
-    with_answers: bool = False
-    compile: bool = True
-
-
-class CanvasBody(BaseModel):
-    """画布讲义（绝对定位）。
-
-    pages: [{"blocks":[{"type","x","y","w","h",...}]}]
-    坐标用百分比（0-100），换比例时按比例重算。
-    """
-    title: str = ""
-    out: str = ""
-    pages: list[dict] = []
-    ratio: str = "16:9"
-    with_answers: bool = False
-    compile: bool = True
-    title_font: str = ""       # 标题字体（CSS font-family）
-    body_font: str = ""        # 正文字体
-    show_source: bool = True   # 高考题是否标出处（2024新高考I卷 第1题）
-
-
-class CanvasSaveBody(BaseModel):
-    name: str
-    title: str = ""
-    pages: list[dict] = []
-    ratio: str = "16:9"
-    with_answers: bool = False
-    title_font: str = ""
-    body_font: str = ""
-    show_source: bool = True
-
-
-class HandoutSaveBody(BaseModel):
-    name: str
-    title: str = ""
-    blocks: list[dict] = []
-    ratio: str = "16:9"
-    density: str = "normal"
-    with_answers: bool = False
-
-
-class SlidevHandoutBody(BaseModel):
-    """Slidev 讲义（幻灯片式，低密度、可批注）。
-
-    与 ExportBody 的 `handout` 模式区别：
-      handout 模式 → LaTeX/elegantbook，A4 印刷讲义
-      本模型       → Slidev，16:9 / A4 / 4:3 幻灯片讲义
-    """
-    title: str = ""
-    out: str = ""
-    keys: list[str] = []
-    ratio: str = "16:9"                 # 16:9 / a4 / 4:3
-    density: str = "normal"             # tight / normal / loose
-    with_answers: bool = False          # 教师版显示答案
-    page_numbers: bool = True
+    mode: str = "gaokao"                # gaokao 高考卷 / test 纯测试题 / coverage 考点覆盖卷
     compile: bool = True
 
 
@@ -1328,14 +1341,8 @@ def export(body: ExportBody) -> dict:
     只说一句"已生成"，用户还得自己去翻文件夹找。
     """
     from amti import export as _ex
-    from amti import paper as _paper          # 这个函数里必须自己导入：
-    # 原来只在 1580 行的另一个函数里 `from amti import paper as _paper`，
-    # 这里用 _paper.HANDOUT_FONT_DEFAULT 却是未定义名。平时不炸是因为下一行
-    # 用 `or` 短路（前端总会传 handout_font）；只有不传该字段的 API 调用才会
-    # NameError（导出直接 500）。
     r = _ex.export(body.keys, title=body.title, out=body.out,
                    show_answers=body.show_answers, answers_at_end=body.answers_at_end,
-        handout_font=body.handout_font or _paper.HANDOUT_FONT_DEFAULT,
                    bottom_sep=body.bottom_sep or "0.6em",
                    problem_blank_cm=(body.problem_blank_cm
                                      if body.problem_blank_cm is not None else 4.0),
@@ -1346,102 +1353,15 @@ def export(body: ExportBody) -> dict:
     return r
 
 
-@app.post("/api/export/slidev-blocks")
-@_serialized_export
-def export_slidev_blocks(body: BlocksBody) -> dict:
-    r"""从内容块导出讲义（支持自己写的讲解 + 题库选题）。"""
-    from amti import slidev_handout as sh
-    r = sh.export_blocks(body.blocks, title=body.title, out=body.out,
-                         ratio=body.ratio, density=body.density,
-                         with_answers=body.with_answers,
-                         do_compile=body.compile)
-    if not r.get("ok") and r.get("error"):
-        raise HTTPException(400, r["error"])
-    _usage_bump(b.get("key") for b in body.blocks
-                if b.get("type") == "question")   # ← 计入频次
-    return r
+@app.get("/api/settings")
+def settings() -> dict:
+    """界面要知道的**只读设置**。
 
-
-@app.post("/api/export/slidev-canvas")
-@_serialized_export
-def export_slidev_canvas(body: CanvasBody) -> dict:
-    r"""从画布导出讲义（绝对定位 + 模板类）。"""
-    from amti import slidev_handout as sh
-    r = sh.export_canvas(body.pages, title=body.title, out=body.out,
-                         ratio=body.ratio, with_answers=body.with_answers,
-                         do_compile=body.compile,
-                         title_font=body.title_font, body_font=body.body_font,
-                         show_source=body.show_source)
-    if not r.get("ok") and r.get("error"):
-        raise HTTPException(400, r["error"])
-    _usage_bump(b.get("key") for pg in body.pages
-                for b in (pg.get("blocks") or [])
-                if b.get("type") == "question")   # ← 计入频次
-    return r
-
-
-@app.post("/api/canvas")
-def save_canvas(body: CanvasSaveBody) -> dict:
-    """保存画布讲义（复用讲义存档，按 name 覆盖）。"""
-    from amti import slidev_handout as sh
-    # 存进 blocks 字段（存档结构兼容），内容换成 pages
-    return sh.save_handout(body.name, title=body.title,
-                           blocks=body.pages, ratio=body.ratio,
-                           with_answers=body.with_answers,
-                           extra={"title_font": body.title_font,
-                                  "body_font": body.body_font,
-                                  "show_source": body.show_source})
-
-
-@app.post("/api/canvas/save", deprecated=True)
-def save_canvas_legacy(body: CanvasSaveBody) -> dict:
-    """旧路径（`/api/canvas/save`）→ 语义与 `POST /api/canvas` 相同。
-
-    审查报告 🟡「REST 命名」：路径里不该带动词。这里保留旧路径做兼容，
-    新代码请用 `POST /api/canvas`。
+    现在只有一项：导出的试卷落在哪个目录。界面上的「存为 xxx/yyy.pdf」
+    得说真话——以前前端写死「试卷/」，而导出位置其实可以在
+    `数据/导出位置.txt` 里改，写死的那个就会骗人。
     """
-    return save_canvas(body)
-
-
-@app.get("/api/canvas/{name:path}")
-def get_canvas(name: str) -> dict:
-    from amti import slidev_handout as sh
-    h = sh.get_handout(name)
-    if not h:
-        raise HTTPException(404, f"没有这份讲义：{name}")
-    return h
-
-
-@app.get("/api/handouts")
-def list_handouts() -> dict:
-    """讲义列表（不含 blocks）。"""
-    from amti import slidev_handout as sh
-    return {"items": sh.list_handouts()}
-
-
-@app.get("/api/handouts/{name:path}")
-def get_handout(name: str) -> dict:
-    """读一份讲义（含 blocks）。"""
-    from amti import slidev_handout as sh
-    h = sh.get_handout(name)
-    if not h:
-        raise HTTPException(404, f"没有这份讲义：{name}")
-    return h
-
-
-@app.post("/api/handouts")
-def save_handout(body: HandoutSaveBody) -> dict:
-    """新建或覆盖一份讲义（同名覆盖）。"""
-    from amti import slidev_handout as sh
-    return sh.save_handout(body.name, title=body.title, blocks=body.blocks,
-                           ratio=body.ratio, density=body.density,
-                           with_answers=body.with_answers)
-
-
-@app.delete("/api/handouts/{name:path}")
-def delete_handout(name: str) -> dict:
-    from amti import slidev_handout as sh
-    return {"ok": sh.remove_handout(name)}
+    return {"out_dir": str(OUT_DIR), "out_name": OUT_DIR.name or str(OUT_DIR)}
 
 
 @app.get("/api/pdf")
@@ -1466,7 +1386,29 @@ def pdf(path: str):
 #    永远收不到 ping，看门狗会立刻把服务杀掉。
 _LAST_PING = [0.0]
 _PING_SEEN = [False]
-EXIT_IDLE_SEC = 25.0
+# 多久没 ping 才认为"人走了"。
+#
+# **必须明显大于 60 秒**：Chrome 对**后台标签页**的定时器有节流
+# （隐藏 5 分钟后降为每分钟一次），而心跳是 8 秒一次。
+# 原来设 25 秒 → 把标签页切到后台几分钟，服务就自己退了，
+# 用户切回来看到的是「连不上题库服务」。
+EXIT_IDLE_SEC = 95.0
+# 「页面说它要走了」之后还给多久。**不能是 0**：
+# `pagehide` 不只页面关闭时触发，**刷新（F5 / ⌘R）也会触发**——
+# 用户早先那个"刷新一下就再也连不上"就是这么来的：
+# beacon 一到，看门狗 2 秒内自杀，新页面还没加载完服务就没了。
+# 给 **10 秒**宽限：心跳间隔是 8 秒，而新页面要加载完（冷启动时 JS 包不小）
+# 才会发出第一声心跳。宽限必须**大于"最慢的一次刷新"**，
+# 否则刷新时服务还是会在新页面发出心跳之前退掉。真关掉也只是多等 10 秒。
+GONE_GRACE_SEC = 10.0
+
+# **正在处理的请求数**。看门狗靠它避免"活干到一半被退出"。
+#
+# 起因：用户点「导出并保存」（两遍 xelatex，几十秒），期间页面关闭
+# （或者别的什么发了 `/api/gone`），看门狗 2 秒内就 `os._exit(0)`——
+# 编译被拦腰砍断，用户看到的是 fetch 失败 →「连不上题库服务」，
+# 而真正的原因是**服务把自己退了**。半成品 .tex/.pdf 也留在磁盘上。
+_INFLIGHT = [0]
 
 
 @app.post("/api/alive")
@@ -1481,22 +1423,29 @@ def alive() -> dict:
 
 @app.post("/api/gone")
 def gone() -> dict:
-    r"""页面关掉了（`navigator.sendBeacon`）。
+    r"""页面说它要走了（`navigator.sendBeacon`）。
 
-    把最后 ping 时间往前推，看门狗下一轮就退出。
-    用 beacon 是因为它**在页面卸载时也能发出去**，`fetch` 不保证。
+    **不能立刻退**：`pagehide` 在刷新时也会触发（见 GONE_GRACE_SEC 的说明），
+    所以这里只把倒计时缩短到 `GONE_GRACE_SEC` 秒——刷新来得及接上，
+    真关掉也只是多等几秒。
     """
-    _LAST_PING[0] = time.monotonic() - EXIT_IDLE_SEC - 1
-    print("页面已关闭，准备退出", flush=True)
+    _LAST_PING[0] = time.monotonic() - (EXIT_IDLE_SEC - GONE_GRACE_SEC)
+    print("页面说要走 —— %d 秒内没有新的心跳就退出" % GONE_GRACE_SEC, flush=True)
     return {"ok": True}
 
 
 def _watchdog() -> None:
-    """没 ping 了就退出。只在 `--exit-with-browser` 下起。"""
+    """没 ping 了就退出。只在 `--exit-with-browser` 下起。
+
+    **有请求在跑就不退**：导出要几十秒，退在这儿等于把活砍一半。
+    等它跑完，下一轮（2 秒后）再看，那时没 ping 就正常退出。
+    """
     while True:
         time.sleep(2.0)
         if not _PING_SEEN[0]:
             continue                       # 页面还没打开过，不算
+        if _INFLIGHT[0] > 0:
+            continue                       # 有请求在跑，等它干完
         if time.monotonic() - _LAST_PING[0] > EXIT_IDLE_SEC:
             print("页面已关闭，题库服务退出")
             os._exit(0)

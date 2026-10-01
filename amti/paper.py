@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 
 from . import generate as gen
+from . import latex_blocks as lb
 from .schema import Question
 from .render_tex import question_to_tex, source_tag
 
@@ -33,16 +34,39 @@ from .render_tex import question_to_tex, source_tag
 # `Illegal parameter number in definition of \XC@@tmp`（实测编译失败）。
 # 所以导言区 `\definecolor`，正文只写颜色名。
 ANS_RED = "amtiAnsRed"                     # 颜色名（定义见导言区）
-ANS_RED_HEX = "D22116"                     # 与讲义/网页同一个红
+ANS_RED_HEX = "D22116"                     # 与网页同一个红
 _ANS_DEFINE = r"\definecolor{%s}{HTML}{%s}" % (ANS_RED, ANS_RED_HEX)
 
-_ANS_MACRO = re.compile(r"(\\paren\s*\[[^\]]*\]|\\fillin\s*\[[^\]]*\]|"
-                        r"\\fillin\s*\{[^}]*\})")
+_ANS_MACRO = re.compile(r"(\\(?:paren|fillin)\s*\[|\\fillin\s*\{)")
 
 
 def red_answer_macros(tex: str) -> str:
-    r"""把 `\paren[…]` / `\fillin[…]` 整块染红（**只在出卷子时调用**）。"""
-    return _ANS_MACRO.sub(lambda m: "{\\color{%s}%s}" % (ANS_RED, m.group(1)), tex)
+    r"""把 `\paren[…]` / `\fillin[…]` 整块染红（**只在出卷子时调用**）。
+
+    ⚠️ 这里**不能**用 `[^\]]*` 去匹配作答位：答案里带右闭区间（`[4,5]`）时，
+    第一个 `]` 就提前收尾，于是 `{\color{…}\fillin[…=[4,5}` 后面漏出一个 `}`，
+    编译报 «Argument of \fillin has an extra }»——整份卷子直接出不来。
+    收尾位置交给 `_blank_arg_end`（同一个配平扫描器，两份逻辑不许分叉）。
+    """
+    out: list[str] = []
+    i = 0
+    while True:
+        m = _ANS_MACRO.search(tex, i)
+        if not m:
+            out.append(tex[i:])
+            break
+        open_ch = m.group(1)[-1]
+        if open_ch == "[":
+            end = _blank_arg_end(tex, m.end() - 1)
+        else:
+            end = tex.find("}", m.end())
+        if end < 0:
+            out.append(tex[i:])
+            break
+        out.append(tex[i:m.start()])
+        out.append("{\\color{%s}%s}" % (ANS_RED, tex[m.start():end + 1]))
+        i = end + 1
+    return "".join(out)
 
 # 难度 → 显示
 DIFF_STARS = {"简单题": 1, "中档题": 2, "难题": 3}
@@ -119,12 +143,10 @@ def layout_difficulty(questions: list) -> list[tuple]:
 #
 # 有一批题的 TikZ 图是从原卷源码里抠出来的，用了原卷**预导言区**自定义的
 # `exam statistical histogram`（频率分布直方图）。那个定义只存在于原卷源码里，
-# 拷进我们库就丢了——少一条，卷子/讲义就是
+# 拷进我们库就丢了——少一条，卷子就是
 #     ! Package pgfkeys Error: I do not know the key '/tikz/exam statistical histogram'
 #
-# ⚠️ **只留一份，两条导言路径共用。** 上次讲义另抄一份导言时漏了它，
-# 讲义一编译就死；这次又漏了一次（600 道抽样抓到的）。
-# 同一个东西有两份副本，早晚会漏——所以提成常量。
+# ⚠️ **只留一份。** 同一个东西有两份副本，早晚会漏——所以提成常量。
 PGFPLOTS_STYLES: list[str] = [
     r"\pgfplotsset{",
     r"  exam statistical histogram/.style={",
@@ -172,28 +194,6 @@ def freq_label_cmd() -> str:
             r" at (axis cs:#2,#3) {#4};}")
 
 
-def _cap_figure_height(tex: str, cap: str = r"0.46\textheight") -> str:
-    r"""给 `\includegraphics` 补一个高度上限。
-
-    和原来的 `width` 一起用 `keepaspectratio`，等价于"宽高都不超过各自的限"，
-    不会把图拉变形。讲义是一题一页，图一高就整张飞到下一页，
-    那页只剩一张图——实测踩过。
-    """
-    def sub(m):
-        opts = m.group(1) or ""
-        if "height" in opts:
-            return m.group(0)
-        merged = (opts.strip("[]") + ", height=" + cap + ", keepaspectratio").lstrip(", ")
-        return "\\includegraphics[" + merged + "]{" + m.group(2) + "}"
-    return re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", sub, tex)
-
-
-def _star_line(diff: str) -> str:
-    """难度 → `〔★★〕`。讲义题头用。"""
-    n = DIFF_STARS.get(diff, 0)
-    return ("〔" + star_tex(n) + "〕") if n else ""
-
-
 def star_tex(n: int) -> str:
     r"""n 颗星，用于 LaTeX。
 
@@ -228,9 +228,9 @@ def _esc_text(s: str) -> str:
     return "".join(_TEX_SPECIAL.get(ch, ch) for ch in s)
 
 
-def _cjk_fontset_opt(comma: bool = False) -> str:
-    r"""中文字体集选项。默认 `fontset=fandol`（TeX 自带、跨平台），
-    `AMTIKU_CJK_FONTSET=system` 时返回空串（交给 ctex 按平台自动挑）。
+def _cjk_fontset_opt() -> str:
+    r"""中文字体集选项（`[fontset=fandol]`）。`AMTIKU_CJK_FONTSET=system`
+    时返回空串（交给 ctex 按平台自动挑）。
 
     为什么默认 Fandol：ctex 在 Windows 上默认要 SimSun/SimHei，
     而英文版 Windows / 精简系统 / Windows Server 没有这些字体，
@@ -239,21 +239,7 @@ def _cjk_fontset_opt(comma: bool = False) -> str:
     import os
     if os.environ.get("AMTIKU_CJK_FONTSET", "").lower() == "system":
         return ""
-    return (", fontset=fandol" if comma else "[fontset=fandol]")
-
-
-# 讲义可选的几种字号（ctex 的 `\zihao` 编号 → 实际磅值）。
-#
-#   `-4` 小四 12pt    `4` 四号 14pt    `3` 三号 16pt    `2` 二号 22pt
-#
-# exam-zh 题干默认是**五号 10.5pt**，在 iPad 上偏小；**默认给小四 12pt**。
-HANDOUT_SIZES: dict[str, str] = {
-    "-4": "小四 12pt",
-    "4": "四号 14pt",
-    "3": "三号 16pt",
-    "2": "二号 22pt",
-}
-HANDOUT_FONT_DEFAULT = "-4"
+    return "[fontset=fandol]"
 
 
 # **解答题留白按难度给。**
@@ -312,6 +298,311 @@ def choices_columns(q: Question, default: int = 4) -> int:
     return 1
 
 
+_BLANK_ARG = re.compile(r"\\(?:fillin|paren)\s*\[")
+
+
+def _dollars_odd(s: str) -> bool:
+    """串里未转义的 `$` 是奇数个 ⇒ 这一段停在数学模式中间。"""
+    return len(re.findall(r"(?<!\\)\$", s)) % 2 == 1
+
+
+def _blank_arg_end(s: str, lb: int) -> int:
+    r"""`s[lb]` 是 `\fillin[` 的 `[`，返回**本该收尾**的那个 `]` 的下标（找不到 -1）。
+
+    TeX 的可选参数扫描器**只数花括号、不数 `$`**，所以 `\fillin[$A=[4,5]$]`
+    会在 `[4,5]` 那个 `]` 上就断掉，剩下 `5]$]` 漏进正文——编译停在
+    «Argument of \fillin has an extra }»。判据：花括号平衡**且** `$` 成双的
+    那个 `]` 才是真收尾。
+    """
+    depth, j = 0, lb
+    # 只在 400 字符里找收尾：找不到就说明这题的 `]` 根本不是这个套路，
+    # 宁可原样放过去（顶多这一题排错），也不能一路吃到**下一道题**的 `]`——
+    # 那会把中间整段吞进作答位里，坏得静悄悄。
+    stop = min(len(s), lb + 400)
+    while j < stop:
+        c = s[j]
+        # 越过空段或环境边界就说明这个 `[` 压根没配对的 `]`（实测
+        # «Paragraph ended before \fillin was complete» 就是这么来的）。
+        if s.startswith("\n\n", j) or s.startswith("\\end{", j) \
+                or s.startswith("\\begin{", j):
+            return -1
+        if c == "\\":
+            j += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        elif c == "]" and depth <= 0 and not _dollars_odd(s[lb + 1:j]):
+            return j
+        j += 1
+    return -1
+
+
+def fix_blank_brackets(tex: str) -> str:
+    r"""作答位 `\fillin[…]` / `\paren[…]` 的两道渲染期保险（不动数据）。
+
+    **① 答案里带 `]`**（右闭区间、`\left(…\right]`）：TeX 扫可选参数**只认第一个
+    `]`**，于是 `\fillin[$\left(e,\frac{e^2}{2}\right]$]` 在 `\right]` 那儿就断了，
+    剩下的 `$]` 漏进正文 → «Missing $ inserted» 整份卷子断在半路。
+    解法：把整个参数包进 `{…}` —— 花括号里的 `]` 处在 1 层括号内，不再是终止符。
+    （早先改成 `\rbrack` 是错的：`\right\rbrack` 里 `\right` 后面必须跟定界符，
+    实测 «Extra }, or forgotten $»。）
+
+    **② 作答位落在数学式里**：exam-zh 把可选参数按**正文**排，所以
+    `$\left(\fillin[\frac{1}{c}-\frac{1}{b}]\right)$` 这种（答案没带 `$`）
+    会 «Missing $ inserted»。判据：这个 `\fillin` 前面未转义的 `$` 是奇数个
+    （＝在数学式里）而参数里一个 `$` 都没有 → 给参数补上 `$…$`。
+    """
+    out: list[str] = []
+    i = 0
+    while True:
+        m = _BLANK_ARG.search(tex, i)
+        if not m:
+            out.append(tex[i:])
+            break
+        lb = m.end() - 1
+        end = _blank_arg_end(tex, lb)
+        if end < 0:
+            out.append(tex[i:])
+            break
+        body = tex[lb + 1:end]
+        wrapped = body
+        if _dollars_odd(tex[:lb]) and "$" not in body and "\\" in body:
+            wrapped = "$" + body + "$"                   # 规则 ②
+        if _blank_needs_wrap(wrapped):
+            wrapped = "{" + wrapped + "}"                # 规则 ①
+        out.append(tex[i:lb + 1] + wrapped + "]")
+        i = end + 1
+    return "".join(out)
+
+
+def _blank_needs_wrap(body: str) -> bool:
+    r"""参数里存在**花括号第 0 层**的 `]` ⇒ TeX 就在那儿收尾，必须包一层 `{…}`。
+
+    注意判据是「有没有」而不是「平衡的是哪个」：TeX 扫可选参数时，花括号能保护
+    `]`，但 `$…$` 不能——所以 `$\left(e,\frac{e^2}{2}\right]$` 里那个 `\right]`
+    必须包起来。（`\{` `\}` 是转义字符，不算开合括号，跳过。）
+    """
+    depth, i = 0, 0
+    while i < len(body):
+        c = body[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth = max(0, depth - 1)
+        elif c == "]" and depth == 0:
+            return True
+        i += 1
+    return False
+
+
+_BLANK_RUN = re.compile(r"_{2,}")
+# 「别当正文处理」的环境：公式环境 + 图环境。图里那些 `\addplot`、坐标里的逗号
+# 既不是正文也不该被转义，判成数学模式一并跳过最省事。
+_OPAQUE_ENVS = lb.DISPLAY_MATH_ENVS | lb.MATH_ONLY_ENVS | lb.RAW_ENVS
+_ENV_TOGGLE = re.compile(r"\\(begin|end)\{([^{}]*)\}")
+
+
+def map_text_mode(tex: str, fn) -> str:
+    r"""只对**数学模式之外**的片段套用 `fn`，数学式一个字不动。
+
+    数学模式认四种写法：`$…$`、`\[…\]`、`\(…\)`、公式环境。环境名直接取
+    `latex_blocks` 的 `DISPLAY_MATH_ENVS | MATH_ONLY_ENVS`——「哪些环境是数学」
+    这件事全项目只许有一份答案，另抄一份就会两边判得不一样。
+
+    出题时凡是要动正文（转义裸 `_`、包 unicode 符号），**必须**走这里：
+    不判数学模式就动手，会把 `$x_i$` 改成 `$x\_i$`，公式当场塌成下划线。
+    """
+    out: list[str] = []
+    buf = ""
+    dollar = False
+    depth = 0
+    i, n = 0, len(tex)
+
+    def in_math() -> bool:
+        return dollar or depth > 0
+
+    def flush():
+        nonlocal buf
+        if buf:
+            out.append(buf if in_math() else fn(buf))
+            buf = ""
+
+    while i < n:
+        c = tex[i]
+        if c == "$" and (i == 0 or tex[i - 1] != "\\"):
+            flush()
+            dollar = not dollar
+            out.append(c)
+            i += 1
+            continue
+        if tex.startswith(("\\[", "\\("), i):
+            flush()
+            depth += 1
+            out.append(tex[i:i + 2])
+            i += 2
+            continue
+        if tex.startswith(("\\]", "\\)"), i):
+            flush()
+            depth = max(0, depth - 1)
+            out.append(tex[i:i + 2])
+            i += 2
+            continue
+        m = _ENV_TOGGLE.match(tex, i)
+        if m:
+            flush()
+            if m.group(2) in _OPAQUE_ENVS:
+                depth += 1 if m.group(1) == "begin" else -1
+                depth = max(0, depth)
+            out.append(m.group(0))
+            i = m.end()
+            continue
+        buf += c
+        i += 1
+    flush()
+    return "".join(out)
+
+
+def fix_text_specials(tex: str) -> str:
+    r"""正文（数学模式之外）里四类「LaTeX 吃了就停编译」的写法（渲染期改动，不动数据）。
+
+    1. **裸横线 `_____`**：一批解析把原卷的作答位一起抄进来了（`概率为_____。`）。
+       连续两个以上换成 `\underline{\hspace{…}}`。
+    2. **单个 `_` / `^`**：如 `C_RN`（补集没包 `$`）。正文模式里 `_` 直接
+       «Missing $ inserted»，整段解析掉进数学模式——后面每个汉字都报
+       «no 所 (U+6240) in font NewCMMath»，一份卷子断在半路。
+    3. **裸 `#`**：录题时留在解析里的元话（`（原册第 1 页里 #10 只印了答案…）`），
+       全文 27 处；`#` 是宏参数占位符，两种模式里都炸。
+    4. **裸 `%`**：吃掉行尾剩下的文字（历史上丢过 246 个汉字）。
+
+    ⚠️ 这些是**数据缺陷**，正解是 `fixups.py` 逐题清；这里只是别让出卷
+    为它们整个失败。`&` **不动**——表格里它是列分隔符。
+    """
+    def one(chunk: str) -> str:
+        chunk = _BLANK_RUN.sub(
+            lambda m: r"\underline{\hspace{%dem}}" % min(12, len(m.group(0))), chunk)
+        chunk = re.sub(r"(?<!\\)_", r"\_", chunk)
+        chunk = re.sub(r"(?<!\\)\^", r"\textasciicircum{}", chunk)
+        chunk = re.sub(r"(?<!\\)#", r"\#", chunk)
+        chunk = re.sub(r"(?<!\\)%", r"\%", chunk)
+        return chunk
+
+    return map_text_mode(tex, one)
+
+
+_BEGIN_BARE = re.compile(r"(\\begin\{(?:question|problem|solution)\})(\n)(\[)")
+
+
+def guard_leading_bracket(tex: str) -> str:
+    r"""环境第一行就以 `[` 开头时，给环境补一个空的 `{}`。
+
+    库里有一批多问题干写作「[甲] …」「[乙] …」。`\begin{problem}` 后面紧跟
+    `[...]` 会被 exam-zh 当成**自己的**可选参数吃掉，报
+    «The key 'exam-zh/problem/甲' is unknown»，那一题的排版整个乱掉。
+    补一个空组 `{}` 就把可选参数的扫描堵住了，卷面一个字不变。
+
+    ⚠️ **`solution` 也必须算进来**（2026-10-01 补）。原来只护了
+    `question`/`problem`，于是**解析以 `[解]` 开头**的题一编就炸：
+    `\begin{solution}` 后面的 `[解]` 被当成可选参数，报
+    «The key 'exam-zh/solution/解' is unknown»，**整份卷子出不来**。
+    实测全库 3 道（四川绵阳南山中学 2026 届高三第五次教学质检 #7/#8/#14）——
+    都是"解析栏一个字都不显示"的坏法，只有跑 xelatex 才查得出来。
+    """
+    # **不设 count**：题干和解析可能各自都以 `[` 开头，只补第一处会漏掉另一处
+    # （原来写的是 `count=1`，那时只认 `question`/`problem`，所以没露出来）。
+    return _BEGIN_BARE.sub(lambda m: m.group(1) + "{}" + m.group(2) + m.group(3),
+                           tex)
+
+
+_PAPER_NOISE = re.compile(r"解答题|选择题|填空题|第\s*\d+\s*页|共\s*\d+\s*页|参考答案")
+
+
+def blank_args_ok(tex: str) -> bool:
+    r"""题干里的 `\fillin[` / `\paren[` 是不是**每一个**都能正常收尾。
+
+    收尾都找不到（越过空段/环境边界）就是数据缺陷：TeX 会一路吃到下一段，
+    报 «Paragraph ended before \fillin was complete»，整份产物断在这儿。
+    全库实测 26 道这样（题干里 `\fillin[$\sqrt{34}$。` 后面没有 `]`），
+    另有 11 道答案位把「四、解答题：…」「第 3 页（共 7 页）」这类卷尾噪声吞了进去
+    ——编译得过，但印出来是垃圾。两种都判不合格，交给选题/组卷自己避开。
+    """
+    for m in _BLANK_ARG.finditer(tex or ""):
+        lb = m.end() - 1
+        end = _blank_arg_end(tex, lb)
+        if end < 0:
+            return False
+        if _PAPER_NOISE.search(tex[lb + 1:end]):
+            return False
+    return True
+
+
+_AMP_RAW = re.compile(r"(?<!\\)&")
+_TAB_BEGIN = re.compile(r"\\begin\{tabular\*?\}")
+_TAB_END = re.compile(r"\\end\{tabular\*?\}")
+
+
+def guard_sheet_slots(tex: str) -> str:
+    r"""**表格行里**第二个及以后的作答位，各包一层 `{}`。
+
+    为什么：exam-zh 在**学生版**（`fillin/show-answer=false` +
+    `fillin/no-answer-type=none`）下，`\fillin` 展开成的那串东西
+    **在同一表格行的第二个及以后**会收不了组，xelatex 报
+    «Missing \endgroup inserted»、**整份卷子出不来**。
+
+    实测最小复现（`show-answer=true` 反而正常，所以肉眼看不出来）：
+
+        \begin{tabular}{|c|c|c|}
+        \hline $P$ & \fillin[$0.1$] & \fillin[$0.6$] \\ \hline
+        \end{tabular}                 → Missing \endgroup inserted
+
+        … & {\fillin[$0.1$]} & {\fillin[$0.6$]} …   → 通过
+
+    全库实测 4 道（都在 `高考真题汇编/2000~2004/全国卷` 的概率分布表里）。
+
+    ⚠️ **两条护栏，都是踩过才知道要加的**（第一版没有，把别的题改坏了）：
+
+    1. **只在 `tabular` 里动手**。第一版按"这一行有 `&`"判断，结果
+       `\begin{cases} … & … \end{cases}` 里的 `&` 也被当成表格分隔符——
+       实测把「湘豫名校联考#13」（题干里有 `cases`）改成了
+       `{\fillin[}$\begin{cases}…`，报 «Argument of \fillin has an extra }»。
+       这是条**新造出来的坏**，编译体检里 27 道变成了 1 道新的。
+    2. **收尾 `]` 定位不到就一个字都不动**。`_blank_arg_end` 是"花括号平衡
+       且 `$` 成双"的严格判据，比 TeX 的可选参数扫描器**更严**，会返回 -1。
+       第一版在 -1 时只把 `\fillin[` 包进组，等于把参数从中间砍断。
+    """
+    lines = tex.split("\n")
+    in_tab = 0
+    for k, line in enumerate(lines):
+        if _TAB_BEGIN.search(line):
+            in_tab += 1
+        elif _TAB_END.search(line):
+            in_tab = max(0, in_tab - 1)
+            continue
+        if not in_tab or "&" not in line:
+            continue
+        pos, out, hit = 0, [], False
+        for m in _BLANK_ARG.finditer(line):
+            if m.start() < pos:
+                continue
+            end = _blank_arg_end(line, m.end() - 1)
+            if end < 0:                      # 定位不到收尾 → 不动它
+                pos = m.end()
+                continue
+            out.append(line[pos:m.start()])
+            seg = line[m.start():end + 1]
+            has_amp = bool(_AMP_RAW.search(line[:m.start()]))
+            out.append("{%s}" % seg if has_amp else seg)
+            pos, hit = end + 1, True
+        if hit:
+            out.append(line[pos:])
+            lines[k] = "".join(out)
+    return "\n".join(lines)
+
+
 def _q_tex(q: Question, mode: str, show_answers: bool,
            diff_override: str = "", default_columns: int = 4,
            show_source: bool = False, with_solution: bool = True) -> str:
@@ -334,6 +625,12 @@ def _q_tex(q: Question, mode: str, show_answers: bool,
     cols = choices_columns(q, default_columns)
     tex = question_to_tex(q, with_solution=with_solution, with_source=False,
                           choices_columns=cols)
+    # 作答位里的多余 `]` 会把可选参数提前收尾（«extra }» 停编译）——出题时修，
+    # 数据一个字不动。见 `fix_blank_brackets`。
+    tex = fix_blank_brackets(tex)
+    tex = guard_sheet_slots(tex)            # 表格行里第 2+ 个作答位要包组
+    tex = fix_text_specials(tex)            # 解析里抄来的 `_____` 与裸 `#` 同上
+    tex = guard_leading_bracket(tex)        # 题干以 `[甲]` 开头时别让环境吞掉
     # **把题干里嵌着的 TikZ 换成预渲染好的矢量图**——只在这一步做。
     #
     # 为什么不在 `render_tex` 里做：那个函数**同时是写库路径**
@@ -376,16 +673,15 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                  title: str = "", subject: str = "数学", show_answers: bool = False,
                  answers_at_end: bool = False, show_source: bool = False,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
-                 columns: int = 4, graphicspath: str = "",
-                 handout_font: str = HANDOUT_FONT_DEFAULT) -> str:
-    r"""渲染成完整的 exam-zh 文档。`mode` 取 `gaokao` / `test` / `handout`。
+                 columns: int = 4, graphicspath: str = "") -> str:
+    r"""渲染成完整的 exam-zh 文档。`mode` 取 `gaokao` / `test`。
 
     三种"答案怎么放"：
 
     | `show_answers` | `answers_at_end` | 效果 |
     |---|---|---|
     | False | — | **学生卷**：作答位置空着，解答题留白，没有答案 |
-    | True  | False | **讲义卷**：答案就在括号里、解析紧跟题目 |
+    | True  | False | **答案卷**：答案就在括号里、解析紧跟题目 |
     | False | True  | **真题卷**：卷面上干干净净，**答案与解析统一放在卷末** |
 
     第三种才是真实高考卷的做法——卷子上只有题目，答案另附。
@@ -395,9 +691,6 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
     `answers_at_end` 会把 `show_answers` 的效果**收起来**：
     括号不显示答案，题目后面不带 `solution` 环境，改成卷末一节。
     """
-    if mode == "handout":
-        return _render_handout(questions, title=title, columns=columns,
-                               graphicspath=_texpath(graphicspath), font=handout_font)
     if mode not in ("gaokao", "test"):
         raise ValueError(f"未知卷型 {mode!r}")
 
@@ -406,8 +699,7 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
     if answers_at_end:
         show_answers = False
 
-    # 导言区走**共用的一份**（`_preamble`）——讲义模式当初另抄一份，
-    # 漏了自定义 pgfplots 样式，一编译就死。两份导言就是两份真相。
+    # 导言区走**共用的一份**（`_preamble`）——两份导言就是两份真相。
     doc: list[str] = _preamble(title=title, graphicspath=_texpath(graphicspath),
                                show_answers=show_answers, bottom_sep=bottom_sep,
                                columns=columns)
@@ -417,15 +709,17 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                        columns=columns, graphicspath=_texpath(graphicspath),
                        bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
                        total_score=total_score, show_source=show_source)
+
+
 def _preamble(*, title: str = "", graphicspath: str = "",
               show_answers: bool = False, answers_at_end: bool = False,
               bottom_sep: str = "0.6em", columns: int = 4,
               landscape: bool = False, big_font: bool = False,
-              first_line: str = "") -> list[str]:
+              first_line: str = "", extra: list[str] | None = None) -> list[str]:
     r"""**全项目唯一产出导言区的地方。**
 
-    ⚠️ 讲义模式刚加时我另抄了一份导言，漏掉了 `exam statistical histogram`
-    这个自定义 pgfplots 样式——结果讲义一编译就死
+    ⚠️ 曾经有第二份导言副本，漏掉了 `exam statistical histogram`
+    这个自定义 pgfplots 样式——结果一编译就死
     （`I do not know the key '/tikz/exam statistical histogram'`），
     界面上只剩残留的旧预览，看着像"题目不显示"。
     **两份导言就是两份真相**，改了这份忘了那份，早晚出事。所以合成一份。
@@ -482,6 +776,10 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"\usepackage{lastpage}",
         # `\needspace`：题干和选项别被分页拆开
         r"\usepackage{needspace}",
+        # **调用方自带的导言片段**（外部脚本要在这儿补自己那几个
+        # 自定义宏）。放在宏包之后、`\examsetup` 之前——它只补 `\newcommand`
+        # 之类的定义，不碰版式开关。默认空，现有导出一个字节都不变。
+        *(extra or []),
         (r"\graphicspath{" + "".join("{" + x + "/}" for x in (graphicspath,)) + "}"
          if graphicspath else ""),
         "",
@@ -514,6 +812,37 @@ def _preamble(*, title: str = "", graphicspath: str = "",
     if title:
         out += [r"\title{" + _esc_text(title) + "}", r"\subject{数学}"]
     return out
+
+
+def preamble(**kw) -> list[str]:
+    r"""`_preamble` 的**公开入口**——外部模块要拼整份文档就从这儿拿导言区。
+
+    存在唯一理由：导言区只许有一份。谁自己抄一份，就会重现
+    上面那条「漏装 `exam statistical histogram` 一编译就死」的坑。
+    """
+    return _preamble(**kw)
+
+
+def question_tex(q, *, show_answers: bool = True, columns: int = 4,
+                 show_source: bool = False, with_solution: bool = True) -> str:
+    r"""**出题用**的单题 LaTeX（走 `_q_tex` 的高考卷形态：不标难度星、
+    嵌在题干里的 TikZ 换成预渲染图、答案标红）。
+
+    和 `preamble()` 一个道理：`_q_tex` 里那步「TikZ→图片」是**渲染期**改动，
+    只许在出题时做。别处再抄一遍，就会出现「每次写库悄悄改题干」那种事故。
+    """
+    return _q_tex(q, "gaokao", show_answers, default_columns=columns,
+                  show_source=show_source, with_solution=with_solution)
+
+
+def texpath(p) -> str:
+    """`_texpath` 的公开入口：把路径转成 LaTeX 能吃的写法（反斜杠→正斜杠）。"""
+    return _texpath(str(p))
+
+
+def esc_text(s: str) -> str:
+    """`_esc_text` 的公开入口：纯文本进 LaTeX 标题/表格前的特殊字符转义。"""
+    return _esc_text(s)
 
 
 def _paper_body(doc: list[str], questions: list[Question], *,
@@ -596,139 +925,6 @@ def _paper_body(doc: list[str], questions: list[Question], *,
 
     if answers_at_end and numbering:
         doc += _answers_section(numbering)
-
-    doc.append(r"\end{document}")
-    return "\n".join(doc)
-
-
-def _render_handout(questions: list[Question], *, title: str = "",
-                    columns: int = 4, graphicspath: str = "",
-                    font: str = HANDOUT_FONT_DEFAULT) -> str:
-    r"""**讲义模式：一题一页，A4 横版，无答案。**
-
-    用途是**在 iPad 上用笔讲课**：一道题一屏，讲完翻下一页就是下一题。
-
-    ## 为什么换成了 elegantnote
-
-    原来用 exam-zh 出讲义，观感差：题干和选项挤在一起、行距紧、
-    没有层次。`elegantnote` 是专为**电子阅读**设计的文档类
-    （默认就是给 pad/kindle 用的），行距、留白、标题层次都更舒服。
-
-    ## 两个文档类怎么融合
-
-    `exam-zh` 和 `elegantnote` **都是文档类**（各自 `\LoadClass` 了别的类），
-    LaTeX 里没法嵌套。所以走"**宿主 + 兼容层**"：
-
-    | | 谁负责 |
-    |---|---|
-    | 版心、字体、颜色、标题层次、页脚 | **elegantnote**（当 `\documentclass`） |
-    | `question` / `choices` / `\paren` / `\fillin` | **我们自己定义**（兼容层） |
-
-    兼容层要跟 exam-zh 的写法对齐，因为题库里的题干就是那么写的。
-    三处都是**没有答案的形态**——讲义本来就不印答案：
-
-      `\paren[…]`  → `（　　）`     右对齐的空括号
-      `\fillin[…]`  → 下划线横线    括号/花括号/光杆三种写法都吃
-      `choices`     → A. B. C. D.   一行一个
-
-    ## 主色
-
-    用 AmTiKu 的品牌色 `RGB(206,51,138)` 覆盖掉 elegantnote 的默认蓝，
-    这样讲义和 App 是一套配色。
-    """
-    # 字号：elegantnote 的 `fontsize` 只认 10/11/12pt，换算成 pt 传进去
-    pt = {"-4": "12pt", "4": "14pt", "3": "16pt", "2": "22pt"}.get(font, "12pt")
-    doc: list[str] = [
-        "% 由 AmTiKu 生成（讲义模式：一题一页 · A4 横版 · 无答案）",
-        r"\documentclass[cn, device=normal, 11pt%s]{elegantnote}" % _cjk_fontset_opt(True),
-        r"\usepackage{amsmath,amssymb}",
-        r"\usepackage{enumitem}",
-        r"\usepackage{graphicx}",
-        r"\usepackage{tikz}",
-        r"\usepackage{pgfplots}",
-        r"\pgfplotsset{compat=1.18}",
-        r"\usetikzlibrary{arrows.meta, calc, angles, quotes, positioning, shapes.geometric}",
-        # 自定义 pgfplots 样式：**和普通卷型共用同一份常量**，别再抄一遍
-        *PGFPLOTS_STYLES,
-        *TIKZ_STYLES,
-        freq_label_cmd(),
-        # 版心：A4 横版。elegantnote 的 device 只有 pc/pad/kindle/normal/screen，
-        # 都不合意，所以加载完自己盖一层 geometry。
-        r"\geometry{landscape, margin=1.7cm}",
-        # 主色换成 AmTiKu 品牌色（elegantnote 的 \section、标题都用 ecolor）
-        r"\definecolor{ecolor}{RGB}{206,51,138}",
-        # 行内公式也用 displaystyle——iPad 上分数才看得清
-        r"\everymath{\displaystyle}",
-        "",
-    ]
-    # 字号：elegantnote 只认 10/11/12pt，我们要的档位靠 `\fontsize` 自己设。
-    # ⚠️ **第二个参数是行距**，必须给足——写成和字号一样（12pt/12pt）会挤成一团。
-    # 中文正文行距取字号的 1.4 倍左右比较舒服。
-    if pt != "11pt":
-        lead = "%.1fpt" % (float(pt[:-2]) * 1.4)
-        doc.append(r"\AtBeginDocument{\fontsize{%s}{%s}\selectfont}" % (pt, lead))
-    doc += [
-        "",
-        "% ── exam-zh 兼容层（题库的题干按 exam-zh 的写法存的） ──",
-        # ⚠️ **必须用 xparse 的 `o`，不能用 `\@ifnextchar[` + `[#1]`。**
-        #
-        # 普通 TeX 的可选参数扫描器**不数方括号**，遇到第一个 `]` 就断：
-        #     \fillin[$[-1,1]$]  →  只取到 `$[-1,1`，剩下的 `$]` 漏到正文里
-        #     → `! Missing $ inserted`，整份讲义编译不过。
-        # xparse 的 `o` 取的是**配平内容**，`$[-1,1]$` 能整个拿到 ✓
-        # 实测 250 道抽样里有 3 道栽在这上面。
-        r"\NewDocumentCommand{\paren}{o}{\hfill（\hspace{2.2em}）}",
-        # 填空横线：`\fillin[..]`、`\fillin{}`、光杆 `\fillin` 三种写法都要吃。
-        # 只声明 `o` 就够：方括号被吃掉；`{}` 是个空组，排出来什么都没有；
-        # 光杆后面没东西，也不出错。
-        r"\NewDocumentCommand{\fillin}{o}{\underline{\hspace{2.6cm}}}",
-        r"\newenvironment{choices}%",
-        r"  {\begin{enumerate}[label=\Alph*., leftmargin=2em, itemsep=0.25em,"
-        r" topsep=0.4em, parsep=0pt]}%",
-        r"  {\end{enumerate}}",
-        r"\newenvironment{question}{\par\medskip}{\par}",
-        # `\symbfit` 是 **unicode-math 的命令**（粗斜体向量），库里用了 12018 次。
-        # exam-zh 加载了 unicode-math 所以一直没事；elegantnote 没加载，
-        # 不补就是 `Undefined control sequence`，整份讲义编译不过。
-        # 用 `\boldsymbol` 顶上——观感一致（希腊字母也变粗斜体），不用为此
-        # 引入 unicode-math（那会改动整套数学字体，风险大得多）。
-        r"\newcommand{\symbfit}[1]{\boldsymbol{#1}}",
-        r"\newcommand{\symbf}[1]{\mathbf{#1}}",
-        # 解答题走 `problem` 环境（`question_to_tex` 对 detailed_answer 用它，
-        # 还带 `[points = 12]` 这样的可选参数）——**别忘了它**，漏了整个讲义编译不过
-        r"\newenvironment{problem}[1][]{\par\medskip}{\par}",
-        # 题头：品牌色的「例 N」+ 灰色星级
-        r"\newcommand{\hwlabel}[2]{%",
-        r"  {\color{ecolor}\bfseries\large 例\,#1}\hspace{0.7em}%",
-        r"  {\small\color{gray}#2}\par\vspace{0.35em}}",
-        "",
-        (r"\graphicspath{" + "".join("{" + x + "/}" for x in (graphicspath,)) + "}"
-         if graphicspath else ""),
-        r"\begin{document}",
-    ]
-    if title:
-        doc += [r"\begin{center}{\LARGE\bfseries\color{ecolor} " + _esc_text(title)
-                + r"}\end{center}", r"\vspace{1em}"]
-
-    for i, q in enumerate(questions, 1):
-        # 从第二题起**先换页**：第一页不留空白页，最后一页也不多一页空白
-        if i > 1:
-            doc.append(r"\newpage")
-        # 题头：例 N + 难度星（`star_tex` 走 `$\star$`，字面 `★` 会变豆腐块）
-        star = _star_line(q.difficulty)
-        label = star
-        doc.append(r"\hwlabel{%d}{%s}" % (i, label))
-        tex = question_to_tex(q, with_solution=False, with_source=False)
-        # TikZ 换成预渲染的矢量图（同其他卷型，见 `_q_tex` 里的说明）
-        from . import tikzfig as _tz
-        tex, _n = _tz.to_image(tex, q.figures)
-        # **给图限高。** 一题一页，图太高就会被挤到下一页——
-        # 实测例 6 的频率分布直方图就整张飞到了第 7 页，那页只剩一张图。
-        # 加 `height` 后 `keepaspectratio` 会同时满足宽和高两个上限，
-        # 即"最宽不超过原设定、最高不超过半页"，图不会被裁变形。
-        tex = _cap_figure_height(tex)
-        # **题目下方整片留白**：`\vfill` 把剩下的空间全撑开，正好是笔写区。
-        doc += [tex, r"\vfill", ""]
 
     doc.append(r"\end{document}")
     return "\n".join(doc)

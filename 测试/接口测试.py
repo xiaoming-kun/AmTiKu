@@ -191,6 +191,65 @@ def test_patch_difficulty_roundtrip():
             f.unlink(missing_ok=True)
 
 
+# ── 知识链路（`设计/知识链路.md`）──────────────────────────────
+#
+# 这一层的意义和别的接口不同：链路的**数据是人写的**，所以接口必须替人
+# 守住那几条硬规矩——悬空引用、自环、硬性前置成环（成环＝死锁，
+# 「可学」状态永远点不亮）。这些错在数据里看不出来，只有算一遍才知道。
+
+def test_chain_graph_shape():
+    r = client.get("/api/chain")
+    assert r.status_code == 200
+    d = r.json()
+    assert len(d["nodes"]) >= 100, d["stats"]
+    ids = {n["id"] for n in d["nodes"]}
+    assert all(e["pre"] in ids and e["post"] in ids for e in d["edges"]), "边引用了不存在的考点"
+    assert all(e["strength"] in ("hard", "soft") for e in d["edges"])
+    assert all(e["reason"].strip() for e in d["edges"]), "有边没写理由"
+    assert all(n["n"] >= 0 for n in d["nodes"]), "题量不能是负数"
+
+
+def test_chain_audit_is_not_swallowed_by_pid():
+    """`/api/chain/audit` 必须声明在 `/api/chain/{pid}` 之前。
+
+    FastAPI 按声明顺序匹配：反过来的话 `audit` 会被当成一个考点 id，
+    体检面板直接 404 —— 而 404 在界面上表现成「这个功能没做」。
+    """
+    assert client.get("/api/chain/audit").status_code == 200
+
+
+def test_chain_hard_edges_are_acyclic():
+    """硬性前置成环 = 那几个考点永远学不了。这条是数据层的红线。"""
+    d = client.get("/api/chain").json()
+    fwd: dict[str, list[str]] = {}
+    indeg = {n["id"]: 0 for n in d["nodes"]}
+    for e in d["edges"]:
+        if e["strength"] != "hard":
+            continue
+        fwd.setdefault(e["pre"], []).append(e["post"])
+        indeg[e["post"]] += 1
+    queue = [k for k, v in indeg.items() if v == 0]
+    seen = 0
+    while queue:
+        cur = queue.pop()
+        seen += 1
+        for v in fwd.get(cur, []):
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                queue.append(v)
+    assert seen == len(indeg), "hard 边有环，拓扑排序没能走完全部考点"
+
+
+def test_chain_node_detail_and_404():
+    d = client.get("/api/chain/1.1.2").json()
+    assert d["id"] == "1.1.2"
+    assert d["title"], "考点名要从知识点库现取"
+    assert any(e["pre"] == "1.1.1" and e["strength"] == "hard" for e in d["pre"])
+    assert d["fields"], "五段式字段要带上（侧栏详情直接显示）"
+    assert all("title" in e for e in d["pre"] + d["post"]), "前置/后续要带名称，侧栏才不用再查"
+    assert client.get("/api/chain/9.9.9").status_code == 404
+
+
 # ── 无 pytest 时的运行器 ──────────────────────────────────────
 
 def _enc(key: str) -> str:

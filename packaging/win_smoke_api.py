@@ -2,7 +2,7 @@
 r"""Windows/macOS 免安装包的**接口冒烟**：把包当服务真跑起来，走一遍用户真会走的路。
 
 为什么要有它：`--selftest` 只证明「库读得进、PDF 编得出」，而**用户实际走的是 HTTP**——
-打开页面 → 筛选 → 看图 → 组卷导出 → A4 讲义 → 录入写库。这几条里：
+打开页面 → 筛选 → 看图 → 组卷导出 → 录入写库。这几条里：
 
 * **写库**在 Windows 上要走 `msvcrt.locking` 那条分支（POSIX 上走 `flock`）。
   只在这台机器上真写一次，才知道那条分支行不行——它坏了就是**改坏题库**，
@@ -173,21 +173,13 @@ def main() -> int:
         st["paper"] = d
         return f"{d['questions']} 题 → {d['pdf_abs']}"
 
-    def export_handout():
-        d = jget(base, "/api/export", method="POST", body={
-            "keys": st["keys"], "title": "接口冒烟_讲义", "out": "接口冒烟_讲义",
-            "mode": "handout", "compile": True})
-        assert d.get("ok"), "讲义导出失败：" + json.dumps(d, ensure_ascii=False)[:600]
-        st["handout"] = d
-        return f"{d['questions']} 题 → {d['pdf_abs']}"
-
     def pdf_download():
-        for key, label in (("paper", "试卷"), ("handout", "讲义")):
+        for key, label in (("paper", "试卷"),):
             # 文件名是中文，必须 URL 编码（不编码 urllib 直接抛 UnicodeEncodeError）
             name = urllib.parse.quote(st[key]["name"] + ".pdf")
             stt, body, _ = req(base, f"/api/pdf?path={name}")
             assert stt == 200 and body[:4] == b"%PDF", f"{label} PDF 取回来不对"
-        return "试卷 + 讲义都能下载，PDF 头正确"
+        return "试卷能下载，PDF 头正确"
 
     def ingest_preview():
         d = jget(base, "/api/ingest/preview", method="POST",
@@ -216,7 +208,6 @@ def main() -> int:
     check("看图（原图）/api/figure?raw=1", figure_raw)
     check("看图（透明化，走 PIL+numpy）", figure_transparent)
     check("组卷导出试卷 /api/export", export_gaokao)
-    check("导出 A4 讲义 /api/export", export_handout)
     check("下载导出的 PDF /api/pdf", pdf_download)
     check("录入预检 /api/ingest/preview", ingest_preview)
     check("正式入库 /api/ingest/commit（写库锁）", ingest_commit)
@@ -224,7 +215,7 @@ def main() -> int:
     if FAILED:
         print(f"\n接口冒烟失败 {len(FAILED)} 项：" + "、".join(FAILED))
         return 1
-    print("\n接口冒烟全部通过（页面 / 看图 / 试卷 / 讲义 / 写库）")
+    print("\n接口冒烟全部通过（页面 / 看图 / 试卷 / 写库）")
     return 0
 
 

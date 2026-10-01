@@ -687,9 +687,14 @@ def snapshot() -> dict:
     # 不该和"规则偷偷动了存量"混在一个报警里。
     edited = {q.key: ((q.meta or {}).get("edited_at") or "") for _f, q in rows}
     migrated = {q.key: ((q.meta or {}).get("migrated_at") or "") for _f, q in rows}
+    # **逐题订正**（`fixups`，改的是"一道一个样"的题面缺陷）也记一笔。
+    # ⚠️ 这一项是 2026-10-01 补的：`fixups` 原来**什么时间戳都不盖**，
+    # 于是它每次订正都会掉进 `内容变化`、把验收打红——而有意的订正
+    # 和"规则偷偷动了存量"在那个桶里长得一模一样，报警很快就没人看了。
+    fixed = {q.key: ((q.meta or {}).get("fixed_at") or "") for _f, q in rows}
     data = {"questions": len(items), "fingerprints": items,
             "solved": solved, "upgraded": upgraded, "edited": edited,
-            "migrated": migrated}
+            "migrated": migrated, "fixed": fixed}
     SNAPSHOT.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True),
                         encoding="utf-8")
     return data
@@ -713,6 +718,13 @@ def load_snapshot_migrated() -> dict:
     if not SNAPSHOT.exists():
         return {}
     return json.loads(SNAPSHOT.read_text(encoding="utf-8")).get("migrated", {})
+
+
+def load_snapshot_fixed() -> dict:
+    """基线里每道题的逐题订正时间。老基线没有这一项就返回空表。"""
+    if not SNAPSHOT.exists():
+        return {}
+    return json.loads(SNAPSHOT.read_text(encoding="utf-8")).get("fixed", {})
 
 
 def load_snapshot_edited() -> dict:
@@ -744,6 +756,7 @@ def diff() -> dict:
     base_upgraded = load_snapshot_upgraded()
     base_edited = load_snapshot_edited()
     base_migrated = load_snapshot_migrated()
+    base_fixed = load_snapshot_fixed()
     rows = list(iter_questions())
     now = {q.key: q.content_hash() for _f, q in rows}
     added = sorted(set(now) - set(base))
@@ -767,7 +780,12 @@ def diff() -> dict:
     migrated_writes = sorted(k for k in changed if k not in _taken2
                              and cur_migrated.get(k)
                              and cur_migrated[k] != base_migrated.get(k))
-    _sw = _taken2 | set(migrated_writes)
+    _taken3 = _taken2 | set(migrated_writes)
+    cur_fixed = {q.key: ((q.meta or {}).get("fixed_at") or "") for _f, q in rows}
+    fixed_writes = sorted(k for k in changed if k not in _taken3
+                          and cur_fixed.get(k)
+                          and cur_fixed[k] != base_fixed.get(k))
+    _sw = _taken3 | set(fixed_writes)
     changed = [k for k in changed if k not in _sw]
     # **有意删除**：进回收站的题，不该报成"数据丢了"。
     # 延迟导入，避免 store ←→ trash 循环依赖。
@@ -783,6 +801,7 @@ def diff() -> dict:
     return {"新增": added, "内容变化": changed, "删除": removed,
             "求解写入": solved_writes, "录入升级": upgraded_writes,
             "界面补录": edited_writes, "规则迁移": migrated_writes,
+            "逐题订正": fixed_writes,
             "回收站": trashed,
             "基线题数": len(base), "当前题数": len(now)}
 

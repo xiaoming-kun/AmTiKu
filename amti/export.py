@@ -30,7 +30,7 @@ from . import store
 
 PKG = ROOT
 IMG_DIR = PKG / "图片"
-OUT_DIR = PKG / "试卷"
+from .paths import OUT_DIR   # 导出位置**唯一来源**（可在 数据/导出位置.txt 里改）
 
 # 分节顺序（组卷时按这个排）
 SECTION_ORDER = ("single_choice", "multi_choice", "fill_in_blank", "detailed_answer")
@@ -47,21 +47,18 @@ SECTION_NAME = {
 def render_paper(questions: list[Question], *, title: str = "", show_answers: bool = False,
                  answers_at_end: bool = False, show_source: bool = False,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
-                 columns: int = 4, mode: str = "gaokao",
-                 handout_font: str = _paper.HANDOUT_FONT_DEFAULT) -> str:
+                 columns: int = 4, mode: str = "gaokao") -> str:
     """渲染成完整的 exam-zh 文档。**委托给 `paper.py`。**
 
     这里早先自己实现过一份，结果 `paper.py` 的两种卷型和「按位置定难度」
     成了**死代码**——界面上导出的卷子永远没有难度标注，也没有考点小字。
-    现在只留一份实现，`mode` 取 `gaokao`（高考卷）/ `test`（纯测试题）/
-    `handout`（讲义：一题一页 · A4 横版 · 无答案，给 iPad 讲课用）。
+    现在只留一份实现，`mode` 取 `gaokao`（高考卷）/ `test`（纯测试题）。
     """
     return _paper.render_paper(
         questions, mode=mode, title=title, show_answers=show_answers,
         answers_at_end=answers_at_end, show_source=show_source,
         bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
-        columns=columns, graphicspath=str(IMG_DIR),
-        handout_font=handout_font)
+        columns=columns, graphicspath=str(IMG_DIR))
 
 
 # ── 编译 ──────────────────────────────────────────────────────────────
@@ -201,13 +198,12 @@ def export(keys: list[str], *, title: str = "", out: str = "",
            show_source: bool = False,
            bottom_sep: str = "0.6em",
            problem_blank_cm: float = 0.0, do_compile: bool = True,
-           mode: str = "gaokao", handout_font: str = _paper.HANDOUT_FONT_DEFAULT) -> dict:
+           mode: str = "gaokao") -> dict:
     r"""按 key 列表导出。返回落盘位置（**必须回传，UI 要显示"存到哪了"**）。
 
-    `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字与每题难度）/
-    `handout`（讲义，见 `paper._render_handout`）。
+    `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字与每题难度）。
     """
-    if mode not in ("gaokao", "test", "handout"):
+    if mode not in ("gaokao", "test"):
         return {"ok": False, "error": f"未知卷型 {mode!r}", "missing": []}
 
     qs: list[Question] = []
@@ -233,13 +229,13 @@ def export(keys: list[str], *, title: str = "", out: str = "",
                                      answers_at_end=answers_at_end,
                                      show_source=show_source,
                                      bottom_sep=bottom_sep, mode=mode,
-                                     problem_blank_cm=problem_blank_cm,
-                                     handout_font=handout_font),
+                                     problem_blank_cm=problem_blank_cm),
                         encoding="utf-8")
 
     res = {"ok": True, "name": name, "questions": len(qs), "missing": missing,
            "tex_abs": str(tex_path), "pdf_abs": None, "dir_abs": str(OUT_DIR),
-           "saved_hint": f"{name} 已保存到 试卷/", "log": ""}
+           "saved_hint": f"{name} 已保存到 {OUT_DIR.name}/",
+           "out_dir": str(OUT_DIR), "log": ""}
     if do_compile:
         ok, log = compile_tex(tex_path)
         res["ok"] = ok
