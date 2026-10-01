@@ -122,7 +122,12 @@ rem    拷 launcher 失败却仍然退出 0；于是流程一路往下走，最后 pip 报
 rem    "系统找不到指定的路径" —— 真正的原因被埋掉，用户完全看不懂（实测踩到）。
 rem    所以判据是**真跑一次 .venv\Scripts\python.exe**：不行就把这个 Python
 rem    拉黑（BADPY）再试下一个，全都不行才回落「装包里自带的 Python」。
+rem  **重试上限**：黑名单再出岔子也绝不许无限循环 ——
+rem  死循环比报错难查得多（用户只看到同一句话刷屏，不知道卡在哪）。
+set /a VTRY=0
 :vm_retry
+set /a VTRY+=1
+if !VTRY! gtr 8 exit /b 1
 call :find_python
 if not defined PY exit /b 1
 echo       正在用 !PY! 建运行环境 .venv ……
@@ -142,7 +147,13 @@ if defined VENVOK (
   exit /b 0
 )
 echo       ^(这个 Python 建不出可用的运行环境，换下一个^)
-set "BADPY=!PY!"
+rem  【关键】黑名单必须**累积成列表**。原来写的是 set "BADPY=!PY!" ——
+rem  那是个单值，第二次失败就把上一次覆盖掉，于是 python / python3
+rem  来回对倒、**无限循环**（实测踩到）。
+rem  统一存**不带引号**的形式：:try_exe 传进来的是带引号的路径。
+set "_B=!PY!"
+set "_B=!_B:"=!"
+set "BADPY=!BADPY!|!_B!|"
 goto vm_retry
 
 :find_python
@@ -162,10 +173,30 @@ if not defined PY call :try_any "python"
 if not defined PY call :try_any "python3"
 exit /b 0
 
+rem ── :is_bad ── 入参是否已经失败过；在黑名单里则 errorlevel 0
+rem    用 find 判子串。**不能用 !VAR:搜=替!** —— Python 路径里有冒号，
+rem    那套语法会在第一个冒号处截断，判出错误结果。
+rem    两边都加 | 当定界符，这样 python 不会误命中 python3。
+:is_bad
+if not defined BADPY exit /b 1
+echo "!BADPY!"| find /i "|%~1|" >nul
+exit /b 0
+
 rem ── :try_any ── 同 :try_cmd，但只要求 >=3.11（不设版本上限）
 :try_any
 set "_T=%~1"
-if defined BADPY if /i "!_T!"=="!BADPY!" exit /b 0
+rem  **应用商店的占位程序**（WindowsApps\python.exe）被调用时**退出码是 0**，
+rem  于是下面那条版本检查"通过"、PY 被设成 python，直到建 venv 时才炸。
+rem  :try_where 早挡过它，但这里直接执行命令名、绕过了 where，得再挡一次。
+set "_S="
+rem  只在参数是**单个命令名**（不含空格）时才查 where；"py -3" 这种带参数的不查。
+if "!_T: =!"=="!_T!" for /f "delims=" %%w in ('where !_T! 2^>nul') do if not defined _S set "_S=%%w"
+if defined _S if not "!_S:WindowsApps=!"=="!_S!" (
+  echo       ^(跳过应用商店占位程序：!_S!^)
+  exit /b 0
+)
+call :is_bad "!_T!"
+if not errorlevel 1 exit /b 0
 %_T% -c "import sys;sys.exit(0 if sys.version_info>=(3,11) else 1)" >nul 2>nul
 if not errorlevel 1 set "PY=%_T%"
 exit /b 0
@@ -174,7 +205,8 @@ exit /b 0
 rem ── :try_cmd ── 参数是能直接执行的命令串，如 "py -3.13"
 :try_cmd
 set "_T=%~1"
-if defined BADPY if /i "!_T!"=="!BADPY!" exit /b 0
+call :is_bad "!_T!"
+if not errorlevel 1 exit /b 0
 %_T% -c "import sys;sys.exit(0 if sys.version_info[:2] in ((3,11),(3,12),(3,13)) else 1)" >nul 2>nul
 if not errorlevel 1 set "PY=%_T%"
 exit /b 0
@@ -202,7 +234,8 @@ exit /b 0
 
 :try_exe
 set "_E=%~1"
-if defined BADPY if /i "!_E!"=="!BADPY!" exit /b 0
+call :is_bad "!_E!"
+if not errorlevel 1 exit /b 0
 "%_E%" -c "import sys;sys.exit(0 if sys.version_info[:2] in ((3,11),(3,12),(3,13)) else 1)" >nul 2>nul
 if not errorlevel 1 set "PY="%_E%""
 exit /b 0
