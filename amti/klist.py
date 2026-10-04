@@ -1127,6 +1127,17 @@ def nodes() -> list[dict]:
     return load().get("nodes", [])
 
 
+def sources() -> dict[str, dict]:
+    r"""节点 id → **原文**节点（`body` 是书里没加工过的 LaTeX 源文本）。
+
+    `nodes()` 存的是块级 IR——前端能渲染，但它出不了 LaTeX。要把讲解原样搬进
+    新生成的讲义，就得回到源文本这一份。切一本书不便宜，所以缓存在模块上。
+    """
+    if "src" not in _CACHE:
+        _CACHE["src"] = {n["id"]: n for n in _raw_nodes()}
+    return _CACHE["src"]
+
+
 def index() -> dict:
     if "idx" not in _CACHE or _CACHE.get("idx_mt") != _CACHE.get("mt"):
         _CACHE["idx"] = {n["id"]: n for n in nodes()}

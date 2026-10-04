@@ -310,6 +310,49 @@ def strip_score_head(q: Question) -> bool:
     return True
 
 
+# 卷面噪声的另外四类形态（机检 A8 数到 672 道，原来那条只认「页」字，
+# 这四类**一个都进不去**——所以提级成 MIGRATE 后影响面只有 15 道）。
+# ⚠️ 一律要求**整行就是它**（或行尾拖着的一小截），绝不吞整行正文：
+#    「四、解答题」这种串在正文后面的，只剪掉后半截。
+# 🔴 水印那一路**不能写 `.*?` 前缀**：加了前缀，「则 $6=a+b+c\geq3\sqrt{bc}$，3亿人都在用的扫描App」
+#    这种"正文＋水印"的行会整条被判成噪声删掉——实测把厦门一中#15 的一整行推导删没了。
+#    水印只当"剪断点"用（见 `_WATERMARK`），永远不参与"整行删"。
+_WATERMARK = re.compile(
+    r"QQ\s*[群号]\s*[:：]?\s*\d{5,}|微信公众号|工书号\s*[:：]?\s*\w+|3亿人都在用的?扫描?App")
+_JUNK_HINT = re.compile(r"页|参考答案|QQ|微信公众号|工书号|3亿|扫描App|选择题|填空题|解答题")
+_JUNK_LINE = re.compile(
+    r"^\s*(?:"
+    r"[一二三四五六七八九十]\s*[、.．]\s*(?:单项选择题|多选题|选择题|填空题|解答题|单选题)"   # 节标题（光杆）
+    r"|(?:完整)?参考答案(?:及?解析)?|答案(?:及|与)?解析"                                     # 答案卷页眉
+    r"|(?:数学|文科数学|理科数学)?(?:试题|试卷)?[（(]?第\s*\d+\s*[)）]?\s*(?:页|Page)"          # 页码变体
+    # 「卷名 + 第N页（共M页）」整行页眉：上一支只认到「页」字为止，`(共4页)` 一挡就漏。
+    # ⚠️ 前缀限长 24 字且**不含 `$`**：行里只要有数学式就不认，避免把正文吃掉。
+    r"|[^$\n]{0,24}?第\s*\d+\s*页\s*[（(]\s*共\s*\d+\s*页\s*[)）][】\]]?"
+    r")[\s:：]*$", re.I)
+# 节标题**后面还拖着卷首说明**的：`三、填空题：本题共3小题，每小题5分，共15分。`
+# 上一版只认光杆的「三、填空题」，所以这种带说明的一条没吃到（机检 A8 剩 659 道里的大头）。
+# ⚠️ 判据是**整行只能由这些说明性词块和标点拼成**，且不含 `$`：
+#    真题干「四、解答题：已知集合 A=…」里有数学，一条都不匹配，不会被误吃。
+_SPEC_TAIL = re.compile(
+    r"(?:本题共\s*\d+\s*小题|每小题\s*\d+\s*分|共\s*\d+\s*分|满分\s*\d+\s*分"
+    r"|在每小题给出的选项中|有多项符合题目要求|只有一项是符合题目要求的"
+    r"|全部选对的得\s*\d+\s*分|部分选对的得\s*部分分|有选错的得\s*0?\s*分"
+    r"|解答应写出必要的文字说明|证明过程或演算步骤|解答应写出|考试总时间\s*\d+\s*分钟"
+    r"|[，,、；;：:\s.。（）()]|\d)+")
+_JUNK_SECTION = re.compile(
+    r"^\s*[一二三四五六七八九十]\s*[、.．]\s*(?:单项选择题|多选题|选择题|填空题|解答题|单选题)"
+    r"(?:\s*[（(][^（）()]{0,20}[）)])?")
+
+
+def _is_section_note(seg: str) -> bool:
+    r"""整行是「节标题＋卷首说明」吗。节标题开头，剩下必须全是说明性词块。"""
+    m = _JUNK_SECTION.match(seg or "")
+    if not m or "$" in seg:
+        return False
+    rest = seg[m.end():]
+    return bool(rest.strip()) and bool(_SPEC_TAIL.fullmatch(rest))
+
+
 def _cut_footer(text: str) -> str:
     r"""删掉页眉页脚。返回新文本（没变就原样返回）。
 
@@ -324,7 +367,7 @@ def _cut_footer(text: str) -> str:
 
     换行两种写法都认：真换行和字面量 `\n`（`%% @q` 元数据里是双转义的）。
     """
-    if not text or "页" not in text:
+    if not text or not _JUNK_HINT.search(text):
         return text
     lines = re.split(r"(\n|\\n)", text or "")     # 保留分隔符，拼回去不变形
     out: list[str] = []
@@ -332,6 +375,15 @@ def _cut_footer(text: str) -> str:
         if seg in ("\n", "\\n") or not seg:
             out.append(seg)
             continue
+        if _JUNK_LINE.match(seg.strip()):
+            continue                                  # 整行就是排版噪声 → 丢掉
+        if _is_section_note(seg.strip()):
+            continue                                  # 「三、填空题：本题共3小题…」整行是卷首说明
+        w = _WATERMARK.search(seg)                    # 水印只会贴在正文后面 → 从水印处剪断
+        if w:
+            seg = seg[:w.start()]
+            if not seg.strip():
+                continue
         out.append(_cut_footer_line(seg))
     return "".join(out)
 
@@ -358,17 +410,24 @@ def _cut_footer_line(line: str) -> str:
     return line[:cut]
 
 
-@rule(name="去页眉页脚", scope=ENTRY,
+@rule(name="去页眉页脚", scope=MIGRATE,
       why="台账 D02：页脚「第 N 页 共 M 页」和卷眉是印刷排版，不是题目内容。"
-          "实测题干 65 道、解析 107 道带这玩意儿")
+          "原来只挂在 ENTRY，所以**存量一道没清**——三轴机检在存量里数到 675 道"
+          "题干/解析带卷面噪声，逐题审阅的 55 条待裁决里一大半也是它，故提级为 MIGRATE。"
+          "顺带补上**选项**：机检抓到 `D.$c<a<b$ 浙江省 A9 协作体` 这种把卷眉吃进选项的。")
 def strip_running_head(q: Question) -> bool:
-    r"""题干和解析一起去页眉页脚。"""
+    r"""题干、解析、**每个选项**一起去页眉页脚。"""
     changed = False
     for field in ("stem", "solution"):
         old = getattr(q, field) or ""
         new = _trim_edges(_cut_footer(old))
         if new != old:
             setattr(q, field, new)
+            changed = True
+    for o in q.options:
+        new = _trim_edges(_cut_footer(o.text or ""))
+        if new != (o.text or ""):
+            o.text = new
             changed = True
     return changed
 
@@ -474,7 +533,13 @@ def strip_trailing_source(q: Question) -> bool:
 
     old_year = (q.meta or {}).get("year")
     q.meta.setdefault("source_in_stem", label)      # 留痕：原来长这样
-    q.meta["source_label"] = label
+    # ⚠️ **已有 `source_label` 不许覆盖**。这规则的本意是"题干里那行出处挪进 meta"，
+    # 但 meta 里往往早就有一个**又长又准**的来源名（key 的第一段就是它）。
+    # 无条件覆盖会把「宁夏回族自治区银川一中2026-2027学年高三上学期第一次月考」
+    # 换成从题干尾巴上剥下来的一截页眉「高三第一次月考 数」——出处反而被写坏。
+    # 实测 3 道全中招，故只在 meta 里**空着**时才填。
+    if not str((q.meta or {}).get("source_label") or "").strip():
+        q.meta["source_label"] = label
     m = _SRC_YEAR.search(label)
     if m:
         y = int(m.group(0))
@@ -736,17 +801,35 @@ def drop_leftover_blank(q: Question) -> bool:
         ……则 $f^{-1}(2)$ 的值是（$\quad$） \paren[A]
 
     ——卷面上就是两个括号。这条规则专门收拾它。
+
+    还有一种**反过来**的写法（VLM 转录讲义时很常见）：
+
+        ……则函数 $y=f(x)$ 的图象可能为（ \paren[] ）
+
+    作答位被**原来那个空括号包在里面**了。这时不能删括号（它是题干的一部分），
+    要**把作答位掏出来**：`……可能为 \paren[]`。不掏出来就还是印两个括号，
+    而且 `_ANY_PAREN` 也匹配不到它（括号里不是空的），整条规则白跑。
     """
     s = q.stem or ""
     if not re.search(r"\\(paren|fillin)\s*(\[[^\]]*\])?", s):
         return False
-    hits = list(_ANY_PAREN.finditer(s))
-    if not hits:
-        return False
-    # 从后往前删，避免下标错位；顺带把删完留下的多余空格收一收
-    out = s
+    # ① 作答位被空括号包着 → 掏出来（先做，否则下面 `_ANY_PAREN` 认不出）
+    out = re.sub(r"[（(]\s*(\\paren\s*\[[^\]]*\]|\\fillin\s*\[[^\]]*\])\s*[）)]",
+                 r"\1", s)
+    # ② 空括号**自己带着一对 `$…$`** 时，要连那对 `$` 一起删。
+    # 只删括号会留下 `$$`：
+    #     函数 $f(x)=…$ 的最小正周期为 $(\quad)$ \paren[]
+    #   → 函数 $f(x)=…$ 的最小正周期为 $$ \paren[]
+    # `$$` 是规范明令不许的、LaTeX 直接报「Display math should end with $$」，
+    # 而 `chk_delim` **查不出来**（`$` 还是偶数个，配对"通过"）。
+    # 实测：赵礼显讲义 p073 第 17 题就是这么坏掉的，全库两道检查都没报。
+    out = re.sub(r"\$\s*[（(]\s*(?:\$?\s*(?:\\quad|\\qquad)?\s*\$?)\s*[）)]\s*\$",
+                 "", out)
+    # ③ 残留的**真正空**括号 → 删掉
+    hits = list(_ANY_PAREN.finditer(out))
     for m in reversed(hits):
         out = out[:m.start()] + out[m.end():]
+    out = re.sub(r"\$\$", r"\$", out)         # 兜底：删完不该再有相邻 `$`
     out = re.sub(r"[ \t]{2,}", " ", out)
     if out == s:
         return False
@@ -825,10 +908,43 @@ def ensure_fillin(q: Question) -> bool:
     if m0:
         before = q.stem[:m0.start()]
         if before.count("$") % 2 == 1:                     # 在数学模式里 → 挪出来
-            after = q.stem[m0.end():]
+            # ⚠️ **公式里有环境或 `\left…\right` 时不能就地切。**
+            # 就地补一个 `$ ` 会把这个公式从中间截断：`\begin{cases}` 和
+            # `\end{cases}` 落到两段公式里，直接坏掉。实测：
+            #     `$a_n=\begin{cases} n, & \fillin[] \\ 1, & x>0 \end{cases}$`
+            #   → `$a_n=\begin{cases} n, & $ \fillin[] \\ 1, & x>0 \end{cases}$`
+            # `$` 个数还是偶数、`\begin/\end` 也都在，**两道检查都不会报**，
+            # 但 `\end{cases}` 已经掉到数学模式外面了。
+            # 这种情况交给 `填空位移出数学模式`（它有那条"有环境就不切、
+            # 只把答案自带的 `$` 脱掉"的守卫），别在这里抢着做。
+            if re.search(r"\\begin\{|\\left|\\right", before):
+                return False
+            raw_after = q.stem[m0.end():]
+            # ⚠️ **空位必须是这一段公式的最后一样东西**，否则不能在这里切。
+            # 公式里还有别的空位时切一刀，后半段就掉到数学模式外面：
+            #     `$BD = \fillin[], \cos\angle ABD = \fillin[]$`
+            #   → `$BD = $ \fillin[], \cos\angle ABD = \fillin[]$`
+            # `$` 剩奇数个、整道题坏掉。这种交给 `填空位移出数学模式`，
+            # 它**按整段公式重写**、在每个命令处切开，是对的。
+            # 判断必须在下面"吃掉收尾 `$`"**之前**做——吃掉以后就看不出
+            # 空位后面还有没有内容了。
+            if raw_after.strip() and not raw_after.lstrip().startswith("$"):
+                return False
+            after = raw_after
             if after.startswith("$"):
                 after = after[1:]
-            q.stem = before + "$ " + r"\fillin[]" + after
+            # ⚠️ 两种"在数学模式里"要分开处理，混作一种会印出 `$$`：
+            #   ① `则 $b=\fillin[]$。` —— 空位挂在**原来那个**公式的尾巴上，
+            #      得就地给公式收尾：`则 $b=$ \fillin[]。`
+            #   ② `…的值为 $\fillin[]$。` —— 空位被**单独**包了一对 `$…$`
+            #      （VLM 转录最爱这么写）。这时 `before` 的末尾那个 `$`
+            #      就是开这对的，再补一个 `$ ` 会得到 `$$`——KaTeX 直接报错，
+            #      而且 `$$` 本身也是规范明令不许的。正确做法是**删掉这对**。
+            if before.rstrip().endswith("$"):
+                before = before.rstrip()[:-1].rstrip() + " "
+            else:
+                before = before + "$ "
+            q.stem = before + r"\fillin[]" + after
             return True
         return False
     # **没答案就别补新空位**（补了也永远填不上）。注意这段必须排在
@@ -885,6 +1001,144 @@ def answer_for_detailed(q: Question) -> bool:
         return False
     q.answer = "见解析"
     return True
+
+
+# 落单的 `$$`：不是行间公式（没有配对的收尾），却会**开一个数学模式**
+# 把后面整段正文吞进去。实测（济南一模那道）：
+#
+#     …则椭圆 $\Gamma$ 的离心率为 $$ \fillin[$\frac{\sqrt{3}}{2}$]。
+#
+# xelatex 报 `Command \end{question} invalid in math mode`、**整份卷子出不来 PDF**；
+# 而网页预览只是句号位置怪，看着像没事（`latex_blocks.scan_math` 找不到收尾
+# `$$` 时把它当空公式处理）。`chk_delim` 也抓不到——`$$` 是两个美元符，
+# 加进去 `$` 的**奇偶不变**，配对检查照样"通过"。
+_LONE_DD = re.compile(r"(?<!\\)\$\$")
+
+
+# 作答位参数里被塞进了**续段**——页脚、章节标题、QQ 群广告、答案册标题、解析正文。
+# 实测 14 道，形状完全一样：
+#
+#     \fillin[$\sqrt{3}$ 或 $\sqrt{6}+\sqrt{3}$\n\n四、解答题:]
+#
+# TeX 的可选参数**不允许空行**，于是 xelatex 报
+# «Paragraph ended before \fillin was complete»、**整份卷子出不来**；
+# 而网页预览照常（块级 IR 自己找 `]`），所以三层验收全是绿的。
+#
+# 续段分三种处置，都无损：
+#   ① 像卷面噪声 → 删（页脚/章节标题/群广告，永远不是题面内容）
+#   ② `solution` 里已经有一份 → 删（重复）
+#   ③ 其余 → 挪进 `solution`
+_NOISE_HEAD = re.compile(
+    r"^\s*(?:[一二三四五六七八九十]+\s*[、.．]?\s*(?:选择题|填空题|解答题|题)"
+    r"|.{0,10}参考答案|答案第\s*\d+\s*页|第\s*\d+\s*页|共\s*\d+\s*页"
+    r"|QQ\s*[教师学生]{0,2}群|教师群|学生群|部分小题答案详解|答案详解"
+    r"|微信号|扫码|关注公众号|部分小题)")
+_SLOT_ARGC = re.compile(r"\\(?:fillin|paren)(?![a-zA-Z])\s*\[")
+
+
+@rule(name="答案栏尾部的分号与句号去掉", scope=MIGRATE,
+      why="三轴机检 A10/A12：答案表是按列排的，抽取时把**列分隔符**一起抄了进来，"
+          "于是答案栏长成 `$\\frac{4}{15}$;`、`$(-2,1)$;`；另一路是**句末的「。」被当成答案的一部分**，"
+          "于是卷面上 `\fillin[$6$。]。` 印出两个句号。"
+          "实测存量：分号 7 道、句号 181 道（全是填空题，高考真题 156／模拟 25）。"
+          "⚠️ 只砍**收尾**的那一个：多空答案写成 `$1$；$2$` 的收尾是数值，不动；"
+          "砍完为空也不动（答案栏不能被规则清空）。")
+def strip_answer_trailing_semicolon(q: Question) -> bool:
+    r"""答案栏结尾的分号／句号（连同 `\fillin[…]`／`\paren[…]` 里同源的残留）一起去掉。"""
+    a = q.answer or ""
+    new_a = re.sub(r"[;；。\s]+$", "", a)
+    if new_a == a or not new_a:
+        return False
+    q.answer = new_a
+    # 作答位与答案栏**同源**（ENTRY 期规则只在录入时同步过一次），不同步就会
+    # 卷面印旧值、字段是新值。
+    old_slot = re.compile(r"\\(fillin|paren)(?![a-zA-Z])\s*\[" + re.escape(a) + r"\]")
+    q.stem = old_slot.sub(lambda m: "\\" + m.group(1) + "[" + new_a + "]", q.stem or "")
+    return True
+
+
+@rule(name="作答位参数里的续段挪出参数", scope=MIGRATE,
+      why="TeX 规则 + 规范 §2.2：`\\fillin[…]`／`\\paren[…]` 的可选参数**不能含空行**"
+          "（TeX 的可选参数扫描器遇到空段就停），含了 xelatex 报 "
+          "«Paragraph ended before \\fillin was complete»，**该题所在的整份卷子出不来**")
+def split_blank_arg_tail(q: Question) -> bool:
+    r"""`\fillin[答案\n\n后面的东西]` → 参数只留第一段；续段按上面三条处置。"""
+    moved: list[str] = []
+    changed = False
+    for fld in ("stem", "answer", "solution"):
+        t = getattr(q, fld) or ""
+        if not t:
+            continue
+        pos, out, hit = 0, [], False
+        for m in _SLOT_ARGC.finditer(t):
+            if m.start() < pos:                # 落在上一个参数内部
+                continue
+            arg, nxt, balanced = scan_bracket(t, m.end() - 1)
+            if not balanced:
+                continue
+            mt = re.search(r"\n[ \t]*\n", arg)
+            if not mt:
+                pos = nxt
+                continue
+            out.append(t[pos:m.end()])         # `\fillin[`
+            out.append(arg[:mt.start()].rstrip())
+            out.append("]")
+            tail = arg[mt.end():].strip()
+            if tail:
+                moved.append(tail)
+            pos, hit = nxt, True
+        if hit:
+            out.append(t[pos:])
+            setattr(q, fld, "".join(out))
+            changed = True
+    # `answer` 栏**本身**也要同步截断：答案是从题干那个槽**推导**出来的
+    # （`latex_ir` 的 `fillin_answers`/`paren_answers`），槽截了、字段不截，
+    # 元数据就和卷面不一致了。规范里答案段用 `；` 分隔，**合法答案不含空行**，
+    # 所以遇到空行必然是续段。
+    ans = q.answer or ""
+    ma = re.search(r"\n[ \t]*\n", ans)
+    if ma:
+        moved.append(ans[ma.end():].strip())
+        q.answer = ans[:ma.start()].rstrip()
+        changed = True
+    if moved:
+        sol = (q.solution or "").strip()
+        if sol == "解析无":
+            sol = ""
+        extra = [x for x in moved
+                 if not _NOISE_HEAD.match(x) and x not in sol]
+        if extra:
+            add = "\n\n".join(extra)
+            q.solution = (sol + "\n\n" + add) if sol else add
+            changed = True
+    return changed
+
+
+@rule(name="落单的美元符双写", scope=MIGRATE,
+      why="规范 §2.3：行间公式写 `\\[ … \\]`。落单的 `$$` 会吞掉后面整段正文，"
+          "xelatex 直接报 `Command \\end{question} invalid in math mode`——"
+          "**这一道题所在的那份卷子整个出不来**")
+def strip_lone_double_dollar(q: Question) -> bool:
+    r"""字段里有**恰好一个** `$$` → 删掉它。
+
+    ⚠️ **只碰"恰好一个"的情形**：这时哪个多余一目了然，删掉就恢复正常。
+    出现 3 个、5 个（凑不成对、又不只一个）的**一律不动**——那说明还丢过公式，
+    得回原卷看，不是能自动拍板的（宁缺勿错）。
+
+    成对的 `$$…$$` **不归这条管**：它能正常渲染，只是不合规范 §2.3，
+    属于风格问题，不该混进"批量改数据"里（`conform.style_double_dollar`
+    会提示，但不拦验收）。
+    """
+    hit = False
+    for fld in ("stem", "answer", "solution"):
+        t = getattr(q, fld) or ""
+        if len(_LONE_DD.findall(t)) != 1:
+            continue
+        t2 = re.sub(r"[ \t]{2,}", " ", _LONE_DD.sub("", t))
+        if t2 != t:
+            setattr(q, fld, t2)
+            hit = True
+    return hit
 
 
 @rule(name="解答题答案栏统一「见解析」", scope=MIGRATE,
@@ -1086,6 +1340,42 @@ def protect_brackets(q: Question) -> bool:
     return changed
 
 
+# 百分号：**裸 `%` 在 LaTeX 里是注释符**，会把该行剩下的全吃掉。
+#
+# 实测（2026-10-02，其他杂项那批）：模型把百分比写成 `6%`、`0.1%`、
+# `4.56%`。而「去注释」那条规则只遍历 `stem/answer/solution`、
+# **不碰 `options`** —— 于是选项里的裸 `%` 活到了卷面上。印出来时
+# `\item 在犯错误的概率不超过 0.1% 的前提下，认为…` 会被注释成
+# `\item 在犯错误的概率不超过 0.1`，**后半句静默消失**。
+# 主题库 30040 道里带裸 `%` 的是 **0 道** —— 规范本来就是写 `\%`。
+#
+# 判据只看**百分比语境**：`%` 前面紧跟数字或 `)`/`}`/`]`。
+# 真注释（`% 2025 高考题`，前面是空白或行首）不动，交给「去注释」。
+# ⚠️ 必须定义在「去注释」**之前**（规则按定义顺序跑），否则
+# `(?<!\\)%[^\n]*` 会先把百分比连同后半行一起删掉，没得转义。
+_PERCENT = re.compile(r"(?<=[0-9\)\}\]])%")
+
+
+@rule(name="转义百分号", scope=ENTRY,
+      why="规范 §2.8：裸 `%` 是 LaTeX 注释符，会把该行剩下的吃掉")
+def escape_percent(q: Question) -> bool:
+    changed = False
+    for f in ("stem", "answer", "solution"):
+        t = getattr(q, f) or ""
+        n = _PERCENT.sub(r"\\%", t)
+        if n != t:
+            setattr(q, f, n)
+            changed = True
+    # ⚠️ **选项也要清**：「去注释」只遍历上面三个字段、不碰 `options`。
+    for o in q.options or []:
+        t = o.text or ""
+        n = _PERCENT.sub(r"\\%", t)
+        if n != t:
+            o.text = n
+            changed = True
+    return changed
+
+
 @rule(name="去注释", scope=ENTRY, why="规范 §2.8")
 def strip_comments(q: Question) -> bool:
     changed = False
@@ -1240,6 +1530,30 @@ def move_blanks_out_of_math(q: Question) -> bool:
             continue
         inner = toks[k + 1:j]
         body = "".join(t[1] for t in inner)
+        # ★ 先看一个**安全切法**：空位紧贴在公式收尾的 `$` 前面
+        # （`$\tan\left(\alpha+\frac{\pi}{4}\right) = \paren[]$`）。
+        # 按空位切**不会**把 `\left`/`\right`、`\begin{cases}` 拆散——
+        # 它们整对留在前半段里，所以这一种可以放心切，先于下面那条保守守卫。
+        # 实测来源：赵礼显讲义转录，`\left…\right` 后面跟空作答位的选择题，
+        # 单纯靠"有 `\left` 就不切"会漏掉，空位就一直留在数学模式里。
+        #
+        # ⚠️ **条件必须卡死**，第一版只判了"空位在收尾"，结果一个公式里两个空位时
+        # 从尾巴上切一刀，前一个空位留在数学模式里、后一个跑到外面——
+        # `$BD = \fillin[], \cos\angle ABD = \fillin[]$` 被切成
+        # `$BD = \fillin[], \cos\angle ABD =$` + `\fillin[]`，`$` 还剩奇数个
+        # （实测赵礼显讲义 p132 第 4 题）。所以要求：
+        # 前半段里**没有别的空位**、`\left/\right` 与 `\begin/\end` 都**各配各的**。
+        if "\\begin{" in body or "\\left" in body or "\\right" in body:
+            m_tail = re.search(r"\s*\\(paren|fillin)\s*\[\s*\]\s*$", body)
+            head = body[:m_tail.start()].rstrip() if m_tail else ""
+            if (m_tail and head
+                    and not re.search(r"\\(paren|fillin)\s*[\[\{]", head)
+                    and head.count("\\left") == head.count("\\right")
+                    and head.count("\\begin{") == head.count("\\end{")):
+                out.append("$%s$" % head)
+                out.append("\\" + m_tail.group(1) + "[]")
+                k = j + 1
+                continue
         # ⚠️ 公式里有**环境**（`\begin{cases}`、`array`、`matrix`…）时**不能切开**：
         # `\begin{cases}` 和 `\end{cases}` 会落到两段公式里，直接坏掉。
         # 实测：2004 全国I卷（理）#15 的 `a_n = \begin{cases}…\fillin{}…\end{cases}`
@@ -1454,6 +1768,27 @@ def _selftest() -> int:
                   stem="a % 注\n\\begin{enumerate}[label=(\\arabic*)]\n\\item x\n\\end{enumerate}")
     normalize(q4)
     check("注释被清", "%" not in q4.stem, repr(q4.stem))
+    # ── 百分号：裸 `%` 是注释符，会把该行剩下吃掉 ────────────────────
+    # 实测（其他杂项那批）：模型把百分比写成 `6%`、`0.1%`，而「去注释」
+    # 只遍历 stem/answer/solution、**不碰 options** —— 选项里的裸 `%`
+    # 活到卷面上，把 `…0.1% 的前提下，认为…` 印成 `…0.1`（后半句消失）。
+    q5 = Question(key="k", type="single_choice", stem="求合格率。",
+                  answer="", solution="",
+                  options=[Option(label="A", text="在不超过 0.1% 的前提下，认为有关"),
+                           Option(label="B", text="$0.1\\%$"),
+                           Option(label="C", text="25%")])
+    normalize(q5)
+    check("选项里的百分比被转义", q5.options[0].text == "在不超过 0.1\\% 的前提下，认为有关",
+          repr(q5.options[0].text))
+    check("百分比转义**不删正文**（这是关键）",
+          "的前提下，认为有关" in q5.options[0].text, repr(q5.options[0].text))
+    check("已转义的 \\% 不动", q5.options[1].text == "$0.1\\%$", repr(q5.options[1].text))
+    check("行尾百分比也转义", q5.options[2].text == "25\\%", repr(q5.options[2].text))
+    # 真注释（前面是空白/行首）不能被当成百分比
+    q6 = Question(key="k", type="detailed_answer", stem="求值。\n% 2025 高考题",
+                  answer="", solution="")
+    normalize(q6)
+    check("真注释仍然被去掉", "%" not in q6.stem, repr(q6.stem))
     check("列表选项被去", "[label=" not in q4.stem, repr(q4.stem))
 
     # 题干写「多选」的单选题 → 改判多选（正反两组控制样本）
@@ -1579,6 +1914,14 @@ def _selftest() -> int:
                   stem=r"则 $b=\fillin[]$。", answer="2")
     check("补填空位：**在数学模式里的旧空位要挪出来**", ensure_fillin(_q)
           and _q.stem == r"则 $b=$ \fillin[]。", repr(_q.stem))
+    # 空位被**单独**包了一对 `$…$`（VLM 转录的常见写法）。这时不能补
+    # `$ `——`before` 末尾已经是 `$`，补了就是 `$$`（KaTeX 直接报错）。
+    _q = Question(key="t/fill3", type="fill_in_blank",
+                  stem=r"则 $\max M$ 的最小值为 $\fillin[]$。", answer="2")
+    check("补填空位：空位自成一对的 `$…$` 要整对删掉（不许出 `$$`）",
+          ensure_fillin(_q)
+          and _q.stem == r"则 $\max M$ 的最小值为 \fillin[]。"
+          and "$$" not in _q.stem, repr(_q.stem))
     _q = Question(key="t/fill5", type="fill_in_blank",
                   stem=r"则 $b=$ \fillin[]。", answer="2")
     check("补填空位：已在外面就不动", not ensure_fillin(_q), repr(_q.stem))
@@ -1594,6 +1937,34 @@ def _selftest() -> int:
     ensure_fillin(_q)
     check("补填空位：空位在数学模式里要就地收尾（不许嵌套 $）",
           _q.stem.count("$") % 2 == 0 and r"$ \fillin[]" in _q.stem, repr(_q.stem))
+    # 空位紧贴公式收尾 `$`、公式里又有 `\left…\right`：**这一种能安全切开**，
+    # 别被"有 \left 就不切"那条保守守卫拦下（赵礼显讲义转录实测）。
+    _q = Question(key="t/mv1", type="single_choice",
+                  stem=r"已知 $\tan\left(\alpha+\frac{\pi}{4}\right) = \paren[]$ 则 $\alpha=$",
+                  answer="", options=[Option(x, "1") for x in "ABCD"])
+    normalize(_q, ENTRY)
+    check("空位在 `\\left…\\right` 公式尾巴上也要挪出来",
+          r"=$\paren[]" in _q.stem and _q.stem.count("$") % 2 == 0, repr(_q.stem))
+    # 反例：`\begin{cases}` 里的空位**不能**切（切了环境会分家）
+    _q = Question(key="t/mv2", type="fill_in_blank",
+                  stem=r"$a_n=\begin{cases} n, & \fillin[] \\ 1, & x>0 \end{cases}$",
+                  answer="")
+    normalize(_q, ENTRY)
+    # 反例要求的是"`\begin{cases}` 和 `\end{cases}` **在同一段公式里**"——
+    # 只查两个串在不在，等于没查（第一版就是这么放的，实际已经被切成两段了）
+    _seg = (_q.stem[_q.stem.index(r"\begin{cases}"):_q.stem.index(r"\end{cases}")]
+            if r"\begin{cases}" in _q.stem and r"\end{cases}" in _q.stem else "$")
+    # 空括号**自己带着一对 `$…$`**（`$(\quad)$`）：只删括号会留下 `$$`，
+    # 而 `chk_delim` 查不出来（`$` 还是偶数个）。实测赵礼显讲义 p073 第 17 题。
+    _q = Question(key="t/dd", type="single_choice",
+                  stem=r"函数 $f(x)=\frac{\tan x}{1+\tan^2 x}$ 的最小正周期为 $(\quad)$ \paren[]",
+                  answer="", options=[Option(x, "1") for x in "ABCD"])
+    normalize(_q, ENTRY)
+    check("空括号自带 `$…$` 时要连 `$` 一起删（不许出 `$$`）",
+          "$$" not in _q.stem and _q.stem.endswith(r"\paren[]"),
+          repr(_q.stem))
+    check("反例：`\\begin{cases}` 里的空位不切（环境不许分家）",
+          _q.stem.count("$") % 2 == 0 and "$" not in _seg, repr(_q.stem))
     _dq = Question(key="t/det3", type="detailed_answer",
                     stem="求 $x$ 的最小值\\paren[]。", answer="", solution="……")
     normalize(_dq, ENTRY)
@@ -1666,6 +2037,24 @@ def _selftest() -> int:
           "overparen" not in _arc2.stem and "underparen" not in _arc2.stem
           and "overparen" not in _arc2.options[0].text,
           repr(_arc2.stem + _arc2.options[0].text))
+    # MIGRATE 落单的 `$$`：**恰好一个**才删；3 个（说明还丢过公式）不动；
+    # 成对的 `$$…$$` 不归这条管（那是风格，不是错）。
+    _dd = Question(key="t/dd2", type="fill_in_blank",
+                   stem=r"则椭圆 $\Gamma$ 的离心率为 $$ \fillin[$\frac{\sqrt{3}}{2}$]。",
+                   answer="")
+    check("MIGRATE 落单 `$$`：删掉且不留双空格",
+          strip_lone_double_dollar(_dd) and "$$" not in _dd.stem
+          and _dd.stem == r"则椭圆 $\Gamma$ 的离心率为 \fillin[$\frac{\sqrt{3}}{2}$]。",
+          repr(_dd.stem))
+    check("MIGRATE 落单 `$$`：幂等（再跑一次不报改动）",
+          not strip_lone_double_dollar(_dd), repr(_dd.stem))
+    _dd2 = Question(key="t/dd3", type="fill_in_blank", stem="$a$$ + $$b$", answer="")
+    check("MIGRATE 落单 `$$`：3 个时**不动**（还丢过公式，得回原卷看）",
+          not strip_lone_double_dollar(_dd2), repr(_dd2.stem))
+    _dd3 = Question(key="t/dd4", type="fill_in_blank", stem="$$x=1$$", answer="")
+    check("MIGRATE 落单 `$$`：成对的 `$$…$$` 不算落单，不动",
+          not strip_lone_double_dollar(_dd3), repr(_dd3.stem))
+
     # MIGRATE「解答题答案栏统一见解析」：解析栏有推导才收口，答案栏是唯一载体的不动
     _u1 = Question(key="t/unify1", type="detailed_answer", stem="求 $f(x)$ 的极值。",
                    answer="(1) $1$；(2) $-1$", solution="对 $f(x)$ 求导得 $f'(x)=2x$，\
@@ -1690,6 +2079,64 @@ def _selftest() -> int:
     strip_running_head(_q)
     check("去页脚：解析里也清", _q.solution.strip() == "由题意得 $x=1$。",
           repr(_q.solution))
+
+    # 机检新轴：`第N页（共M页）` 这一档页眉，老规则只认到「页」字，被 `(共4页)` 挡住
+    _q = Question(key="t/foot3", type="detailed_answer",
+                  stem="设 $A=\{1,2\}$，求 $A\cap B$。\n\n数学试题 第2页(共4页)",
+                  answer="见解析")
+    strip_running_head(_q)
+    check("去页脚：带「(共N页)」的整行页眉删掉",
+          _q.stem == "设 $A=\{1,2\}$，求 $A\cap B$。", repr(_q.stem))
+
+    _q = Question(key="t/foot4", type="fill_in_blank",
+                  stem="则满足 $x^2<4$ 的 $x$ 有第 3 页（共 4 页）几个？\n\\fillin[3]",
+                  answer="3")
+    strip_running_head(_q)
+    check("去页脚：页眉**混在正文同一行**时整行保留（宁可漏删不误删）",
+          "第 3 页（共 4 页）" in _q.stem, repr(_q.stem))
+
+    _q = Question(key="t/foot5", type="detailed_answer",
+                  stem="已知 $f(x)=x^2$。\n\n高三基础测试 数学 试题卷 第5页（共6页）",
+                  answer="见解析")
+    strip_running_head(_q)
+    check("去页脚：「卷名＋页码」整行删（前缀 24 字内、不含 $）",
+          _q.stem == "已知 $f(x)=x^2$。", repr(_q.stem))
+
+    _q = Question(key="t/semi2", type="fill_in_blank",
+                  stem="解集为\\fillin[$(-2,1)$。]。", answer="$(-2,1)$。")
+    strip_answer_trailing_semicolon(_q)
+    check("答案栏尾部句号去掉：作答位与答案栏**同源**一起改",
+          _q.answer == "$(-2,1)$" and _q.stem == "解集为\\fillin[$(-2,1)$]。",
+          repr(_q.answer) + " / " + repr(_q.stem))
+
+    _q = Question(key="t/semi3", type="fill_in_blank",
+                  stem="两空分别为\\fillin[$1$；$2$。]与\\fillin[$3$。]",
+                  answer="$1$；$2$。")
+    _old = _q.answer
+    strip_answer_trailing_semicolon(_q)
+    check("答案栏尾部句号：只砍收尾那一个，多空答案不动第一个空",
+          _q.answer == "$1$；$2$" and _old == "$1$；$2$。", repr(_q.answer))
+
+    _q = Question(key="t/semi4", type="fill_in_blank", stem="值为\\fillin[。]", answer="。")
+    strip_answer_trailing_semicolon(_q)
+    check("答案栏尾部句号：砍完为空就**不动**（答案栏不能被规则清空）",
+          _q.answer == "。", repr(_q.answer))
+
+    _q = Question(key="t/src2", type="detailed_answer",
+                  stem="已知 $f(x)=x^2$，求最小值。\n\n高三第一次月考 数", answer="见解析")
+    _q.meta = {"source_label": "宁夏回族自治区银川一中2026-2027学年高三上学期第一次月考"}
+    strip_trailing_source(_q)
+    check("出处进 meta：**不覆盖**已有的长出处名（只留 source_in_stem 痕迹）",
+          _q.meta["source_label"] == "宁夏回族自治区银川一中2026-2027学年高三上学期第一次月考"
+          and _q.meta.get("source_in_stem") == "高三第一次月考 数",
+          repr(_q.meta))
+
+    _q = Question(key="t/src3", type="detailed_answer",
+                  stem="已知 $f(x)=x^2$，求最小值。\n\n太原一模", answer="见解析")
+    _q.meta = {}
+    strip_trailing_source(_q)
+    check("出处进 meta：meta 里**空着**时才填 source_label",
+          _q.meta.get("source_label") == "太原一模", repr(_q.meta))
 
     print("normalize 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0

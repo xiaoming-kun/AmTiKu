@@ -4,7 +4,7 @@ import {
   ListFilter, SlidersHorizontal, X, Check, ChevronFirst, ChevronLast, ChevronRight,
   ClipboardList, Rows3, Rows2, BookPlus, FileText, ChevronUp, ChevronDown,
   LayoutGrid, ScanLine, FolderTree, Sparkles, NotebookPen, Trash2, History,
-  Route, Command as CommandIcon,
+  Route, BookOpen, Command as CommandIcon,
 } from 'lucide-react'
 import type { Q, Base } from '@/lib/types'
 import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
@@ -17,6 +17,7 @@ import { Trash, DeleteModal } from '@/app/Trash'
 import { Detail, TexSource } from '@/app/Detail'
 import { Changes } from '@/app/Stats'
 import { Chain } from '@/app/Chain'
+import Klist from '@/app/Klist'
 import CanvasEditor from '@/editor/CanvasEditor'
 import ExportPage from '@/app/ExportPage'
 import IngestDrawer from '@/app/IngestDrawer'
@@ -33,8 +34,8 @@ import CommandPalette, { type Cmd } from '@/app/CommandPalette'
  *  · 题目列表和当前卷子是**同一栏里的两个视图**（`view` 切换）；
  *  · 题目详情 / LaTeX 源码是**浮在内容区上的抽屉**（`dOpen`，按需开、随时关）。
  *  所以这里只剩「整屏页面」这一种 tab。 */
-type Tab = 'workbench' | 'handout' | 'changes' | 'trash' | 'chain'
-const FULL_PAGE: Tab[] = ['changes', 'trash', 'chain']
+type Tab = 'workbench' | 'handout' | 'changes' | 'trash' | 'chain' | 'klist'
+const FULL_PAGE: Tab[] = ['changes', 'trash', 'chain', 'klist']
 
 export default function App() {
   // 列表数据与筛选 → useQuestionList（一行拿到全部筛选状态，见 lib/useQuestionList.ts）
@@ -113,6 +114,8 @@ export default function App() {
      讲义和卷子**分开收**：卷子要打印成试卷，讲义要排成讲课稿，
      用途不同。同一道题既进卷子又进讲义是常态，不能共用一个集合。 */
   const [paperMap, setPaperMap] = useState<Map<string, Q>>(new Map())
+  // 讲义入口 2026-10-02 恢复（Slidev 52 已能跑，见 slidev/node_modules）；
+  // 恢复前它被拆成只读，只有导出页的「讲义模式」还能读到。
   const [handoutMap, setHandoutMap] = useState<Map<string, Q>>(new Map())
   const paper = useMemo(() => [...paperMap.values()], [paperMap])
   const handout = useMemo(() => [...handoutMap.values()], [handoutMap])
@@ -187,6 +190,7 @@ export default function App() {
       },
     })
   }
+
   const addOneToHandout = (it: Q) => {
     setHandoutMap((m) => new Map(m).set(it.key, it))
     toast(`已加入讲义 · ${it.point_titles?.[0] || it.type_label}`, {
@@ -258,6 +262,7 @@ export default function App() {
       })
     }
   }
+
   const addCheckedToHandout = () => {
     const picked = items.filter((x) => checked.has(x.key))
     const added = picked.filter((x) => !handoutMap.has(x.key))
@@ -266,6 +271,7 @@ export default function App() {
       for (const x of picked) n.set(x.key, x)
       return n
     })
+    // 和「加入卷子」不一样：加完**直接进讲义编辑页** —— 挑完题的下一步就是排版。
     exitSelect(); setTab('handout')
     if (added.length) {
       toast(`已加入讲义 ${added.length} 道`, {
@@ -294,7 +300,8 @@ export default function App() {
   /* ── 导航动作 ── */
   const navActive: NavKey =
     tab === 'trash' ? 'trash' : tab === 'changes' ? 'changes'
-    : tab === 'chain' ? 'chain' : tab === 'handout' ? 'handout'
+    : tab === 'chain' ? 'chain' : tab === 'klist' ? 'klist'
+    : tab === 'handout' ? 'handout'
     : view === 'paper' ? 'paper' : 'workbench'
 
   const pick = (k: NavKey) => {
@@ -400,6 +407,7 @@ export default function App() {
     const navIcon: Record<string, ReactNode> = {
       workbench: <LayoutGrid size={13} />, ingest: <ScanLine size={13} />,
       points: <FolderTree size={13} />, chain: <Route size={13} />,
+      klist: <BookOpen size={13} />,
       export: <Sparkles size={13} />, paper: <ClipboardList size={13} />,
       handout: <NotebookPen size={13} />, trash: <Trash2 size={13} />,
       changes: <History size={13} />,
@@ -409,6 +417,7 @@ export default function App() {
       ingest: 'luru ingest import 录题 录入 新建',
       points: 'zhishidian points topics 考点 章节',
       chain: 'zhishilianlu chain links 链路 先修 前置 关系 图',
+      klist: 'zhishiqingdan klist jiangjie 清单 讲解 讲义 考点 备课题',
       export: 'zujuan export 组卷 导出 pdf',
       paper: 'shijuan paper 卷子 试卷',
       handout: 'jiangyi handout 讲义 画布',
@@ -562,6 +571,12 @@ export default function App() {
                `overflow-y-auto` 的 main —— 那样图会被拉高、页面出现两条滚动条。 */
             <main className="anim-fade-in flex min-h-0 flex-1 flex-col overflow-hidden">
               <Chain onPickPoint={(pid, title) => { findPoint(pid, title); setTab('workbench') }} />
+            </main>
+          ) : tab === 'klist' ? (
+            /* 三栏页：左右两栏各自滚动，中间正文自己滚 —— 和链路页同一个理由，
+               套进外层 `overflow-y-auto` 会冒出两条滚动条。 */
+            <main className="anim-fade-in flex min-h-0 flex-1 overflow-hidden">
+              <Klist onFindPoint={(pid, title) => { findPoint(pid, title); setTab('workbench') }} />
             </main>
           ) : FULL_PAGE.includes(tab) ? (
             <main className="anim-fade-in min-h-0 flex-1 overflow-y-auto">
