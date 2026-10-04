@@ -22,6 +22,7 @@ from amti.paths import ROOT, UI_DIST
 import functools
 import json
 from collections import Counter, OrderedDict
+import atexit
 import os
 import re
 import sys
@@ -1836,6 +1837,20 @@ def gone() -> dict:
     return {"ok": True}
 
 
+def _cleanup_vision() -> None:
+    r"""收掉**本进程起的**读图服务。可以重复调用（`lms` 那边会清标志）。
+
+    只收自己起的：你手动 `./启动.sh vision` 起的那个也许正被别的脚本用着。
+    """
+    from amti import lms as _lms
+    try:
+        msg = _lms.stop_vision_if_ours()
+        if msg:
+            print("  " + msg)
+    except Exception:
+        pass
+
+
 def _watchdog() -> None:
     """没 ping 了就退出。只在 `--exit-with-browser` 下起。
 
@@ -1850,6 +1865,9 @@ def _watchdog() -> None:
             continue                       # 有请求在跑，等它干完
         if time.monotonic() - _LAST_PING[0] > EXIT_IDLE_SEC:
             print("页面已关闭，题库服务退出")
+            # ⚠️ **必须在这里收，不能指望 `finally`/`atexit`** ——
+            # `os._exit()` 会跳过它们（实测：读图服务因此变成孤儿跑了 10 小时）。
+            _cleanup_vision()
             os._exit(0)
 
 
@@ -2154,6 +2172,25 @@ def main() -> int:
         log.warning("预热录入序号表失败（不影响启动）", exc_info=True)
 
     log.info("AmTiKu 服务启动：http://%s:%s", a.host, a.port)
+    # 服务退了就把**我们自己起的**读图服务一并收掉，否则它会变成孤儿进程
+    # 一直占内存（实测残留过 10 小时）。`atexit` 覆盖正常退出；
+    # `os._exit` 那条路（关浏览器的看门狗）由 `_cleanup_vision()` 单独负责。
+    atexit.register(_cleanup_vision)
+    # `atexit` 在**被信号打死**时不执行（实测 `kill -TERM` 进程直接没了，
+    # 读图服务就成了孤儿）。所以 SIGTERM/SIGINT 也要自己接一下：
+    # 先收尾，再交回默认行为退出。
+    import signal
+
+    def _on_signal(signum, _frame):
+        _cleanup_vision()
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(_sig, _on_signal)
+        except (ValueError, OSError):
+            pass                                  # 非主线程 / 平台不支持
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
     return 0
 

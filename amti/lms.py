@@ -145,6 +145,26 @@ def ensure(model: str = "", *, key: str = "", wait: float = 120.0) -> tuple[bool
                       ((r.stderr or "") + (r.stdout or ""))[-300:]))
 
 
+#: 读图服务是不是**本进程起的**。
+#: 只有自己起的才在退出时收掉 —— 你手动 `./启动.sh vision` 起的那个
+#: 也许正被别的脚本用着，不该跟着 web 服务一起死。
+_VISION_SPAWNED = False
+
+
+def stop_vision_if_ours() -> str:
+    r"""退出时收掉自己起的读图服务；不是自己起的就不动。返回说明（空=没做事）。
+
+    ⚠️ 为什么要这个：`ensure_vision()` 用 `start_new_session=True` 起进程，
+    它**脱离**了父进程。实测漏掉一次收尾，它就变成孤儿跑了 **10 小时**、
+    一直占着内存 —— 而用户以为"关掉应用就没了"。
+    """
+    global _VISION_SPAWNED
+    if not _VISION_SPAWNED:
+        return ""
+    _VISION_SPAWNED = False
+    return "读图服务：" + stop_vision()
+
+
 def up_vision(timeout: float = 2.0) -> bool:
     """:1235（llama.cpp 读图服务）通不通。"""
     try:
@@ -176,6 +196,7 @@ def ensure_vision(*, wait: float = 180.0) -> tuple[bool, str]:
     for f, what in ((VISION_MODEL, "模型"), (VISION_MMPROJ, "视觉投影")):
         if not f.is_file():
             return False, "找不到%s文件：%s" % (what, f)
+    global _VISION_SPAWNED
     t0 = time.time()
     try:
         subprocess.Popen(
@@ -184,6 +205,7 @@ def ensure_vision(*, wait: float = 180.0) -> tuple[bool, str]:
              "-c", "8192", "--no-warmup"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
+        _VISION_SPAWNED = True      # 记下来，退出时好收（见 stop_vision_if_ours）
     except Exception as e:
         return False, "启动 llama.cpp 失败：%s: %s" % (type(e).__name__, e)
     while time.time() - t0 < wait:

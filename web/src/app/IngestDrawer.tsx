@@ -2,9 +2,10 @@
  *
  *  从 App.tsx 搬出来的（审查报告 CPLX-1）。
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  AlertTriangle, ArrowUp, Check, FileText, Loader2, Merge, Play, Undo2, Upload, X,
+  AlertTriangle, ArrowUp, Check, FileText, Loader2, Merge, Play, Sparkles, Undo2,
+  Upload, X,
 } from 'lucide-react'
 import { renderBlocks } from '@/lib/render'
 import { api } from '@/lib/api'
@@ -47,6 +48,12 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   const [pv, setPv] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const [drag, setDrag] = useState(false)
+  /** 读图模型起没起。**查这个接口不会启动模型**（服务端只做只读探测），
+   *  所以抽屉一打开就可以查，用来点亮那个状态点。 */
+  const [vlmReady, setVlmReady] = useState(false)
+  useEffect(() => {
+    api.vlmStatus().then((s: any) => setVlmReady(!!s?.ready)).catch(() => setVlmReady(false))
+  }, [])
 
   /** 拖进来或选一个文件，读进文本框。
    *  - `.tex` / `.txt` → 直接读文本（比复制粘贴省事，尤其整卷）
@@ -74,6 +81,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
         const b64 = String(r.result || '').split(',')[1] || ''
         const res: any = await api.vlmExtract(b64, f.name)
         setText(res.latex || ''); setPv(null)
+        setVlmReady(true)          // 刚跑通，模型肯定起了
         setMsg(`识别完成（${res.model}，${res.pages} 页，${res.seconds} 秒）`
                + (res.warnings?.length ? ' ⚠ ' + res.warnings.join('；') : '')
                + ' — 核对无误后点「干跑」')
@@ -307,13 +315,30 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                              hover:border-brand-line hover:text-brand-ink">
                   <FileText size={12} />填入示例
                 </button>
-                {/* 选文件：和拖拽一个效果 */}
+                {/* 选文件：和拖拽一个效果，只收**文本** */}
                 <label className="press inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-lg
                                   border border-border bg-surface px-2 text-[11.5px] text-ink-soft
                                   hover:border-brand-line hover:text-brand-ink">
-                  <Upload size={12} />选文件 / 图片…
-                  <input type="file" accept=".tex,.txt,image/*,.pdf" className="hidden"
+                  <Upload size={12} />选文件…
+                  <input type="file" accept=".tex,.txt" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f) }} />
+                </label>
+                {/* **大模型读图**：图片 / PDF → LaTeX。
+                    ⚠️ 模型就在点这一下时才启动（不点，LM Studio / llama.cpp
+                    都不会被拉起来）。所以这个按钮要显眼、要单独一个 ——
+                    混进「选文件」里的话，没人知道拖张图会调大模型。 */}
+                <label title={vlmReady ? '读图模型已就绪'
+                                       : '点这里会启动本地读图模型（首次约 10 秒）'}
+                  className="press inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-lg
+                             border border-brand-line bg-brand-soft px-2 text-[11.5px] font-medium
+                             text-brand-ink hover:border-brand">
+                  {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  大模型读图…
+                  {/* 状态点：灰=没启动，绿=已就绪。让你看得见它起没起 */}
+                  <span className={`ml-0.5 h-1.5 w-1.5 rounded-full ${
+                    vlmReady ? 'bg-has' : 'bg-ink-faint'}`} />
+                  <input type="file" accept="image/*,.pdf" className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) ocrFile(f) }} />
                 </label>
               </div>
               <div className="relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-card)]
@@ -338,7 +363,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                                 justify-center gap-2 rounded-[var(--radius-card)] border-2 border-dashed
                                 border-brand-line bg-brand-soft/70 text-[12.5px] font-medium text-brand-ink">
                   <Upload size={20} />
-                  松手就读 · 图片/PDF 交给大模型识别
+                  松手就读 · 图片 / PDF 交给大模型识别
                 </div>
               )}
               </div>
