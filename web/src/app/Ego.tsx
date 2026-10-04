@@ -23,19 +23,19 @@ export function Ego({ id, pre, post, onJump }: {
     <g transform={`translate(${x},${y})`} onClick={onClick}
       className={onClick ? 'cursor-pointer' : undefined}>
       <rect width={center ? 120 : PILL_W} height={PILL_H} rx={5}
-        fill={center ? '#fdf2f8' : hard ? 'rgba(219,39,119,.10)' : 'rgba(100,116,139,.10)'}
-        stroke={center ? '#db2777' : hard ? '#f9a8d4' : '#cbd5e1'}
+        fill={center ? 'var(--color-brand-soft)' : hard ? 'color-mix(in oklab, var(--color-brand) 10%, transparent)' : 'color-mix(in oklab, var(--color-ink-faint) 10%, transparent)'}
+        stroke={center ? 'var(--color-brand)' : hard ? 'var(--color-brand-line)' : 'var(--color-border-strong)'}
         strokeWidth={center ? 1.5 : 1} />
       <text x={(center ? 120 : PILL_W) / 2} y={12} textAnchor="middle" fontSize={center ? 11 : 10.5}
         fontWeight={center ? 600 : 400} className="tnum"
-        fill={center ? '#9d174d' : hard ? '#be185d' : '#64748b'}>{text}</text>
+        fill={center ? 'var(--color-brand-ink)' : hard ? 'var(--color-brand-ink)' : 'var(--color-ink-soft)'}>{text}</text>
     </g>
   )
 
   const wire = (x1: number, y1: number, x2: number, y2: number, hard: boolean, k: string) => {
     const dx = Math.max(14, (x2 - x1) * 0.5)
     return <path key={k} d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-      fill="none" stroke={hard ? '#f472b6' : '#cbd5e1'} strokeWidth={hard ? 1.4 : 1}
+      fill="none" stroke={hard ? 'var(--color-brand-line)' : 'var(--color-border-strong)'} strokeWidth={hard ? 1.4 : 1}
       strokeDasharray={hard ? undefined : '3 2.5'} />
   }
 

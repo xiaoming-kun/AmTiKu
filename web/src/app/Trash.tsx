@@ -207,7 +207,7 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
 
   return (
     <div className="anim-fade-in fixed inset-0 z-[60] flex items-center justify-center
-                    bg-ink/25 p-4 backdrop-blur-[2px]"
+                    bg-scrim p-4 backdrop-blur-[2px]"
       onClick={onCancel}>
       <div className="pop-c w-[540px] max-w-full rounded-[var(--radius-pop)] border border-border
                       bg-surface p-4 shadow-[var(--shadow-pop)]"

@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "katex/dist/katex.min.css";
 
+/* 暗色是**换一层变量**，不是换一套组件。
+ *
+ * 全项目的颜色早就收成了语义 token（bg-surface / text-ink / border-border…），
+ * 组件里几乎没有硬编码色值，所以「暗色」只需要在 `.dark` 下把同一批变量
+ * 重新赋一遍值，二十多个页面一起跟着变，一行组件代码都不用动。
+ *
+ * `dark:` 变体是给**极少数真要换结构**的地方留的出口（比如纸面预览要
+ * 在暗色下保持纸的样子）。默认走变量，别走变体。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ══ AmTiKu 设计令牌 ═══════════════════════════════════════════════
    主色仍是粉色（用户指定），但**粉色不再承担"到处都在"的角色**：
    界面骨架走中性灰阶（画布 / 卡片 / 描边），粉色只出现在
@@ -25,7 +35,13 @@
   --color-muted:         oklch(0.963 0.006 345);
   --color-ink:           oklch(0.225 0.014 340);
   --color-ink-soft:      oklch(0.435 0.014 340);
-  --color-ink-faint:     oklch(0.618 0.010 340);
+  /* 三级文字原来 0.618：压白底 3.69:1、压 muted 3.31:1，**低于 AA 的 4.5**。
+     它是 10.5px 的小标签（「工作流」「外观」「展开」…），一屏几十个，
+     而目标用户是长时间读题改卷的老师 —— 这一档不该是"看得见就行"。
+     取 0.535 后：surface 5.20 / bg 4.85 / muted 4.66，全部过线，
+     视觉上仍是明显的浅灰，和 ink-soft(0.435 → 8.0:1) 拉得开。
+     ⚠️ 这是浅色下**唯一**动了原有观感的改动；想还原就把这行改回 0.618。 */
+  --color-ink-faint:     oklch(0.535 0.010 340);
 
   /* ── 品牌粉：只在选中/主按钮/关键数字出现 ── */
   --color-brand:        oklch(0.585 0.205 351);
@@ -34,23 +50,40 @@
   --color-brand-line:   oklch(0.885 0.062 351);
   --color-brand-ink:    oklch(0.498 0.196 351);
 
-  /* ── 语义色 ── */
-  --color-has:       oklch(0.585 0.125 158);
+  /* ── 语义色 ──
+     has / warn / danger 的亮度不是随手挑的：它们几乎**成对出现**
+     （浅底 soft + 同色文字），所以取值必须让「文字压在自家浅底上」
+     过得了 4.5:1。原来 warn 是 3.14:1、has 3.59:1、danger 4.27:1 ——
+     一屏几十个「缺答案」的琥珀色小标签，其实一直是糊的。 */
+  --color-has:       oklch(0.520 0.125 158);
   --color-has-soft:  oklch(0.963 0.030 158);
   --color-has-line:  oklch(0.885 0.060 158);
-  --color-gap:       oklch(0.640 0.012 340);
+  /* gap 同理：它是 `text-gap`（标「缺解析」「缺答案」）的**文字色**，
+     原来 0.640 压自家底只有 2.99:1 —— 比 ink-faint 还差。 */
+  --color-gap:       oklch(0.528 0.012 340);
   --color-gap-soft:  oklch(0.958 0.005 340);
-  --color-warn:      oklch(0.640 0.145 66);
+  --color-warn:      oklch(0.540 0.145 66);
   --color-warn-soft: oklch(0.968 0.042 80);
   --color-warn-line: oklch(0.895 0.075 78);
-  --color-danger:      oklch(0.575 0.196 25);
+  --color-danger:      oklch(0.550 0.196 25);
   --color-danger-soft: oklch(0.966 0.028 22);
+
+  /* ── 「实心」面 & 遮罩 ──
+     这两个是**方向相反**的东西，不能借用 ink：
+     · solid —— 屏幕上少数几个高对比实心块（「加入组卷」按钮、toast）。
+       浅色下是近黑底白字，暗色下必须翻成近白底黑字。
+     · scrim —— 弹层背后那层压暗。浅色下是半透明黑；暗色下 ink 变成
+       近白，直接借用 `bg-ink/25` 会让弹层背景变成一片白雾。 */
+  --color-solid:     oklch(0.225 0.014 340);
+  --color-solid-ink: oklch(1 0 0);
+  --color-scrim:     oklch(0.225 0.014 340 / .25);
 
   /* ── 层次：卡片靠明度差 + 极轻投影立起来 ── */
   --shadow-card: 0 1px 2px oklch(0.3 0.02 340 / .045);
   --shadow-hover: 0 4px 14px -4px oklch(0.3 0.02 340 / .10), 0 1px 3px oklch(0.3 0.02 340 / .05);
   --shadow-pop: 0 12px 32px -10px oklch(0.3 0.02 340 / .18), 0 2px 8px oklch(0.3 0.02 340 / .06);
-  --shadow-brand: 0 6px 18px -6px oklch(0.585 0.205 351 / .40);
+  /* 品牌光晕跟着强调色走，不写死粉色 —— 换主题色时它必须一起换 */
+  --shadow-brand: 0 6px 18px -6px color-mix(in oklab, var(--color-brand) 40%, transparent);
 
   --radius-card: 12px;
   --radius-pop: 14px;
@@ -62,6 +95,192 @@
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
                "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+/* ══ 大类的分类色（知识链路图）═════════════════════════════════════
+   知识链路那 10 个章节各一种颜色，而且是**当文字用的**（章节标题就填这个色）。
+   所以它不能是一组写死的 hex：同一组色在明暗两套底上没法都好读。
+   浅色底要够深，暗色底要够亮 —— 这里两套都按 4.6:1 解出来。
+   见 app/Chain.tsx 的 TOPIC_COLORS。 */
+:root {
+  --tc-1: oklch(0.563 0.159 250);
+  --tc-2: oklch(0.584 0.220 285);
+  --tc-3: oklch(0.552 0.094 200);
+  --tc-4: oklch(0.548 0.128 158);
+  --tc-5: oklch(0.569 0.123 70);
+  --tc-6: oklch(0.590 0.220 25);
+  --tc-7: oklch(0.592 0.220 340);
+  --tc-8: oklch(0.555 0.132 120);
+  --tc-9: oklch(0.575 0.220 265);
+  --tc-10: oklch(0.551 0.095 190);
+}
+
+/* ══ 暗色 ═══════════════════════════════════════════════════════════
+   只重赋变量，不动组件。这些值不是"把浅色调暗"调出来的，是按对比度
+   解出来的：正文 ≥14:1、次级 ≥8:1、三级 ≥4.5:1，
+   强调字压在自家浅底上 ≥4.5:1，白字压在主色上 ≥4.6:1。
+
+   三条必须守住的关系（搞反了界面会「塌」）：
+   ① **surface 比 bg 亮**。浅色下卡片(白)比画布(浅灰)亮；暗色下反过来
+      就成了一块块陷进去的洞。这里 surface 0.228 / bg 0.185。
+   ② **浅底 soft 不是"更亮的底"，是"更暗的底 + 更亮的字"**。
+      浅色下 soft 是 0.966 的极浅色 + 0.498 的深字；暗色下要整个翻转。
+   ③ **投影在暗背景上要更重**。浅色那套 4.5% 的黑影在暗色下完全看不见，
+      层次主要靠描边承担，投影只补一点点。
+   ═════════════════════════════════════════════════════════════════ */
+.dark {
+  /* 灰阶骨架：surface 比 bg 亮，卡片才立得起来 */
+  --color-bg:            oklch(0.185 0.008 340);
+  --color-surface:       oklch(0.228 0.009 340);
+  --color-surface-2:     oklch(0.205 0.008 342);
+  --color-border:        oklch(0.310 0.011 340);
+  --color-border-strong: oklch(0.385 0.013 340);
+  --color-muted:         oklch(0.268 0.010 342);
+  --color-ink:           oklch(0.945 0.004 340);
+  --color-ink-soft:      oklch(0.780 0.008 340);
+  /* 三级文字在暗色下必须比"数值相等"更亮。
+     浅色里 ink-faint 只有 3.3:1（灰字压白底），那是**刻意的浅灰**，不刺眼；
+     暗色里同样的数值却是**浅灰字压近黑底** —— 小字号会糊、还带光晕感，
+     用户直接反馈「看不太清楚了」。所以这里不照抄浅色的对比度，
+     按「压在它会出现的最亮底（muted 0.268）上 ≥5.5:1」重新解了一个值。
+     层次仍是三层：压 surface 时 ink 14.5 / ink-soft 8.5 / ink-faint 6.3。 */
+  --color-ink-faint:     oklch(0.700 0.010 340);
+
+  /* 品牌粉：暗底上提一点，但没提到白字压不住的程度 */
+  --color-brand:        oklch(0.580 0.205 351);
+  --color-brand-deep:   oklch(0.500 0.197 351);
+  --color-brand-soft:   oklch(0.285 0.057 351);
+  --color-brand-line:   oklch(0.405 0.098 351);
+  --color-brand-ink:    oklch(0.820 0.107 351);
+
+  /* 语义色：整对翻转（浅底→深底，深字→浅字） */
+  --color-has:       oklch(0.760 0.130 158);
+  --color-has-soft:  oklch(0.280 0.048 158);
+  --color-has-line:  oklch(0.395 0.075 158);
+  /* gap 也是**当文字用的**（`text-gap` 标「缺解析」「缺答案」），
+     不是纯装饰 —— 所以它得和 ink-faint 同档，不能停在 0.600（压自家底只有 3.99:1）。 */
+  --color-gap:       oklch(0.660 0.010 340);
+  --color-gap-soft:  oklch(0.255 0.008 340);
+  --color-warn:      oklch(0.815 0.130 78);
+  --color-warn-soft: oklch(0.305 0.055 72);
+  --color-warn-line: oklch(0.420 0.080 72);
+  --color-danger:      oklch(0.730 0.150 25);
+  --color-danger-soft: oklch(0.295 0.070 25);
+
+  /* 实心块翻向：近黑底白字 → 近白底黑字 */
+  --color-solid:     oklch(0.900 0.005 340);
+  --color-solid-ink: oklch(0.200 0.010 340);
+  /* 遮罩是"压暗"，两个模式下都得是黑，只是暗色下要更实 */
+  --color-scrim:     oklch(0.050 0 0 / .62);
+
+  --shadow-card:  0 1px 2px oklch(0 0 0 / .30);
+  --shadow-hover: 0 4px 14px -4px oklch(0 0 0 / .45), 0 1px 3px oklch(0 0 0 / .30);
+  --shadow-pop:   0 12px 32px -10px oklch(0 0 0 / .60), 0 2px 8px oklch(0 0 0 / .35);
+
+  /* 分类色翻转取值：同色相、更高亮度，压在暗底上仍是 4.6:1 */
+  --tc-1: oklch(0.616 0.175 250);
+  --tc-2: oklch(0.634 0.206 285);
+  --tc-3: oklch(0.605 0.103 200);
+  --tc-4: oklch(0.599 0.140 158);
+  --tc-5: oklch(0.623 0.135 70);
+  --tc-6: oklch(0.643 0.220 25);
+  --tc-7: oklch(0.645 0.220 340);
+  --tc-8: oklch(0.608 0.144 120);
+  --tc-9: oklch(0.625 0.201 265);
+  --tc-10: oklch(0.603 0.104 190);
+
+  /* 让浏览器知道该用暗色的滚动条 / 表单控件 / 默认背景 */
+  color-scheme: dark;
+}
+
+/* ══ 主题色 ═════════════════════════════════════════════════════════
+   默认是玫粉（写在上面的 @theme 里）。另外五套**强调色**只换品牌那一族
+   变量，骨架灰阶和语义色一个都不动 —— 换主题不该把「有/缺/警示」的颜色
+   也一起换掉。
+
+   每套色按 hue 单独解了亮度：蓝绿在 oklch 里同亮度下的白字对比度比粉色
+   低，所以它们的 L 要更低（湖蓝 0.557、翠绿 0.547）。给所有色相套同一个
+   L 的话，白字压在翠绿上只有 3.9:1。
+
+   选择器写成 `.dark[data-accent=x]`（两个类）而不是 `.dark`（一个类），
+   暗色 × 主题色才叠得对。MathBank 那份实现里 `.dark` 和 `.theme-x` 同权重、
+   且 `.dark` 声明在后，结果**暗色下六套主题全变成同一个灰**，只有下拉里的
+   小圆点不一样。这里不重蹈。
+   ═════════════════════════════════════════════════════════════════ */
+:root[data-accent="indigo"] {
+  --color-brand:      oklch(0.576 0.190 277);
+  --color-brand-deep: oklch(0.505 0.182 277);
+  --color-brand-soft: oklch(0.966 0.016 277);
+  --color-brand-line: oklch(0.885 0.056 277);
+  --color-brand-ink:  oklch(0.498 0.182 277);
+}
+.dark[data-accent="indigo"] {
+  --color-brand:      oklch(0.576 0.190 277);
+  --color-brand-deep: oklch(0.500 0.182 277);
+  --color-brand-soft: oklch(0.285 0.053 277);
+  --color-brand-line: oklch(0.405 0.091 277);
+  --color-brand-ink:  oklch(0.820 0.091 277);
+}
+
+:root[data-accent="ocean"] {
+  --color-brand:      oklch(0.557 0.118 235);
+  --color-brand-deep: oklch(0.505 0.107 235);
+  --color-brand-soft: oklch(0.966 0.019 235);
+  --color-brand-line: oklch(0.885 0.045 235);
+  --color-brand-ink:  oklch(0.498 0.106 235);
+}
+.dark[data-accent="ocean"] {
+  --color-brand:      oklch(0.557 0.118 235);
+  --color-brand-deep: oklch(0.500 0.106 235);
+  --color-brand-soft: oklch(0.285 0.042 235);
+  --color-brand-line: oklch(0.405 0.072 235);
+  --color-brand-ink:  oklch(0.820 0.078 235);
+}
+
+:root[data-accent="emerald"] {
+  --color-brand:      oklch(0.547 0.128 158);
+  --color-brand-deep: oklch(0.505 0.118 158);
+  --color-brand-soft: oklch(0.966 0.018 158);
+  --color-brand-line: oklch(0.885 0.042 158);
+  --color-brand-ink:  oklch(0.498 0.117 158);
+}
+.dark[data-accent="emerald"] {
+  --color-brand:      oklch(0.547 0.128 158);
+  --color-brand-deep: oklch(0.500 0.117 158);
+  --color-brand-soft: oklch(0.285 0.039 158);
+  --color-brand-line: oklch(0.405 0.067 158);
+  --color-brand-ink:  oklch(0.820 0.073 158);
+}
+
+:root[data-accent="violet"] {
+  --color-brand:      oklch(0.585 0.200 305);
+  --color-brand-deep: oklch(0.505 0.192 305);
+  --color-brand-soft: oklch(0.966 0.020 305);
+  --color-brand-line: oklch(0.885 0.060 305);
+  --color-brand-ink:  oklch(0.498 0.192 305);
+}
+.dark[data-accent="violet"] {
+  --color-brand:      oklch(0.585 0.200 305);
+  --color-brand-deep: oklch(0.500 0.192 305);
+  --color-brand-soft: oklch(0.285 0.056 305);
+  --color-brand-line: oklch(0.405 0.096 305);
+  --color-brand-ink:  oklch(0.820 0.104 305);
+}
+
+/* 石墨：给「不想看见彩色」的人。彩度压到 0.03，只剩一道很淡的灰蓝 */
+:root[data-accent="graphite"] {
+  --color-brand:      oklch(0.563 0.030 285);
+  --color-brand-deep: oklch(0.505 0.029 285);
+  --color-brand-soft: oklch(0.966 0.004 285);
+  --color-brand-line: oklch(0.885 0.009 285);
+  --color-brand-ink:  oklch(0.498 0.029 285);
+}
+.dark[data-accent="graphite"] {
+  --color-brand:      oklch(0.563 0.030 285);
+  --color-brand-deep: oklch(0.500 0.029 285);
+  --color-brand-soft: oklch(0.285 0.008 285);
+  --color-brand-line: oklch(0.405 0.014 285);
+  --color-brand-ink:  oklch(0.820 0.016 285);
 }
 
 * { box-sizing: border-box; }
@@ -87,13 +306,14 @@ body {
 /* 数字列对齐（题量、分数、页码）—— 不对齐的数字读起来要重新找位 */
 .tnum { font-variant-numeric: tabular-nums; }
 
-/* 滚动条低调一点 */
+/* 滚动条低调一点。用变量而不是写死色值 —— 写死的话暗色下会是一道
+   亮灰色的条，比内容还显眼 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.86 0.008 340); border-radius: 6px;
+  background: var(--color-border-strong); border-radius: 6px;
   border: 3px solid transparent; background-clip: content-box;
 }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.76 0.02 345); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-faint); background-clip: content-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
 /* ── 题目排版 ─────────────────────────────────────── */

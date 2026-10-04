@@ -32,10 +32,16 @@ type Graph = {
 
 const LS_KEY = 'amti.chain.mastered'
 
-/** 10 个大类的颜色。挑的是**在白底上都够深**的一组，不用浅色——
- *  浅色描边在小圆角节点上分不出大类。 */
-const TOPIC_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#059669', '#d97706',
-  '#dc2626', '#db2777', '#65a30d', '#4f46e5', '#0d9488']
+/** 10 个大类的颜色：**走 CSS 变量**，因为同一组色在明暗两套底上要取不同值。
+ *  浅色底上要够深（浅描边在小圆角节点上分不出大类），暗色底上要够亮
+ *  （原来的深蓝 #2563eb 压在 #1f1b1e 上只有 2.2:1，章节标题是糊的）。
+ *  取值见 index.css 的 --tc-1..--tc-10。
+ *
+ *  这里**不能再拼透明度**：`c.color + '14'` 在变量上会拼成
+ *  `var(--tc-1)14`，浏览器直接丢掉整条属性。透明度改用独立的
+ *  fillOpacity / strokeOpacity 表达。 */
+const TOPIC_COLORS = ['var(--tc-1)', 'var(--tc-2)', 'var(--tc-3)', 'var(--tc-4)', 'var(--tc-5)',
+  'var(--tc-6)', 'var(--tc-7)', 'var(--tc-8)', 'var(--tc-9)', 'var(--tc-10)']
 
 /* 布局常量。
  * 默认**只画 10 个章节卡片**，点开的章节才在它下面长出考点——这是「探索」的核心：
@@ -463,11 +469,13 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                       setOpen((st) => { const t = new Set(st); t.has(c.topic) ? t.delete(c.topic) : t.add(c.topic); return t })
                     }}>
                     <rect x={c.x} y={c.y} width={c.w} height={h} rx={8}
-                      fill={hidden ? '#f8fafc' : c.color + '14'}
-                      stroke={hidden ? '#e2e8f0' : c.color + (c.open ? '99' : '55')}
+                      fill={hidden ? 'var(--color-muted)' : c.color}
+                      fillOpacity={hidden ? 1 : 0.08}
+                      stroke={hidden ? 'var(--color-border)' : c.color}
+                      strokeOpacity={hidden ? 1 : (c.open ? 0.6 : 0.33)}
                       strokeWidth={c.open ? 1.6 : 1.2} />
                     <text x={c.x + 10} y={c.y + 18} fontSize={12.5} fontWeight={700}
-                      fill={hidden ? '#94a3b8' : c.color}>
+                      fill={hidden ? 'var(--color-ink-faint)' : c.color}>
                       {(c.open ? '▾ ' : '▸ ') + c.topic.replace(/^[一二三四五六七八九十]+、/, '')}
                     </text>
                     <text x={c.x + c.w - 10} y={c.y + 18} fontSize={10.5} textAnchor="end" fill="#94a3b8"
@@ -508,7 +516,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                 const litUp = chain && chain.up.has(a2.a) && chain.up.has(a2.b)
                 const litDown = chain && chain.down.has(a2.a) && chain.down.has(a2.b)
                 const hot = litUp || litDown
-                const col = litUp ? '#0e7490' : litDown ? '#db2777' : a2.hard ? '#94a3b8' : '#cbd5e1'
+                const col = litUp ? 'var(--color-has)' : litDown ? 'var(--color-brand)' : a2.hard ? 'var(--color-ink-faint)' : 'var(--color-border-strong)'
                 return (
                   <g key={a2.a + '>' + a2.b} className="transition-opacity duration-200"
                     opacity={hot ? 1 : chain ? 0.25 : n === 1 ? 0.45 : 0.9}>
@@ -521,7 +529,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                         <rect x={-13} y={-9} width={26} height={17} rx={8.5} fill="#fff"
                           stroke={col} strokeWidth={hot ? 1.6 : 1} />
                         <text x={0} y={3.5} fontSize={10.5} textAnchor="middle" className="tnum"
-                          fill={litUp ? '#0e7490' : litDown ? '#be185d' : '#64748b'}>{n}</text>
+                          fill={litUp ? 'var(--color-has)' : litDown ? 'var(--color-brand-deep)' : 'var(--color-ink-soft)'}>{n}</text>
                       </g>
                     )}
                   </g>
@@ -542,8 +550,8 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                   <path key={'x' + i} fill="none" className="transition-opacity duration-200"
                     d={`M ${from.x} ${from.y} C ${(from.x + to.x) / 2} ${from.y}, ` +
                        `${(from.x + to.x) / 2} ${to.y}, ${to.x} ${to.y}`}
-                    stroke={lit ? (chain!.upE.has(e.pre + '>' + e.post) ? '#0e7490' : '#db2777')
-                      : e.strength === 'hard' ? '#cbd5e1' : '#e2e8f0'}
+                    stroke={lit ? (chain!.upE.has(e.pre + '>' + e.post) ? 'var(--color-has)' : 'var(--color-brand)')
+                      : e.strength === 'hard' ? 'var(--color-border-strong)' : 'var(--color-border)'}
                     strokeWidth={lit ? 2 : 1}
                     strokeDasharray={e.strength === 'soft' && !lit ? '3 2.5' : undefined}
                     opacity={hidden ? 0.04 : lit ? 1 : chain ? 0.12 : 0.5} />
@@ -593,8 +601,8 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                 }
                 return (
                   <path key={i} d={d} fill="none" className="transition-opacity duration-200"
-                    stroke={lit ? (chain!.upE.has(e.pre + '>' + e.post) ? '#0e7490' : '#db2777')
-                      : hot ? '#db2777' : e.strength === 'hard' ? '#94a3b8' : '#cbd5e1'}
+                    stroke={lit ? (chain!.upE.has(e.pre + '>' + e.post) ? 'var(--color-has)' : 'var(--color-brand)')
+                      : hot ? 'var(--color-brand)' : e.strength === 'hard' ? 'var(--color-ink-faint)' : 'var(--color-border-strong)'}
                     strokeWidth={lit || hot ? 2.2 : e.strength === 'hard' ? 1.4 : 1}
                     strokeDasharray={e.strength === 'soft' && !lit && !hot ? '3 2.5' : undefined}
                     markerEnd={lit || hot || e.strength === 'hard' ? 'url(#ah)' : undefined}
@@ -606,7 +614,7 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
               {g.nodes.map((n) => {
                 const p = pos.get(n.id)
                 if (!p) return null
-                const c = topicColor.get(n.topic) || '#64748b'
+                const c = topicColor.get(n.topic) || 'var(--color-ink-soft)'
                 const lk = locked(n.id), mk = mastered.has(n.id)
                 const inChain = chain ? (chain.up.has(n.id) || chain.down.has(n.id)) : true
                 const dim = chain ? !inChain : hover && near ? !near.has(n.id) : false
@@ -619,16 +627,16 @@ export function Chain({ onPickPoint }: { onPickPoint: (pid: string, title: strin
                     onClick={(ev) => { ev.stopPropagation(); setSel(n.id) }}>
                     <title>{`${n.id} ${n.title}\n★${n.stars} · ${n.difficulty} · ${n.n} 道题`}</title>
                     <rect width={NODE_W} height={NODE_H} rx={5}
-                      fill={mk ? c : lk ? '#f1f5f9' : '#ffffff'}
-                      stroke={isSel ? '#db2777' : chain && chain.up.has(n.id) ? '#0e7490'
-                        : chain && chain.down.has(n.id) ? '#db2777' : mk ? c : lk ? '#e2e8f0' : c}
+                      fill={mk ? c : lk ? 'var(--color-muted)' : 'var(--color-surface)'}
+                      stroke={isSel ? 'var(--color-brand)' : chain && chain.up.has(n.id) ? 'var(--color-has)'
+                        : chain && chain.down.has(n.id) ? 'var(--color-brand)' : mk ? c : lk ? 'var(--color-border)' : c}
                       strokeWidth={isSel ? 2.4 : 1.2} />
                     <text x={NODE_W / 2} y={12.5} fontSize={10.5} textAnchor="middle"
-                      className="tnum" fill={mk ? '#fff' : lk ? '#94a3b8' : '#334155'}>
+                      className="tnum" fill={mk ? 'var(--color-solid-ink)' : lk ? 'var(--color-ink-faint)' : 'var(--color-ink)'}>
                       {n.id}
                     </text>
                     {lk && <circle cx={NODE_W - 4} cy={4} r={3} fill="#cbd5e1" />}
-                    <text x={NODE_W + 5} y={12.5} fontSize={9.5} fill={lk ? '#a8b3c2' : '#64748b'}>
+                    <text x={NODE_W + 5} y={12.5} fontSize={9.5} fill={lk ? 'var(--color-ink-faint)' : 'var(--color-ink-soft)'}>
                       {n.title.length > 9 ? n.title.slice(0, 9) + '…' : n.title}
                     </text>
                   </g>

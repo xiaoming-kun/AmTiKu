@@ -205,7 +205,7 @@ export default function Card({
             className={`press flex h-[26px] items-center gap-1 rounded-lg border px-2.5 text-[11.5px]
                         font-medium transition-colors ${inPaper
                           ? 'border-has-line bg-has-soft text-has'
-                          : 'border-ink/85 bg-ink text-white hover:bg-ink/85'}`}>
+                          : 'border-solid bg-solid text-solid-ink hover:bg-solid/85'}`}>
             {inPaper ? <Check size={12} strokeWidth={2.8} /> : <Plus size={12} strokeWidth={2.8} />}
             {inPaper ? '已入卷' : '加入组卷'}
           </button>

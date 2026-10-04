@@ -382,7 +382,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
 
   return (
     <div className={`${closing ? 'anim-fade-out' : 'anim-fade-in'} fixed inset-0 z-50
-                    flex items-center justify-center bg-ink/25 p-5 backdrop-blur-[2px]`}>
+                    flex items-center justify-center bg-scrim p-5 backdrop-blur-[2px]`}>
       <div className={`${closing ? 'anim-pop-out' : 'pop-c'} flex h-[min(880px,92vh)]
                       w-[min(1220px,95vw)] flex-col overflow-hidden
                       rounded-[var(--radius-pop)] border border-border bg-surface

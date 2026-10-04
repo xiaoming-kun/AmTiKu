@@ -14,12 +14,13 @@
 import { useEffect } from 'react'
 import {
   LayoutGrid, ScanLine, FolderTree, Sparkles,
-  ClipboardList, NotebookPen, Trash2, History, Route,
+  ClipboardList, NotebookPen, Trash2, History, Route, BookOpen,
   PanelLeftClose, PanelLeft, Check,
 } from 'lucide-react'
+import Appearance from '@/app/Appearance'
 
 export type NavKey =
-  | 'workbench' | 'ingest' | 'points' | 'chain'
+  | 'workbench' | 'ingest' | 'points' | 'chain' | 'klist'
   | 'export' | 'paper' | 'handout' | 'trash' | 'changes'
 
 type Item = {
@@ -39,6 +40,7 @@ export const NAV_GROUPS: { label: string; items: Item[] }[] = [
       { key: 'ingest', label: '录题', hint: 'I', icon: ScanLine, desc: '把 LaTeX 粘进来入库' },
       { key: 'points', label: '知识点', hint: 'K', icon: FolderTree, desc: '按章节考点筛题' },
       { key: 'chain', label: '知识链路', hint: 'L', icon: Route, desc: '考点之间的先修关系图' },
+      { key: 'klist', label: '知识清单', hint: 'J', icon: BookOpen, desc: '按考点看讲解与分层选题' },
     ],
   },
   {
@@ -194,7 +196,7 @@ export default function Nav({
             <div className="mt-2 flex items-center gap-1.5 px-0.5 text-[10.5px] text-ink-faint">
               <span className="tnum font-semibold text-ink-soft">{total.toLocaleString()}</span>
               <span>道题</span>
-              <span className="text-border-strong">·</span>
+              <span className="text-ink-faint">·</span>
               <span className="tnum">考点 {pointsCovered}/{pointsTotal}</span>
             </div>
           </>
@@ -213,6 +215,11 @@ export default function Nav({
           <Check size={11} strokeWidth={2.6} />{kind}
         </div>
       )}
+
+      {/* ── 外观 ──
+          明暗和强调色是**全局口径**，和上面的「当前范围」同类，所以放同一层。
+          不放进顶栏：顶栏那一排是"对当前这些题做什么"，主题不是动作。 */}
+      <Appearance collapsed={collapsed} />
     </aside>
   )
 }
