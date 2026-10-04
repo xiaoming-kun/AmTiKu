@@ -22,6 +22,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import lms
 from . import normalize as norm, store
 from .schema import Question
 
@@ -81,6 +82,7 @@ def call_model(prompt: str, *, timeout: int = 600,
     **在这个模型上都无效**（照样想 7000 字），别用那两个。
     只给"纯读取"的任务关（如从现成解析里取答案）；**写解析必须留着思考**。
     """
+    _ensure_model()
     payload = {
         "model": MODEL,
         "messages": [{"role": "system", "content": system},
@@ -105,8 +107,92 @@ def call_model(prompt: str, *, timeout: int = 600,
     return ch["message"]["content"] or ""
 
 
-# 上一次调用的元信息（截断/用量）。**只为把失败原因说清楚**，不参与判断。
+# 上一次调用的元信息（`finish_reason` / 用量 / 思考字数）。
+#
+# ⚠️ 它**参与判断**（`truncated()` 拿它当写库闸门），不再只是"把失败原因说清楚"。
+# 原来只用于拼错误信息，于是「被截断但恰好取到了 <解析>」那一档会照写不误——
+# 半截解析变成库里的正式解析，而且看不出任何异常。
 LAST_CALL: dict = {}
+
+#: 本进程里模型是不是已经确认就绪。**只省一次检查**——
+#: `lms.ensure()` 每次都 spawn 一个 `lms ps` 子进程（约几十毫秒），
+#: 而求解是几千道题的循环，每道都查一次纯属白烧。
+#: 服务器中途挂了不会靠这个标志发现——那种情况走 URLError 分支。
+_ENSURED = False
+
+
+def _ensure_model() -> None:
+    r"""按需把本地模型拉起来。
+
+    平台启动时**不**启动模型（见 `启动.sh`），所以"要用的时候自己起"
+    这件事必须有代码兜住——否则 `./启动.sh solve` 会因为
+    `:1234` 不通而整批失败。
+
+    闸门放在 `call_model` 里：`solve_one` / `fill_one` / `audit_one`
+    三条路径全都经过它，一处挡住就够。
+    """
+    global _ENSURED
+    if _ENSURED:
+        return
+    ok, why = lms.ensure(MODEL, key="qwen/qwen3.8-27b")
+    if not ok:
+        raise RuntimeError("本地模型起不来：%s" % why)
+    log.info("本地模型就绪：%s", why)
+    _ENSURED = True
+
+
+#: provider 明确表示"没写完"的 `finish_reason`。
+#: **缺字段不算截断**：有些 provider 根本不返回它，把缺失当截断会把所有题都拒掉。
+#: （MathBank 的 `paper_parse.py:20-39` 是同一个取舍，还专门有测试钉住。）
+_TRUNCATED_REASONS = frozenset({"length", "max_tokens", "max_output_tokens"})
+
+
+def truncated() -> str:
+    r"""上一次调用是不是被截断了。返回原始的 `finish_reason`，没截断返回空串。
+
+    为什么要单独一个函数、而且**每个写库路径都要过一遍**：
+    `finish_reason=length` 的意思是"模型话没说完就被额度掐了"。
+    它跟"空回复"不一样——空回复早就被 `if not sol` 拦住了，
+    **截断的回复往往取得到 `<解析>` 块**（只是写到一半），
+    于是顺顺当当写进库里，谁也不知道。
+
+    实测背景（见 `call_model` 的注释）：`max_tokens` **把思考和正文算在一起**，
+    难题上思考能烧掉 7000+ tokens，正文就被切在半句话上。
+    """
+    fr = str(LAST_CALL.get("finish_reason") or "").strip().lower()
+    return fr if fr in _TRUNCATED_REASONS else ""
+
+
+def _truncated_msg(what: str) -> str:
+    return ("模型没写完就被截断了（finish_reason=%s），**%s没有入库**——"
+            "截断的内容不是「短一点」，是「写到一半」。"
+            "多半是思考把 max_tokens 烧光了：重试一次，或调大额度 / 关掉思考。"
+            % (LAST_CALL.get("finish_reason") or "?", what))
+
+
+def selftest_truncated() -> int:          # 供 `amti.solve --selftest` 调用
+    r"""`truncated()` 的控制样本。**先证明闸门管用**。"""
+    global LAST_CALL
+    keep = dict(LAST_CALL)
+    fails = 0
+    try:
+        cases = [
+            ("length", True), ("max_tokens", True), ("max_output_tokens", True),
+            ("LENGTH", True),                      # 大小写不敏感
+            ("stop", False), ("", False),           # 正常结束 / provider 不给
+            (None, False),                          # 字段缺失 → **放行**
+        ]
+        for fr, want in cases:
+            LAST_CALL = {"finish_reason": fr}
+            got = bool(truncated())
+            if got != want:
+                print("  ✗ truncated(finish_reason=%r) → %s（应为 %s）" % (fr, got, want))
+                fails += 1
+            else:
+                print("  ✓ truncated(finish_reason=%r) → %s" % (fr, got))
+    finally:
+        LAST_CALL = keep
+    return 1 if fails else 0
 
 
 _TAG = re.compile(r"</?(?:答案|解析)>")
@@ -206,7 +292,7 @@ def _bump_attempts(q: Question, raw: str = "") -> None:
     `raw` 是模型这次的原始回复。留最后 2000 字下来——**"取不到 <解析>"
     到底是输出被截断，还是模型压根没按格式写**，不看原文就只能猜。
     """
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     t = next((x for x in qs if x.key == q.key), None)
     if t is None:
         return
@@ -215,7 +301,7 @@ def _bump_attempts(q: Question, raw: str = "") -> None:
     if raw:
         t.meta["solve_raw_tail"] = raw[-2000:]
     try:
-        store.rewrite_all(qs)
+        store.rewrite_all(qs, based_on=_sig)
     except Exception:
         log.error("求解结果写库失败（这批结果会丢）", exc_info=True)
         pass
@@ -277,6 +363,12 @@ def solve_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str]:
 
     ans, sol = parse_reply(raw)
     ans = clean_answer(q, ans)
+    # ⚠️ **截断闸门要在 `if not sol` 之前。**
+    # 截断的回复常常**取得到** `<解析>` 块（只是写到一半），于是这一档
+    # 原来会顺顺当当写进库 —— 半截解析成为正式解析，且看不出异常。
+    if truncated():
+        _bump_attempts(q, raw=raw)
+        return False, _truncated_msg("这道题的答案与解析")
     if not sol:
         # 连解析都没吐出来。**被截断**（`finish_reason=length`，思考把额度烧光）
         # 和**没按格式**（`stop`）是两回事，所以把两者都写进说明里。
@@ -522,6 +614,14 @@ def audit_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str, dict]:
 
     stem_fix, ans_raw, sol, note = parse_audit_reply(raw)
     ans = clean_answer(q, ans_raw)
+
+    # ⚠️ **审题路径上截断最危险**：`stem_fix` 是模型重写的题干，
+    # 而 `_stem_fix_ok()` 只查「长度够 / 配图没丢 / 过规范」——
+    # 一个**被切在半句上**的题干完全可能同时满足这三条，于是静默换掉原题干。
+    # 所以这里整题跳过，一个字段都不写：宁可这轮什么都不做。
+    if truncated():
+        _bump_attempts(q, raw=raw)
+        return False, _truncated_msg("这道题的审题结果"), {}
 
     qs = store.load_all()
     tgt = next((x for x in qs if x.key == q.key), None)
@@ -776,7 +876,7 @@ def _bump_fill(q: Question, raw: str = "") -> None:
     `fill_todo` 的"连败 3 次就跳过"看的是 `fill_attempts`，而失败时却去加
     `solve_attempts` → 这个上限**永远触发不了**，同一道难题每次重跑都白试一遍。
     """
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     t = next((x for x in qs if x.key == q.key), None)
     if t is None:
         return
@@ -785,7 +885,7 @@ def _bump_fill(q: Question, raw: str = "") -> None:
     if raw:
         t.meta["fill_raw_tail"] = raw[-2000:]
     try:
-        store.rewrite_all(qs)
+        store.rewrite_all(qs, based_on=_sig)
     except Exception:
         log.error("补缺失败留痕写库失败", exc_info=True)
 
@@ -808,6 +908,12 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     except Exception as e:
         _bump_fill(q)
         return False, "调用失败：%s: %s" % (type(e).__name__, e)
+
+    # **截断闸门**：同上，必须在取块之前判。补解析这条尤其危险——
+    # `max_tokens=12000` 要装下动辄 7000+ 的思考，正文被切在半句上是常事。
+    if truncated():
+        _bump_fill(q, raw=raw)
+        return False, _truncated_msg("这次补的内容")
 
     # **重新读一遍库**：别覆盖别的进程刚写的内容
     qs = store.load_all()
@@ -1027,6 +1133,11 @@ def _selftest() -> int:
         p2 = _fill_prompt(s_todo[0], "sol")
         check("补解析的提示里有答案", "已有答案" in p2)
     check("kind 只认 ans/sol", run_fill("xx", check=True) == 2)
+
+    # 截断闸门的控制样本：**先证明闸门管用**再谈它拦得住什么。
+    # 没有这段，"截断的解析不入库"就只是一句注释。
+    print("  ── 截断闸门（truncated）──")
+    fails += selftest_truncated()
 
     print("solve 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0
