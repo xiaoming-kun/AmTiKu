@@ -48,13 +48,41 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   const [busy, setBusy] = useState(false)
   const [drag, setDrag] = useState(false)
 
-  /** 拖进来或选一个 `.tex` / `.txt` 文件，读进文本框。
-   *  比复制粘贴省事，尤其是几百行的整卷。 */
+  /** 拖进来或选一个文件，读进文本框。
+   *  - `.tex` / `.txt` → 直接读文本（比复制粘贴省事，尤其整卷）
+   *  - 图片 / `.pdf`  → 交给本地视觉模型识别成 LaTeX
+   *
+   *  ⚠️ 图片**必须**分流：不分流的话 `readAsText` 会把二进制读成
+   *  一屏乱码塞进文本框，人还以为自己拖错了东西。 */
   const readFile = (f: File) => {
+    const isImg = f.type.startsWith('image/')
+    const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
+    if (isImg || isPdf) { ocrFile(f); return }
     const r = new FileReader()
     r.onload = () => { setText(String(r.result || '')); setPv(null); setMsg('')
                        setErr('') }
     r.readAsText(f, 'utf-8')
+  }
+
+  /** 图片 / PDF → LaTeX。模型是**按需启动**的：第一次点会等它加载，
+   *  之后就快了。识别结果只是填进文本框，要审阅后再点「干跑」。 */
+  const ocrFile = (f: File) => {
+    setBusy(true); setErr(''); setMsg(`正在识别 ${f.name} …（首次要等模型加载）`)
+    const r = new FileReader()
+    r.onload = async () => {
+      try {
+        const b64 = String(r.result || '').split(',')[1] || ''
+        const res: any = await api.vlmExtract(b64, f.name)
+        setText(res.latex || ''); setPv(null)
+        setMsg(`识别完成（${res.model}，${res.pages} 页，${res.seconds} 秒）`
+               + (res.warnings?.length ? ' ⚠ ' + res.warnings.join('；') : '')
+               + ' — 核对无误后点「干跑」')
+      } catch (e) {
+        setErr(String((e as any)?.message || e)); setMsg('')
+      } finally { setBusy(false) }
+    }
+    r.onerror = () => { setErr('读不出这个文件'); setBusy(false) }
+    r.readAsDataURL(f)
   }
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -283,8 +311,8 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                 <label className="press inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-lg
                                   border border-border bg-surface px-2 text-[11.5px] text-ink-soft
                                   hover:border-brand-line hover:text-brand-ink">
-                  <Upload size={12} />选文件…
-                  <input type="file" accept=".tex,.txt" className="hidden"
+                  <Upload size={12} />选文件 / 图片…
+                  <input type="file" accept=".tex,.txt,image/*,.pdf" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f) }} />
                 </label>
               </div>
@@ -302,7 +330,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
               <textarea value={text}
                 onChange={(e) => { setText(e.target.value); setPv(null); setMsg('') }}
                 spellCheck={false}
-                placeholder={'粘贴 exam-zh 格式的题目，或把 .tex 文件拖进来：\n\n\\begin{question}\n…\n\\end{question}\n\\begin{solution}\n…\n\\end{solution}'}
+                placeholder={'粘贴 exam-zh 格式的题目；\n或把 .tex 文件拖进来；\n或把题目截图 / PDF 拖进来 —— 由本地大模型识别成 LaTeX（模型按需启动）：\n\n\\begin{question}\n…\n\\end{question}\n\\begin{solution}\n…\n\\end{solution}'}
                 className="h-full w-full resize-none bg-transparent px-4 py-3.5 font-mono
                            text-[12.5px] leading-relaxed outline-none placeholder:text-ink-faint" />
               {drag && (
@@ -310,7 +338,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                                 justify-center gap-2 rounded-[var(--radius-card)] border-2 border-dashed
                                 border-brand-line bg-brand-soft/70 text-[12.5px] font-medium text-brand-ink">
                   <Upload size={20} />
-                  松手就读这个文件
+                  松手就读 · 图片/PDF 交给大模型识别
                 </div>
               )}
               </div>

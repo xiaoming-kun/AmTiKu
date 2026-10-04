@@ -83,6 +83,13 @@ export const api = {
   generate: (body: any) => send('/api/generate', 'POST', body),
   ingestPreview: (body: any) => send('/api/ingest/preview', 'POST', body),
   ingestCommit: (body: any) => send('/api/ingest/commit', 'POST', body),
+  /* ── 大模型读图 ────────────────────────────────────
+     图片/PDF → LaTeX 文本。**只识别，不写库**：结果填进录入框，
+     再走上面的 preview → 人工审阅 → commit。
+     模型按需启动——不点这个，LM Studio 不会被拉起来。 */
+  vlmStatus: () => request('/api/vlm/status'),
+  vlmExtract: (data: string, name: string, dpi = 200) =>
+    send('/api/vlm/extract', 'POST', { data, name, dpi }),
   /* ── 回收站 ────────────────────────────────────────
      「删除」不是真删：移进回收站（存整道题），随时能恢复。 */
   trashReasons: () => request('/api/trash/reasons'),

@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from amti.paths import ROOT, UI_DIST
+import functools
 import json
 from collections import Counter, OrderedDict
 import os
@@ -258,6 +259,29 @@ def _has_figure(q) -> bool:
     return not _NEEDS_FIGURE.search(stem)
 
 
+def _flag_fields(q) -> dict:
+    r"""筛选**只需要**的字段：`flags`。
+
+    为什么要和 `_cheap_fields` 分开：`_cheap_fields` 里还算了 `problems()`
+    和 `point_titles`，两者都要遍历整份题干/解析，全库各约 **929 ms / 327 ms**。
+    而 `has=`/`missing=` 这两个筛选项只读 `flags` —— 也就是说
+    `/api/questions?has=答案&missing=解析` 一次请求里，**九成以上的时间花在
+    没人看的字段上**（实测 1226 ms → 33 ms）。
+
+    只留 `flags` 里的六项判定，它们都是字符串包含/切片，逐题约 1 µs。
+    """
+    return {
+        "flags": {
+            "答案": bool(q.answer.strip()),
+            "解析": bool(q.solution.strip()),
+            "图": _has_figure(q),
+            "标签": bool(q.points),
+            "小问": "\\begin{enumerate}" in q.stem,
+            "存疑": bool(q.meta.get("solve_warn")),
+        },
+    }
+
+
 def _cheap_fields(q) -> dict:
     """不跑 IR 解析就能拿到的字段。筛选只看这些。"""
     return {
@@ -392,7 +416,7 @@ def list_questions(
         if kw and kw not in item.stem and kw not in item.answer:
             continue
         if has_set or miss_set:
-            c = _cheap_fields(item)
+            c = _flag_fields(item)
             if has_set and not all(c["flags"].get(k) for k in has_set):
                 continue
             if miss_set and not all(not c["flags"].get(k) for k in miss_set):
@@ -563,6 +587,34 @@ def _convert_type(q, new_type: str) -> str:
     return "%s → %s" % (QTYPE_LABEL[old], QTYPE_LABEL[new_type])
 
 
+def retry_on_concurrent(fn):
+    r"""乐观并发被拒就**自动重跑一遍**这个接口。
+
+    `store.rewrite_all(..., based_on=…)` 在读全库之后、写回之前发现库被别人
+    写过（求解器在后台写解析、另一个 `amti.py` 在跑），会抛 `ConcurrentWrite`
+    拒绝覆盖。对用户来说那是"保存失败，请重试"—— 但没必要让人手动重试：
+    这里重跑整个接口，等于重新读、重新改、重新写。
+
+    重跑是安全的：这两个接口在写回之前**没有任何外部副作用**
+    （改的都是内存里那个 Question 对象，写被拒就等于没改过）。
+
+    重跑若干次仍被拒，才回 409 让人稍后再来。
+    """
+    @functools.wraps(fn)
+    def _wrapped(*a, **kw):
+        for i in range(4):
+            try:
+                return fn(*a, **kw)
+            except store.ConcurrentWrite:
+                if i == 3:
+                    break
+                time.sleep(0.05 * (i + 1))
+        raise HTTPException(
+            409, "题库正被别的进程连续写入（多半是后台求解器），"
+                 "为避免覆盖别人的改动，这次**没有保存**。请在几秒后再试一次。")
+    return _wrapped
+
+
 def _audit_tag_change(q, *, before: str, fields) -> None:
     r"""把「界面改标签」记一份档。
 
@@ -586,6 +638,7 @@ def _audit_tag_change(q, *, before: str, fields) -> None:
 
 
 @app.patch("/api/questions/{key:path}")
+@retry_on_concurrent
 def patch_question(key: str, body: dict) -> dict:
     r"""改标签：**考点**和**难度**。
 
@@ -626,7 +679,7 @@ def patch_question(key: str, body: dict) -> dict:
             % ("、".join(sorted(ALLOWED)), "、".join(sorted(unknown)))))
 
     k = urllib.parse.unquote(key)
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     q = next((x for x in qs if x.key == k), None)
     if q is None:
         raise HTTPException(404, f"没有这道题：{k}")
@@ -708,7 +761,15 @@ def patch_question(key: str, body: dict) -> dict:
 
     # ⚠️ 用 rewrite_all（**按 PER_VOLUME 重新分卷**），不要用 rewrite_volume(1,…)：
     # 后者会把所有卷的题都写进第 1 卷，而其它卷还在 → 整库重复。
-    store.rewrite_all(qs)
+    #
+    # `based_on` 是乐观并发校验：读全库之后、写回之前若求解器/别的进程写了库，
+    # 这次保存会被**拒绝**而不是把人家的写入覆盖掉。拒绝要给人话，
+    # 不能冒成 500 —— 用户看到的是"保存失败"，重试一次就好。
+    try:
+        store.rewrite_all(qs, based_on=_sig)
+    except store.ConcurrentWrite:
+        raise HTTPException(409, "题库刚被别的进程改过（多半是后台求解器在写解析），"
+                                 "为避免覆盖别人的改动，这次**没有保存**。请再点一次保存。")
 
     # **记档**：标签是人工改的，要留痕（只记标签，不记正文）
     _audit_tag_change(q, before=before, fields=body)
@@ -827,13 +888,14 @@ class SolutionBody(BaseModel):
 
 
 @app.post("/api/questions/{key:path}/solution")
+@retry_on_concurrent
 def question_solution(key: str, body: SolutionBody) -> dict:
     r"""补/改**解析与答案**。默认干跑，`dry_run=false` 才落盘。"""
     from amti import conform as _cf
     from amti import normalize as _norm
 
     k = urllib.parse.unquote(key)
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     q = next((x for x in qs if x.key == k), None)
     if q is None:
         raise HTTPException(404, "没有这道题：%s" % k)
@@ -905,7 +967,11 @@ def question_solution(key: str, body: SolutionBody) -> dict:
         q.meta["answer_source"] = "human"
     q.meta["edited_at"] = time.strftime("%Y-%m-%d %H:%M")
 
-    store.rewrite_all(qs)
+    try:
+        store.rewrite_all(qs, based_on=_sig)
+    except store.ConcurrentWrite:
+        raise HTTPException(409, "题库刚被别的进程改过（多半是后台求解器在写解析），"
+                                 "为避免覆盖别人的改动，这份解析**没有保存**。请再点一次保存。")
 
     try:
         from amti.audit import CHANGE_DIR
@@ -1113,6 +1179,28 @@ def klist_by_point(pid: str) -> dict:
     return {"point": pid, "nodes": out}
 
 
+@app.get("/api/klist/points")
+def klist_points() -> dict:
+    """考点树（板块 → 小类 → 考点），带每个考点的讲节点数与选题数。左栏用。"""
+    from amti import pointbook
+    return {"tree": pointbook.points_tree()}
+
+
+@app.get("/api/klist/point/{pid:path}")
+def klist_point(pid: str) -> dict:
+    """一个考点的**全貌**：五要素 + 讲解（块级 IR）+ 题库画像 + 分层选题预览。
+
+    组合逻辑全在 `amti/pointbook.py`（那边同时管出 LaTeX 讲义）——
+    界面和讲义因此是同一份映射、同一套角色划分的两个出口。
+    先修关系不在这里，走 `/api/chain/{pid}`。
+    """
+    from amti import pointbook
+    d = pointbook.point_view(pid)
+    if not d:
+        raise HTTPException(404, "知识点库里没有这个考点：%s" % pid)
+    return d
+
+
 @app.get("/api/klist/node/{nid:path}")
 def klist_node(nid: str) -> dict:
     """一个讲解节点：块级 IR（前端直接画，不再自己解析 LaTeX）。"""
@@ -1208,7 +1296,7 @@ def api_generate(body: GenerateBody) -> dict:
         if kw and kw not in item.stem and kw not in item.answer:
             continue
         if has_set or miss_set:
-            f = _cheap_fields(item)["flags"]
+            f = _flag_fields(item)["flags"]
             if has_set and not all(f.get(k) for k in has_set):
                 continue
             if miss_set and not all(not f.get(k) for k in miss_set):
@@ -1247,6 +1335,64 @@ class IngestBody(BaseModel):
     update_force: bool = False          # 连已有的解析也覆盖（默认只补不覆盖）
     merge_into: dict = {}               # {新题key: 库内key} —— 界面上点「并入这道」
     dup_threshold: float = 0.80
+
+
+class VlmBody(BaseModel):
+    data: str = ""                      # 文件内容的 base64（不带 data: 前缀）
+    name: str = "upload.png"            # 只为报错和显示用
+    dpi: int = 200                      # PDF 栅格化 dpi
+
+
+@app.get("/api/vlm/status")
+def vlm_status() -> dict:
+    """**读图**服务的现状。**只查，不启动**——启动由 `/api/vlm/extract` 负责。
+
+    ⚠️ 报的是 llama.cpp（:1235），**不是** LM Studio（:1234）。
+    读图走 llama.cpp：LM Studio 配不好 mmproj（实测报
+    `does not support image inputs`），详见 `amti/lms.py` 顶部。
+    求解仍然用 LM Studio，两条路互不打扰。
+    """
+    from amti import lms as _lms
+    from amti import vlm as _vlm
+    return {
+        "ready": _lms.up_vision(),          # 服务在不在，**不代表模型对不对**
+        "api": _lms.VISION_API,
+        "model": _vlm.MODEL,
+        "runtime": "llama.cpp",
+        "engine_installed": _lms.LLAMA_SERVER.is_file(),
+        "model_files": {
+            "model": (_lms.VISION_MODEL.is_file(), str(_lms.VISION_MODEL)),
+            "mmproj": (_lms.VISION_MMPROJ.is_file(), str(_lms.VISION_MMPROJ)),
+        },
+    }
+
+
+@app.post("/api/vlm/extract")
+def vlm_extract(body: VlmBody) -> dict:
+    """图片 / PDF → LaTeX 文本。**只识别，不写库。**
+
+    产物由前端填进录入框，再走 `/api/ingest/preview` → 人工审阅 →
+    `/api/ingest/commit`。这样"审阅后才入库"和"存量一个字不变"
+    都由 `ingest` 那一条现成管线保证，这里不重复实现。
+    """
+    import base64 as _b64
+    from amti import vlm as _vlm
+    if not body.data.strip():
+        raise HTTPException(400, "没有收到文件内容")
+    try:
+        raw = _b64.b64decode(body.data, validate=True)
+    except Exception:
+        raise HTTPException(400, "文件内容不是合法的 base64")
+    if len(raw) > 80 * 1024 * 1024:
+        raise HTTPException(413, "文件太大（>80MB）")
+    try:
+        return _vlm.extract(raw, body.name, dpi=max(72, min(body.dpi, 400)))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        # 模型没配好 / 读不了图 —— 这是**用户要动手修**的事，
+        # 所以原文带出去，别吞成"服务器错误"。
+        raise HTTPException(503, str(e))
 
 
 @app.post("/api/ingest/preview")

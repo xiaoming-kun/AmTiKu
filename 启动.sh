@@ -50,6 +50,7 @@ c_info() { printf "    %s\n" "$1"; }
 web_up()   { pgrep -f "amti\.web\.server" >/dev/null; }
 lm_up()    { curl -s --max-time 2 -o /dev/null http://127.0.0.1:1234/v1/models; }
 solve_up() { pgrep -f "amti.solve" >/dev/null; }
+vision_up() { curl -s --max-time 2 -o /dev/null http://127.0.0.1:1235/v1/models; }
 
 start_lm() {
   if lm_up; then c_ok "本地模型已在跑（:1234）"; return; fi
@@ -143,12 +144,19 @@ case "${1:-all}" in
     else
       c_ok "题库服务本来就没跑"
     fi
+    if vision_up; then
+      pkill -f "llama-server.*--port 1235" >/dev/null 2>&1
+      c_ok "读图服务已停"
+    else
+      c_ok "读图服务本来就没跑"
+    fi
     c_info "LM Studio 没动（别的程序可能也在用）"
     ;;
   status)
     echo "AmTiKu 运行状态"
     web_up   && c_ok "题库服务  http://127.0.0.1:$PORT" || c_bad "题库服务没跑"
-    lm_up    && c_ok "本地模型  :1234"                 || c_bad "本地模型没跑"
+    lm_up     && c_ok "求解模型  :1234"                || c_bad "求解模型没跑（用到时会自动起）"
+    vision_up && c_ok "读图模型  :1235"                || c_bad "读图模型没跑（拖图片时自动起）"
     solve_up && c_ok "求解任务  在跑"                   || c_bad "求解任务没跑"
     echo
     "$PY" - <<'PY' 2>/dev/null
@@ -168,7 +176,11 @@ PY
     # 却不知道是谁在跑——**长任务应该由人显式发起，不该藏在默认里**。
     # 要跑：`./启动.sh solve`（或 `AmTiKu 求解`）。
     echo "启动 AmTiKu"
-    start_lm
+    # **不启动模型。** 本地模型只在真正要用时才拉起来：
+    #   · 界面里拖图片/PDF 进录入框（大模型读图）
+    #   · `./启动.sh solve`
+    # 都由 `amti/lms.py` 的 `ensure()` 按需启动。
+    # 早先这里无条件调 `start_lm`，于是"只是看看题库"也会占着 LM Studio。
     start_web
     if solve_up; then
       c_info "求解任务在跑（停止：./启动.sh stop）"
@@ -180,5 +192,13 @@ PY
     echo "  看状态：AmTiKu 状态"
     echo "  全停：  AmTiKu 停止"
     ;;
-  *) echo "用法：./启动.sh [web|solve|stop|status]"; exit 1 ;;
+  vision)
+    # 显式把读图服务拉起来（平时不需要——拖图片时会自动起）
+    "$PY" -c "import sys; sys.path.insert(0,'.'); from amti import lms; print(lms.ensure_vision()[1])"
+    ;;
+  lm)
+    # 显式把本地模型拉起来（平时不需要——用到时会自己起）
+    start_lm
+    ;;
+  *) echo "用法：./启动.sh [web|solve|lm|vision|stop|status]"; exit 1 ;;
 esac
