@@ -375,7 +375,7 @@ def apply_labels(entries: list[dict], *, dry_run: bool = False) -> dict:
     所以 journal 重复、程序中断都可以直接重跑。
     `entries` 每条要 `dup_key`（库里那道）和 `points`（手里这道标了什么）。
     """
-    all_qs = store.load_all()
+    all_qs, _sig = store.load_for_update()
     by_key = {x.key: x for x in all_qs}
     done, missing = [], []
     for e in entries:
@@ -394,7 +394,7 @@ def apply_labels(entries: list[dict], *, dry_run: bool = False) -> dict:
     rep = {"刷了": len(done), "查无此key": len(missing), "dry_run": dry_run,
            "明细": done[:20]}
     if done and not dry_run:
-        store.rewrite_all(all_qs)
+        store.rewrite_all(all_qs, based_on=_sig)
     return rep
 
 
@@ -587,7 +587,7 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
         hits = idx.find(it["stem"], threshold=dup_threshold, top=3,
                         exclude={it["key"]})
         for h in hits:
-            h["verdict"] = dedup.classify(h["score"])
+            h["verdict"] = dedup.verdict_of(h)
             # **把库内那道题的正文带上**。只给题号和 0.87 这样的分数，
             # 人没法判断到底是不是同一道——判断不了就等于没提示。
             src = by_key.get(h["key"])
@@ -741,10 +741,13 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     # 库内索引**一次装载、一趟扫完**：这里原先是 `iter_questions()` 两趟
     # ＋`load_all()` 两趟（每趟把 21,063 道重新解析一遍），
     # 而 commit 是逐场调的 —— 体检 571 场光重复读库就要多花十几分钟。
-    all_qs = store.load_all()
+    all_qs, _sig = store.load_for_update()
     idx = dedup.DedupIndex(all_qs)
     skipped: list[dict] = []
     keep: list[Question] = []
+    # 查重被截断了几道（见下面 `find_checked` 的说明）。>0 时报告里要明说
+    # "本次查重结果可能不完整"，而不是让人以为"查过了，没重复"。
+    dup_incomplete = 0
     # **升级**：库里已有这道题，但手里这份更全（带解析／考点更多）。
     # 不新写一份（那会撞 key 或写重复），而是**改库里那一份**。
     upgrades: list[dict] = []
@@ -786,14 +789,19 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
         if skip_missing_figures and (set(q.meta.get("figure_missing") or []) & missing_names):
             skipped.append({"key": q.key, "reason": "缺图，不予导入"})
             continue
-        hits = idx.find(q.stem, threshold=dedup.SUSPECT_SCORE, top=1)
+        # ⚠️ 用 `find_checked` 而不是 `find`：粗筛的候选数有上限，
+        # 被截断时"没找到重复"是**不可信**的。这个信号要一路带到报告里，
+        # 不能让它烂在索引内部 —— 否则用户看到的是"查过了，没重复"。
+        hits, dup_complete = idx.find_checked(q.stem, threshold=dedup.SUSPECT_SCORE, top=1)
+        if not dup_complete:
+            dup_incomplete += 1
         if hits:
             q.meta["dup_of"] = hits[0]["key"]          # 和谁雷同，记录下来
             q.meta["dup_score"] = hits[0]["score"]
             # 反方向的对账：手里这道**没标考点**，而库里那道雷同的标了 ⇒ 拿它当参考
             # （用户 2026-09-26 口径）。只在 `并入` 档（≥ MERGE_SCORE）抄：
             # 0.80 那一档只是"像"，照抄会把考点挂到别的题上。
-            if not q.points and dedup.classify(hits[0]["score"]) == "并入":
+            if not q.points and dedup.verdict_of(hits[0]) == "并入":
                 src = by_key.get(hits[0]["key"])
                 if src is not None and src.points:
                     q.points = list(src.points)
@@ -810,7 +818,24 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
         # 只传 `all_qs` 等于按"追加前"的样子整库重写 —— 本次新增会被整批抹掉，
         # 而 commit 照样返回 ok、`added_count` 变成 0。
         # （worker C 2026-09-23 沙盒实证：8 道全新 key 的题 0 道幸存。）
-        store.rewrite_all(all_qs + keep)
+        # 用 `update()` 做**合并**，不要 `rewrite_all(all_qs + keep)`。
+        #
+        # 旧写法有两个问题，都在"快照之后库又变了"这一个根上：
+        #  · `all_qs` 是 `append` 之前抓的，直接整库写回会抹掉本批新增
+        #    （下面那段 worker C 的实证就是它）；
+        #  · 就算把 `keep` 拼回去，快照之后**别人**写进来的题照样会被覆盖。
+        # 合并式写回把两个都解决了：锁内重读全库，按 key 把本次升级套上去，
+        # 库里多出来的（并发的写入）原样保留，库里少掉的（别人删了）也不复活。
+        upgraded = {q.key: q for q in all_qs}          # 已含本次升级后的对象
+        keep_by_key = {q.key: q for q in keep}
+
+        def _merge(qs):
+            have = {q.key for q in qs}
+            out = [upgraded.get(q.key, q) for q in qs]  # 升级覆盖同 key，其余不动
+            out += [q for k, q in keep_by_key.items() if k not in have]
+            return out
+
+        store.update(_merge)
     after_keys = {q.key for _f, q in store.iter_questions()}
 
     return {
@@ -824,6 +849,13 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
         "upgraded": upgrades,
         "skipped": skipped,
         "log": log,
+        # 查重索引的覆盖率与本次是否被截断 —— 让"没发现重复"这件事**可信**
+        "dedup_index": dedup.index_status(idx),
+        "dedup_incomplete": dup_incomplete,
+        "dedup_warning": (
+            "本次有 %d 道题的查重候选被截断（上限 %d），**结果可能不完整**，"
+            "请对这几道再人工扫一眼" % (dup_incomplete, dedup.DedupIndex.MAX_CANDIDATES)
+            if dup_incomplete else ""),
     }
 
 
