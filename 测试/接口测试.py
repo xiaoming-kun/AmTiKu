@@ -250,6 +250,104 @@ def test_chain_node_detail_and_404():
     assert client.get("/api/chain/9.9.9").status_code == 404
 
 
+# ── 导出链路 ──────────────────────────────────────────────────
+#
+# 为什么单独加这一节：验收四层里**没有一条**真正走过导出的 Python 入口。
+# 层③「端到端渲染」走的是 `paper.render_paper`，而界面导出走的是
+# `export.render_paper`（一层包装）→ `export.export`。
+# 结果：给 `paper` 加了参数、忘了同步包装，**整个导出功能 500**，
+# 而 `amti.py accept` 依然四层全绿。踩过一次，所以补上。
+
+def test_export_passes_only_supported_kwargs():
+    r"""`export.export` 传给 `render_paper` 的关键字，包装函数必须都收。
+
+    **这才是那个 bug 的准确形状**：给 `paper.render_paper` 加了 `qid_marks`，
+    `export.export` 也开始传它，却忘了给 `export.render_paper` 加这个参数
+    → `TypeError` → **整个导出 500**，而 `amti.py accept` 四层全绿
+    （层③ 走 `paper`，不经过这层包装）。
+
+    所以直接去读 `export.export` 的源码，把它**实际传的**关键字抠出来，
+    逐个对包装函数的签名 —— 以后再加参数也一样拦得住。
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from amti import export
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(export.export)))
+    passed: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "render_paper":
+            passed |= {k.arg for k in node.keywords if k.arg}
+
+    assert passed, "没在 export.export 里找到 render_paper 调用 —— 这条测试已失效，要改"
+    accepted = set(inspect.signature(export.render_paper).parameters)
+    bad = sorted(passed - accepted)
+    assert not bad, (
+        f"export.export 传了 export.render_paper 不认的参数：{bad}\n"
+        f"（导出会直接 TypeError → 界面收到 HTTP 500）"
+    )
+
+
+def test_export_wrapper_signature_is_valid():
+    r"""包装函数的参数必须都是 `paper.render_paper` 认识的（防拼错/防漂移）。
+
+    `graphicspath` 与 `subject` 是**故意不暴露**的 —— 导出的图目录固定
+    是项目的 `图片/`，学科固定是数学。所以它们在允许清单里。
+    """
+    import inspect
+
+    from amti import export, paper
+
+    inner = set(inspect.signature(paper.render_paper).parameters)
+    outer = set(inspect.signature(export.render_paper).parameters)
+    INTENTIONALLY_FIXED = {"graphicspath", "subject"}
+    bad = sorted(outer - inner - INTENTIONALLY_FIXED)
+    assert not bad, f"export.render_paper 有不被 paper 认识的参数：{bad}"
+
+
+def test_export_runs_end_to_end_without_compile():
+    """真调一次 `export.export`（不编译），确保参数确实透传得下去。
+
+    `do_compile=False` 是为了快（编译一次要几秒），
+    但**参数透传**这一步照样走到 —— 也就是刚才那个 500 的位置。
+    """
+    from amti import export, store
+
+    keys = [q.key for _f, q in store.iter_questions()][:2]
+    assert keys, "库里没有题，测不了导出"
+    r = export.export(keys, title="__接口测试_导出", do_compile=False)
+    assert r.get("ok"), f"export.export 失败：{r.get('error') or r}"
+    assert r.get("tex_abs"), "没给出 .tex 落盘位置"
+    # 清掉刚生成的 .tex，别在「讲义」目录里留垃圾
+    import pathlib as _pl
+    _pl.Path(r["tex_abs"]).unlink(missing_ok=True)
+
+
+def test_export_unknown_mode_rejected():
+    """未知卷型要**返回**错误，不能抛异常（UI 靠这个字段显示提示）。"""
+    from amti import export, store
+
+    keys = [q.key for _f, q in store.iter_questions()][:1]
+    r = export.export(keys, title="x", mode="不存在", do_compile=False)
+    assert r.get("ok") is False and r.get("error"), r
+
+
+def test_export_qid_marks_only_when_compiling():
+    """`qid_marks` 只在要编译时才写 —— 不编译的导出不该多出 N 行注释。"""
+    from amti import export, store
+
+    keys = [q.key for _f, q in store.iter_questions()][:2]
+    from amti import paper
+    off = paper.render_paper([store.find(k) for k in keys], mode="test",
+                             title="t", qid_marks=False)
+    on = paper.render_paper([store.find(k) for k in keys], mode="test",
+                            title="t", qid_marks=True)
+    assert "AMTIKU-Q" not in off, "不编译时不该有定位注释"
+    assert on.count("AMTIKU-Q") == len(keys), "编译时每题都该有定位注释"
+
+
 # ── 无 pytest 时的运行器 ──────────────────────────────────────
 
 def _enc(key: str) -> str:

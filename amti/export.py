@@ -48,20 +48,26 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
                  answers_at_end: bool = False, show_source: bool = False,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
                  columns: int = 4, mode: str = "gaokao",
-                 handout_font: str = _paper.HANDOUT_FONT_DEFAULT) -> str:
+                 handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
+                 qid_marks: bool = False) -> str:
     """渲染成完整的 exam-zh 文档。**委托给 `paper.py`。**
 
     这里早先自己实现过一份，结果 `paper.py` 的两种卷型和「按位置定难度」
     成了**死代码**——界面上导出的卷子永远没有难度标注，也没有考点小字。
     现在只留一份实现，`mode` 取 `gaokao`（高考卷）/ `test`（纯测试题）/
     `handout`（讲义：一题一页 · A4 横版 · 无答案，给 iPad 讲课用）。
+
+    ⚠️ 这个包装函数**必须和 `paper.render_paper` 的参数保持同步**。
+    实测踩过：给 `paper` 加了 `qid_marks` 却没加到这里，于是
+    `export.export()` 传参直接 `TypeError` —— **整个导出功能 500**，
+    而验收四层全绿（层③ 走的是 `paper`，不经过这里，没覆盖到）。
     """
     return _paper.render_paper(
         questions, mode=mode, title=title, show_answers=show_answers,
         answers_at_end=answers_at_end, show_source=show_source,
         bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
         columns=columns, graphicspath=str(IMG_DIR),
-        handout_font=handout_font)
+        handout_font=handout_font, qid_marks=qid_marks)
 
 
 # ── 编译 ──────────────────────────────────────────────────────────────
