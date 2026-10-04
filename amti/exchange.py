@@ -297,7 +297,7 @@ def collect(path: str | Path, *, dry_run: bool = True,
     if not parsed:
         return {"ok": False, "error": "没解析出任何解答", "notes": notes}
 
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     by_key = {q.key: q for q in qs}
     done: list[dict] = []
     bad: list[dict] = []
@@ -373,7 +373,7 @@ def collect(path: str | Path, *, dry_run: bool = True,
             q.meta["answer_source"] = "workbuddy"
         import time as _t
         q.meta["edited_at"] = _t.strftime("%Y-%m-%d %H:%M")
-    store.rewrite_all(qs)
+    store.rewrite_all(qs, based_on=_sig)
 
     return {"ok": True, "dry_run": False, "written": len(done),
             "bad": bad, "missing": missing, "notes": notes}

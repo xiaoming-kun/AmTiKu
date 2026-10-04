@@ -78,7 +78,7 @@ def apply(rule_name: str | None = None, *, scope: str = R.MIGRATE,
     if not pv["affected"]:
         return {"ok": True, "affected": 0, "note": "没有题需要改", "report": None}
 
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     changed: list[dict] = []
     for q in qs:
         before = q.content_hash()
@@ -106,7 +106,7 @@ def apply(rule_name: str | None = None, *, scope: str = R.MIGRATE,
     # 落盘：整卷重写（这是 MIGRATE，本来就是一次性整体处理）
     # ⚠️ 用 rewrite_all（**按 PER_VOLUME 重新分卷**），不要用 rewrite_volume(1,…)：
     # 后者会把所有卷的题都写进第 1 卷，而其它卷还在 → 整库重复。
-    r = store.rewrite_all(qs)
+    r = store.rewrite_all(qs, based_on=_sig)
 
     CHANGE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
