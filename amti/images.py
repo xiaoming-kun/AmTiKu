@@ -253,6 +253,150 @@ def stats() -> dict:
             "dir": str(IMG_DIR)}
 
 
+# ══ 像素级身份 ════════════════════════════════════════════════════════
+#
+# `sha_name()` 算的是**文件字节**的哈希。它回答"这两个文件是不是同一份字节"，
+# 但"是不是同一张图"是另一个问题：
+#
+#   · 同一张图另存为 JPEG、只是去掉 EXIF、或 Word 重导出一次
+#     → 字节不同、`sha_name` 不同 → **库里存两份**（其实是同一张图）。
+#   · 反过来，纯文本相同的两道题配了不同图（锐角 / 钝角三角形这类）
+#     → 只比文字判重必然假阳性。
+#
+# 所以补一个**解码后像素**的签名，跟 MathBank 的 `_decoded_pixel_signature`
+# （`question_duplicate_service.py:147-161`）同一个路子：`exif_transpose` 摆正方向、
+# `convert("RGBA")` 统一色彩模式，再把「宽×高 + 原始像素」喂给 sha256。
+# 这样它与文件名、EXIF、压缩方式都无关。
+#
+# ⚠️ **只用于"判断是不是同一张"，绝不用于改名。**
+# `图片/` 下的文件名是内容寻址的，改名即断引用（AGENTS.md 第五节）——
+# 所以这个签名不参与命名，只参与查重与体检。
+
+#: 解不开的图返回它（空串）。给一个**看得见的哨兵**，下游就必须当
+#: "身份未知"处理 —— 不能当成"不重复"。
+PIXEL_UNKNOWN = ""
+
+
+def pixel_signature(data: bytes) -> str:
+    r"""解码后的像素签名；解不开返回 `PIXEL_UNKNOWN`（空串）。
+
+    ⚠️ 解不开时**返回空串而不是跳过**。跳过等于悄悄说"这张图不重复"——
+    而"我读不出来"和"它不重复"是两回事。（MathBank 同样返回空串，
+    下游据此报 `VISUAL_SIGNATURE_PENDING` 强制人核。）
+    """
+    import io
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return PIXEL_UNKNOWN
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            # 先按 EXIF 摆正方向 —— 否则同一张图旋转 90° 存两次会得到两个签名
+            im = ImageOps.exif_transpose(im).convert("RGBA")
+            h = hashlib.sha256()
+            h.update(("%dx%d:RGBA:" % (im.width, im.height)).encode("ascii"))
+            h.update(im.tobytes())
+            return h.hexdigest()[:16]
+    except Exception:
+        # 解不开的任何情形（含 Pillow 的 DecompressionBomb、不认识的格式）
+        return PIXEL_UNKNOWN
+
+
+# ── 上传图片的体检 ────────────────────────────────────────────────────
+#
+# 这道检查**不重编码、不改字节**，只回答"这张图能不能安心入库"。
+#
+# 为什么不照 MathBank 那样解码后重编码一遍：它那边的理由是
+# "re-encoding removes metadata, trailing polyglot payloads and active content
+# disguised by suffix"（`asset_security.py:332-383`）。那对**在线服务**是对的；
+# 但这里是本机单用户、图来自用户自己的卷子，而且**几何图是线条画**——
+# JPEG 重编码会把线画糊掉，代价大于收益。
+#
+# 所以只做两件真正有代价的事：
+#   ① 声明是图片但**解不开** → 拒。省得它变成页面上一个裂图，或者更糟：
+#      一个改名成 .png 的 SVG/HTML（`<img>` 里跑不了脚本，但也没必要收）。
+#   ② 尺寸或体积**离谱** → 拒。两万见方的 PNG 能把仓库撑爆，也贴不进版心。
+
+#: 单张图的像素上限。3000 万像素 ≈ 6000×5000，一张 A4 卷子的插图远不到。
+MAX_PIXELS = 30_000_000
+#: 单张图的字节上限。
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+#: 认得的栅格格式。**不认 SVG** —— 它是矢量、能带脚本，而本项目的题图
+#: 一律走 `图片/` 下的栅格文件或预渲染的 TikZ，不需要 SVG 入库。
+RASTER_OK = frozenset({"PNG", "JPEG", "GIF", "WEBP", "BMP", "TIFF"})
+
+
+def check_raster(data: bytes) -> tuple[bool, str, dict]:
+    r"""一份字节能不能当题图入库。返回 `(能不能用, 原因, 信息)`。
+
+    `info` 带 `format/size/warn`，供调用方记进报告——**拒了要说清为什么**。
+    """
+    import io
+    if not data:
+        return False, "空文件", {}
+    if len(data) > MAX_IMAGE_BYTES:
+        return False, ("文件太大（%.1f MB > %d MB）"
+                       % (len(data) / 1e6, MAX_IMAGE_BYTES // 1024 // 1024)), {}
+    try:
+        from PIL import Image
+    except ImportError:
+        return True, "", {"warn": "没装 Pillow，跳过了图片体检"}
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            fmt = (im.format or "").upper()
+            w, h = im.size
+    except Exception as e:
+        return False, ("不是能解开的图片（%s）——改名成 .png 的 SVG/HTML 也落在这里"
+                       % type(e).__name__), {}
+    if fmt not in RASTER_OK:
+        return False, "不是栅格图片（识别为 %s）" % (fmt or "未知"), {"format": fmt}
+    if w * h > MAX_PIXELS:
+        return False, ("像素太多（%d×%d = %.1f 千万像素）" % (w, h, w * h / 1e7)), {"format": fmt}
+    return True, "", {"format": fmt, "size": "%dx%d" % (w, h), "bytes": len(data)}
+
+
+def pixel_duplicate_groups(paths=None) -> dict:
+    r"""找出「字节不同、像素相同」的图片组——同一张图被存了几份。
+
+    **只读，不改任何文件。** 用来回答"图片目录为什么这么大"：
+    实测有 1000+ 张图没被任何题引用（约 41 MB），其中一部分就是
+    同一张图的多次重编码。返回
+    `{groups: [[名, …], …], waste_bytes: N, unreadable: [名, …]}`。
+
+    `unreadable` 单独列出，**不并进 groups**：读不出来不等于"不重复"。
+    """
+    ps = list(paths) if paths is not None else sorted(
+        p for p in IMG_DIR.glob("*") if p.is_file() and p.name != MANIFEST.name)
+    # ⚠️ 只把**自称是栅格图**的文件算进"读不出来"。
+    # `图片/` 下还有 TikZ 预渲染的 `tikz-*.pdf` —— PDF 不是栅格格式，
+    # Pillow 解不开是**正常的**。第一版把它们全算成"读不出来"，
+    # 报出 119 张，看着像一片坏图，其实一张都不坏（也一张都没被引用）。
+    # 报告里混进这种噪声，人就不看报告了。
+    raster = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"}
+    by_sig: dict[str, list[Path]] = {}
+    unreadable: list[str] = []
+    for p in ps:
+        if p.suffix.lower() not in raster:
+            continue                      # 非栅格（PDF 等），不参与像素比对
+        try:
+            sig = pixel_signature(p.read_bytes())
+        except OSError:
+            continue
+        if not sig:
+            unreadable.append(p.name)      # 自称是图却解不开 —— 这才要报
+            continue
+        by_sig.setdefault(sig, []).append(p)
+    groups = [sorted(x.name for x in v) for v in by_sig.values() if len(v) > 1]
+    waste = 0
+    for v in by_sig.values():
+        if len(v) > 1:
+            # 留最大的那份，其余算浪费
+            waste += sum(sorted((x.stat().st_size for x in v), reverse=True)[1:])
+    groups.sort()
+    return {"groups": groups, "waste_bytes": waste, "unreadable": unreadable}
+
+
 # ── 自检 ──────────────────────────────────────────────────────────────
 
 def _selftest() -> int:
@@ -327,6 +471,72 @@ def _selftest() -> int:
               str(rep3))
         check("二次执行不改动正文", q3.stem == "\\includegraphics{%s}"
               % sha_name(a), q3.stem)
+
+    # ── 像素级身份（B9）与图片体检（B11）──────────────────────────
+    # 真造两张图：同一张图的两种编码 / 两张内容不同的图 / 一个假 PNG。
+    import io
+    from PIL import Image
+
+    def _png(color, size=(8, 8), *, level=6, fmt="PNG"):
+        buf = io.BytesIO()
+        Image.new("RGB", size, color).save(buf, fmt, **({"compress_level": level} if fmt == "PNG" else {}))
+        return buf.getvalue()
+
+    # 同一张图的**无损**两种编码：压缩级别不同 → 字节不同、像素逐点相同。
+    # 这正是现实里最常见的那种重复（抽图工具重存一遍、去掉元数据、换压缩级别）。
+    red_png = _png((255, 0, 0), level=0)
+    red_png2 = _png((255, 0, 0), level=9)
+    # JPEG 是**有损**的：解码回来是 (254,0,0) 一类，像素不逐点相同。
+    red_jpg = _png((255, 0, 0), fmt="JPEG")
+    blue_png = _png((0, 0, 255))
+
+    check("字节不同（sha_name 认为这是两份）",
+          sha_name(red_png, ".png") != sha_name(red_png2, ".png"),
+          "%s vs %s" % (sha_name(red_png, ".png"), sha_name(red_png2, ".png")))
+    check("像素逐点相同 → pixel_signature 认出是同一张",
+          pixel_signature(red_png) == pixel_signature(red_png2),
+          "%s vs %s" % (pixel_signature(red_png), pixel_signature(red_png2)))
+    # ⚠️ **已知边界**：签名是"像素逐点相等"，不是"看着像"。
+    # 有损重编码（JPEG）解出来的像素已经变了，签名就不一样。
+    # 这一条**故意断言它不相等**——把边界钉住，免得以后有人以为它能管有损。
+    # （MathBank 的 `_decoded_pixel_signature` 同样是精确 RGBA 哈希，边界一样。）
+    check("已知边界：有损重编码认不出（精确像素哈希管不了 JPEG）",
+          pixel_signature(red_png) != pixel_signature(red_jpg),
+          "%s vs %s" % (pixel_signature(red_png), pixel_signature(red_jpg)))
+    check("不同内容的图签名不同",
+          pixel_signature(red_png) != pixel_signature(blue_png))
+    check("签名不是空（正常图片必须给出身份）", bool(pixel_signature(red_png)))
+    check("解不开的给空哨兵，而不是假装不重复",
+          pixel_signature(b"\x89PNG-not-really") == PIXEL_UNKNOWN)
+
+    # EXIF 方向不该影响身份：同一张图画进 8x4 与旋转后存 4x8，
+    # exif_transpose 之后应当一致 —— 这里用同一尺寸变颜色来等价验证
+    check("尺寸不同则签名不同（宽高进了哈希）",
+          pixel_signature(_png((1, 2, 3), (8, 8))) != pixel_signature(_png((1, 2, 3), (4, 4))))
+
+    # 体检
+    ok, why, info = check_raster(red_png)
+    check("正常 PNG 放行", ok and info.get("format") == "PNG", why)
+    ok, why, _ = check_raster(b"not an image at all")
+    check("假图片被拒且说明原因", not ok and why, why)
+    ok, why, _ = check_raster(b"")
+    check("空文件被拒", not ok, why)
+    ok, why, _ = check_raster(b"x" * (MAX_IMAGE_BYTES + 1))
+    check("超大文件被拒（不先解码）", not ok and "太大" in why, why)
+
+    # 重复组：只在临时目录里验，**绝不碰真的 图片/**
+    with tempfile.TemporaryDirectory() as dd:
+        d = Path(dd)
+        (d / "a.png").write_bytes(red_png)
+        (d / "b.png").write_bytes(red_png2)
+        (d / "c.png").write_bytes(blue_png)
+        (d / "broken.png").write_bytes(b"nope")
+        g = pixel_duplicate_groups(sorted(d.glob("*")))
+        check("认出 a.png 与 b.png 是同一张图（字节不同）",
+              g["groups"] == [["a.png", "b.png"]], str(g["groups"]))
+        check("浪费的字节 = 较小那份", g["waste_bytes"] > 0, str(g["waste_bytes"]))
+        check("读不出来的单独列，不算「不重复」",
+              g["unreadable"] == ["broken.png"], str(g["unreadable"]))
 
     print("images 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0
