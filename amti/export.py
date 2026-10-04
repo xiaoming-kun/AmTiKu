@@ -155,6 +155,7 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
         for _ in range(passes):
             r = subprocess.run(
                 ["xelatex", "-interaction=nonstopmode", "-halt-on-error",
+                 "-file-line-error",
                  build_tex.name],
                 cwd=build_dir, capture_output=True, text=True,
                 # 显式指定 UTF-8：默认按系统 locale 解码（英文 Windows 是 cp1252），
@@ -229,12 +230,17 @@ def export(keys: list[str], *, title: str = "", out: str = "",
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     tex_path = OUT_DIR / f"{name}.tex"
+    # `qid_marks=do_compile`：**要编译才写标记**。
+    # 标记是每题前面一行 `% AMTIKU-Q: <key>` 注释（不上卷面），
+    # 作用是编译失败时把 xelatex 给的行号翻成"是哪道题"（见 `amti/texdiag.py`）。
+    # 不编译就没人需要它，白白在导出源码里多 N 行。
     tex_path.write_text(render_paper(qs, title=title, show_answers=show_answers,
                                      answers_at_end=answers_at_end,
                                      show_source=show_source,
                                      bottom_sep=bottom_sep, mode=mode,
                                      problem_blank_cm=problem_blank_cm,
-                                     handout_font=handout_font),
+                                     handout_font=handout_font,
+                                     qid_marks=do_compile),
                         encoding="utf-8")
 
     res = {"ok": True, "name": name, "questions": len(qs), "missing": missing,
@@ -250,9 +256,17 @@ def export(keys: list[str], *, title: str = "", out: str = "",
             # 挑出日志里的报错行；**一行都没挑到就把原文尾巴带上**——
             # 否则界面上只显示"导出失败："后面空着，连"找不到 xelatex"这种
             # 一眼能看懂的提示都被过滤掉了（CI 上就吃过这个闷亏）。
-            res["log"] = ("\n".join(first_errors(log, 6))
-                          or (log[-800:].strip()
-                              or "编译失败，但 LaTeX 没有任何输出（引擎可能没跑起来）"))
+            # 先把「哪道题 + 什么原因 + 怎么修」放在最前面——那才是用户要的。
+            # 原始报错行仍原样附在后面：翻译错了也不能把原文弄丢。
+            from . import texdiag as _td
+            try:
+                res["log"] = _td.explain(log, tex_path.read_text(encoding="utf-8"))
+            except Exception:
+                res["log"] = ""            # 诊断本身出问题绝不能盖住真正的报错
+            raw = ("\n".join(first_errors(log, 6))
+                   or (log[-800:].strip()
+                       or "编译失败，但 LaTeX 没有任何输出（引擎可能没跑起来）"))
+            res["log"] = (res["log"] + "\n\n" + raw).strip()
             full_log = tex_path.with_suffix(".log")
             if full_log.exists():          # 完整日志（含被过滤掉的那些行）
                 res["log"] += f"\n\n完整日志：{full_log}"

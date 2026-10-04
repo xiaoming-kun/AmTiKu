@@ -53,6 +53,7 @@ def cmd_diff(_a) -> int:
     print(f"  录入升级    {len(d.get('录入升级', [])):5}   ← 界面点「用这份更新」改的，有意为之")
     print(f"  界面补录    {len(d.get('界面补录', [])):5}   ← 界面改了答案/解析/题型，有意为之")
     print(f"  规则迁移    {len(d.get('规则迁移', [])):5}   ← 批量规范化改的，有意为之")
+    print(f"  逐题订正    {len(d.get('逐题订正', [])):5}   ← fixups 逐题改的，有意为之")
     print(f"  删除        {len(d['删除']):5}")
     if d.get("回收站"):
         print(f"  进回收站    {len(d['回收站']):5}   ← 人工删的，可恢复")
@@ -183,19 +184,28 @@ def cmd_render_tikz(a) -> int:
     return 0
 
 
+CC_BATCH = 200
+
+
 def cmd_compilecheck(a) -> int:
     r"""全库编译体检：把"抽到才炸"的编译错误提前查出来。"""
     from amti import compilecheck as CC
     if a.keys:
         keys = [k.strip() for k in a.keys.split(",") if k.strip()]
         print("只查指定的 %d 道" % len(keys))
+        r = CC.check(keys, verbose=not a.quiet, batch=a.batch)
     else:
-        keys = None
         from amti import store as _st
-        n = sum(1 for _f, q in _st.iter_questions() if CC.risky(q))
-        print("全库体检：%d 道带 TikZ／配图的题（其余是纯文本，不可能编译不过）" % n)
+        qs = [q for _f, q in _st.iter_questions()]
+        if a.all:
+            print("**全库体检：%d 道**（含纯文本——它们也可能编译不过，见模块说明）"
+                  % len(qs))
+        else:
+            n = sum(1 for q in qs if CC.risky(q))
+            print("全库体检：%d 道带 TikZ／配图的题（加 --all 连纯文本一起查）" % n)
         print("分批编译 + 二分定位，请稍候…")
-    r = CC.check(keys, verbose=not a.quiet)
+        r = CC.check(None, verbose=not a.quiet, batch=a.batch,
+                     scope="all" if a.all else "risky")
     print()
     print("检查 %d 道，用了 %d 次编译" % (r["checked"], r["runs"]))
     if not r["fails"]:
@@ -268,7 +278,8 @@ def cmd_dedup(a) -> int:
         print("\n[干跑] 什么都没写。确认后加 --apply")
         return 0
     before = sum(store.vol_count(p) for p in store.existing_volumes())
-    r = store.rewrite_all(store.load_unique())
+    _sig = store.volume_signature()
+    r = store.rewrite_all(store.load_unique(), based_on=_sig)
     after = sum(store.vol_count(p) for p in store.existing_volumes())
     print("\n%d 条 → %d 条（去掉 %d），重写为 %d 卷"
           % (before, after, before - after, r["volumes"]))
@@ -412,10 +423,49 @@ def cmd_accept(_a) -> int:
 
     temp_server = None
 
-    def run(title: str, argv: list[str], grep: str | None = None) -> None:
+    # ── 隔离根目录：给「会重写整库」的自检用 ────────────────────────
+    #
+    # 为什么要有：`amti.trash` 与 `测试/删题安全自检.py` 都要证明「删一道、其余一个
+    # 字节不变、还能原样恢复」，办法是**往真实 `题目/*.tex` 里写一道 fixture 再整份还原**。
+    # 实测 inode 对比：14 个自检里只有这两个会重写全部 7 卷，其余 0 改动。
+    # 于是它们在 accept 里前后脚跑时，**后跑的那个是在「前一个的 fixture 还没清干净」
+    # 的状态上做的快照**，再整份还原就把 fixture 复活了——`题目/备份/` 里留下一份
+    # 30041 道的快照就是这么来的。表现：accept 的自检项**轮流**报错、重跑又绿，
+    # 机检「跑到」列在 15408↔15409、3610↔3611 之间跳。
+    #
+    # 修法不是让它们小心点，而是**根本不让它们碰真实库**：`paths.resolve_root()`
+    # 认 `AMTIKU_ROOT`，所以给每个自检起一份临时根。
+    # `题目/`、`回收站/` 实拷（APFS 写时复制，313M 实测 0.01s），
+    # 其余（含 13G 的 `数据/`）一律符号链接——自检只读它们。
+    sandboxes: list[Path] = []
+
+    def isolated_root() -> Path:
+        import shutil
+        import tempfile
+        sb = Path(tempfile.mkdtemp(prefix="amti-accept-"))
+        sandboxes.append(sb)
+        for entry in root.iterdir():
+            if entry.name in ("题目", "回收站"):
+                continue
+            os.symlink(entry.resolve(), sb / entry.name)
+        dst = sb / "题目"
+        dst.mkdir()
+        for p in (root / "题目").glob("*.tex"):
+            shutil.copy2(p, dst / p.name)
+        if (root / "回收站").is_dir():
+            rdst = sb / "回收站"
+            rdst.mkdir()
+            for p in (root / "回收站").glob("*"):
+                shutil.copy2(p, rdst / p.name)
+        return sb
+
+    def run(title: str, argv: list[str], grep: str | None = None, *,
+            isolated: bool = False) -> None:
         print("\n【%s】" % title)
-        r = subprocess.run(argv, cwd=root, capture_output=True, text=True,
-                           env={**os.environ, "PYTHONWARNINGS": "error::SyntaxWarning"})
+        env = {**os.environ, "PYTHONWARNINGS": "error::SyntaxWarning"}
+        if isolated:
+            env["AMTIKU_ROOT"] = str(isolated_root())
+        r = subprocess.run(argv, cwd=root, capture_output=True, text=True, env=env)
         out = (r.stdout or "") + (r.stderr or "")
         if grep:
             for line in out.splitlines():
@@ -437,14 +487,23 @@ def cmd_accept(_a) -> int:
     # 知识清单（讲义讲解内容源）：书方言展开、节点切分、图宽、考点映射、搜索
     run("单元自检 · klist", [_s.executable, "-m", "amti.klist"], r"自检：")
     run("题目解析回归", [_s.executable, "-m", "amti.latex_ir", "--selftest"], r"通过|失败")
+    # 编译诊断：日志 → 「哪道题 + 什么原因 + 怎么修」。自检覆盖标记扫描、
+    # 行号定位（两种日志格式）、以及每条错误规则的坏样本。
+    run("编译诊断自检", [_s.executable, "-m", "amti.texdiag", "--selftest"], r"通过|失败")
+    # 本地模型：按需启动的解析、读图的 PDF 栅格化与报错翻译。
+    # **这两条自检不碰模型**——否则验收会变成"必须先起 LM Studio"。
+    run("模型按需启动自检", [_s.executable, "-m", "amti.lms", "--selftest"], r"通过|失败")
+    run("读图自检", [_s.executable, "-m", "amti.vlm", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")
     run("录题自检", [_s.executable, "-m", "amti.record", "--selftest"], r"通过|失败")
     run("逐题订正自检", [_s.executable, "-m", "amti.fixups", "--selftest"], r"通过|失败")
-    run("回收站自检", [_s.executable, "-m", "amti.trash"], r"通过|失败")
+    run("回收站自检", [_s.executable, "-m", "amti.trash"], r"通过|失败", isolated=True)
     # **删题是危险操作**，单独一层：证明"只动该动的那一道、其余一个字节不变、
     # 能原样恢复、坏路径不执行、改库前留备份"。自检完把库还原并核对指纹。
+    # ⚠️ 这两层都**整份重写 `题目/`**，所以跑在临时根上（见 `isolated_root`）——
+    #    否则它们会把彼此的 fixture 快照还原进真实库，accept 就会轮流报假红。
     run("删题安全自检", [_s.executable, str(root / "测试" / "删题安全自检.py")],
-        r"安全测试|✗")
+        r"安全测试|✗", isolated=True)
     run("检查器自证", [_s.executable, "-m", "amti.conform", "--selftest"], r"通过|失败")
     run("规范审查", [_s.executable, "amti.py", "conform"], r"^共|全部规范")
     temp_server = _ensure_server(root)
@@ -459,6 +518,11 @@ def cmd_accept(_a) -> int:
             except Exception:
                 temp_server.kill()
     run("快照", [_s.executable, "amti.py", "diff"], r"内容变化|新增|删除|存量")
+
+    # 临时根用完就删（`题目/` 是写时复制的副本，删它不碰真实文件）。
+    import shutil
+    for sb in sandboxes:
+        shutil.rmtree(sb, ignore_errors=True)
 
     print("\n" + "═" * 56)
     if fails:
@@ -687,6 +751,11 @@ def main() -> int:
     cc = sub.add_parser("compilecheck", aliases=["编译体检"],
                         help="全库编译体检：提前查出抽到才炸的编译错误")
     cc.add_argument("--keys", default="", help="只查这几道（逗号分隔）")
+    cc.add_argument("--all", action="store_true",
+                    help="连纯文本题一起查（默认只查有图/TikZ 的）")
+    cc.add_argument("--batch", type=int, default=CC_BATCH,
+                    help="一批多少道（默认 %d）。批越大越快，"
+                         "只在失败要二分时才变慢" % CC_BATCH)
     cc.add_argument("--quiet", action="store_true", help="不逐批打印进度")
     cc.set_defaults(fn=cmd_compilecheck)
 
