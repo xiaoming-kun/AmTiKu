@@ -133,6 +133,73 @@ def test_canvas_markdown_contains_label():
     assert sh.source_label(q) in md
 
 
+# ── 智能排印（typographer）不许改我们的字 ──────────────────────
+#
+# 事故：选项标号 `(C)` 被 markdown 的「智能排印」换成 `©`，讲义 PDF 里
+# 印成「© S5 = 8」——用户 2026-10-05 报的 `2025全国II卷 第9题`。
+#
+# 根因：Slidev 用 `unplugin-vue-markdown` 编译讲义，那个插件建 markdown 引擎时
+# 写死 `typographer: true`；markdown 的 replacements 规则会把 `(c)` / `(r)` /
+# `(tm)` **不分大小写**换成 `©` / `®` / `™`。四个选项里只有 C 中招。
+# （数学模式里的 `$L(c)$`、`$f(c)$` 不受影响——替换只走文本 token。）
+#
+# 修法在 `slidev/vite.config.mjs`：`markdownOptions.typographer = false`。
+# ⚠️ 探针**必须 import 那一份配置**再建引擎，不能自己写死参数——
+# 写死的话，配置哪天被改回去，测试照样绿，等于没测。
+
+_TYPO_PROBE = r"""
+// 用**真导出的同一套参数**渲染：Slidev 的 markdown 引擎是 markdown-exit，
+// 默认参数来自 unplugin-vue-markdown 的 createMarkdown（typographer: true）。
+import { createRequire } from 'node:module'
+import path from 'node:path'
+import fs from 'node:fs'
+
+const SLIDEV = %r
+const require_ = createRequire(path.join(SLIDEV, 'package.json'))
+const cfg = (await import(path.join(SLIDEV, 'vite.config.mjs'))).default
+const mdOpts = cfg?.slidev?.markdown?.markdownOptions ?? {}
+const { createMarkdownExit } = require_('markdown-exit')
+const md = createMarkdownExit({ html: true, linkify: true, typographer: true, ...mdOpts })
+const cases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+console.log(JSON.stringify(cases.map((c) => ({ id: c.id, html: md.render(c.md) }))))
+"""
+
+
+def test_slidev_typographer_keeps_option_markers():
+    r"""`(C)` 不许被 markdown 智能排印换成 `©`（用户报的事故）。
+
+    题库真实多选题的选项行 + 解析里常见的 `(r)`/`(c)` 各过一遍真引擎，
+    渲染结果里不许出现 `©`/`®`/`™`，而且 `(C)` 得原样在。
+    """
+    cfg = ROOT / "slidev" / "vite.config.mjs"
+    assert cfg.exists(), (
+        "少了 `slidev/vite.config.mjs` —— typographer 会回到默认的 true，"
+        "选项 `(C)` 又会印成 `©`")
+
+    q = next((x for _f, x in store.iter_questions()
+              if x.type == "multi_choice" and len(x.options) >= 3), None)
+    assert q is not None, "库里没有三道选项以上的多选题，测不了"
+
+    cases = [
+        {"id": "多选题选项行", "md": sh.transform(q, with_answers=False)},
+        {"id": "解析正文", "md": "半径记为 (r)，常数记为 (c)，另有 (tm) 与 (R)。"},
+    ]
+    probe = Path("/tmp/amti-handout-typo.mjs")
+    probe.write_text(_TYPO_PROBE % str(ROOT / "slidev"), encoding="utf-8")
+    src = Path("/tmp/amti-handout-typo.json")
+    src.write_text(json.dumps(cases, ensure_ascii=False), encoding="utf-8")
+    r = subprocess.run(["node", str(probe), str(src)], cwd=str(ROOT / "slidev"),
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, "排印探针跑不起来：\n" + (r.stderr or "")[-1500:]
+    got = {g["id"]: g["html"] for g in json.loads(r.stdout.strip().splitlines()[-1])}
+
+    mangled = [k for k, v in got.items() if any(c in v for c in "©®™")]
+    assert not mangled, (
+        "智能排印把文字改坏了（(c)/(r)/(tm) → ©/®/™）：%s\n"
+        "去看 slidev/vite.config.mjs 的 markdownOptions.typographer" % mangled)
+    assert "(C)" in got["多选题选项行"], "选项标号 (C) 渲染后不在（%s）" % got["多选题选项行"][:200]
+
+
 # ── 画布比例（iPad）──────────────────────────────────────────
 #
 # 用户反馈：16:9 的讲义导进 iPad「不伦不类」（上下留黑边）。
