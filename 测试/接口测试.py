@@ -348,6 +348,36 @@ def test_export_qid_marks_only_when_compiling():
     assert on.count("AMTIKU-Q") == len(keys), "编译时每题都该有定位注释"
 
 
+def test_export_prints_source_and_drops_difficulty():
+    r"""卷面上**印出处、不印难度**（用户要求：所有导出都跟讲义一样）。
+
+    三种卷型一视同仁：题干第一行并上「（2024新高考I卷 第1题）」，
+    难度星（`$\star$`）与卷首的「难度分布」都不许再出现在产物里。
+
+    ⚠️ 为什么三种卷型一起断言：这两样都是**渲染期**的东西，而渲染分两条路
+    （`_q_tex` 走 gaokao/test、`_render_handout` 走 handout）。只盯一条路的话，
+    另一条会悄悄退回"印难度、不印出处"——本项目最忌讳的正是这种不一致
+    （预览与导出、两个卷型，各印各的）。
+    """
+    from amti import paper, store
+    from amti.slidev_handout import source_label
+
+    q = next((x for _f, x in store.iter_questions()
+              if x.type == "single_choice" and source_label(x)), None)
+    assert q is not None, "库里没有带出处的高考单选题，测不了"
+
+    lab = source_label(q)
+    for mode in ("gaokao", "test", "handout"):
+        tex = paper.render_paper([q], mode=mode, title="__接口测试_出处")
+        tag = "（%s）" % lab
+        assert tag in tex, f"{mode} 卷面没印出处：{lab}"
+        assert r"\star" not in tex, f"{mode} 卷面还在印难度星"
+        assert "难度分布" not in tex, f"{mode} 卷首还在印难度分布"
+        # **出处与题干同一行**（用户要求：括号 + 与题目同排，不另起一行）
+        line = next(ln for ln in tex.split("\n") if tag in ln)
+        assert line.split(tag, 1)[1].strip(), f"{mode} 的出处单独占了一行"
+
+
 # ── 无 pytest 时的运行器 ──────────────────────────────────────
 
 def _enc(key: str) -> str:

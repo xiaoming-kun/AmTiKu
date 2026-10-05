@@ -281,7 +281,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
     // **「组卷方案」和「卷面格式」是两回事，两个接口认的模式不是一套。**
     // `/api/generate` 认 gaokao / test / coverage（怎么挑题），
     // `/api/export`  只认 gaokao / test / handout（怎么排版）。
-    // 考点覆盖卷挑完题之后，卷面就该按**测试卷**排（小字列考点、每题标难度）——
+    // 考点覆盖卷挑完题之后，卷面就该按**测试卷**排（小字列考点、每题标出处）——
     // 它本来就是"考点专练"。早先直接把 `coverage` 透传给导出接口，
     // 结果一点「导出」就 HTTP 400「未知卷型 'coverage'」，压根导不出来。
     const renderMode = mode === 'coverage' ? 'test' : mode
@@ -411,12 +411,16 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                   </button>
                 ))}
               </div>
+              {/* 卷型说明：**只说出处，不提难度**——三种卷型都不印难度了
+                  （用户要求：跟讲义一样，每题题干前并上原卷出处）。 */}
               <div className="text-[11px] leading-relaxed text-ink-faint">
                 {mode === 'gaokao'
-                  ? '与高考真题一致：信息行 + 注意事项 + 四大题分节，卷面不标难度'
+                  ? '与高考真题一致：信息行 + 注意事项 + 四大题分节；每题前标原卷出处'
                   : mode === 'test'
-                  ? '考点专练：小字列出考点，每题标出难度等级，带上出处'
-                  : '按考点覆盖率挑题：用尽量少的题把考点铺满，挑完易→难排好'}
+                  ? '考点专练：小字列出考点；每题前标原卷出处'
+                  : mode === 'coverage'
+                  ? '按考点覆盖率挑题：用尽量少的题把考点铺满，挑完易→难排好'
+                  : '讲义：一题一页 · A4 横版 · 不印答案；每题前标原卷出处'}
               </div>
             </Group>
 

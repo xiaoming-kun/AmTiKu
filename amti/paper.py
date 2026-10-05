@@ -1,14 +1,23 @@
-"""AmTiKu · 两种卷型
+"""AmTiKu · 三种卷型
 
 **高考卷**（`gaokao`）—— 照高考真题的样子排
     标题 + 科目 + 信息行 + 注意事项 + 四个大题分节（带"只有一项符合"这类说明）
 
 **测试题**（`test`）—— 考点专练
     * 开头**小字**列出本次覆盖的考点
-    * **每道题标出难度等级**（从主考点派生）
     * 不分正式大题，按题型简单分节
 
-两种模式与 `export.py` 共用同一套渲染，只是头部和每题前缀不同。
+**讲义**（`handout`）—— 一题一页 · A4 横版（见 `_render_handout`）
+
+三种模式与 `export.py` 共用同一套渲染，只是头部分节不同。
+
+两条对三种卷型一视同仁的规矩（用户的要求）：
+
+  1. **每题都印出处**——`（2023新高考II卷 第22题）`，并进题干同一行，
+     实现只有一份（`_stem_with_source`，复用讲义那套 `source_label`）；
+  2. **卷面上不印难度**——难度是**内部排版**用的（解答题留白按难度给，
+     见 `BLANK_BY_DIFFICULTY`），印给学生看没有意义：星级和「简单/中档/难题」
+     从来不是题目自带的属性，出处的线索价值高得多。
 """
 from __future__ import annotations
 
@@ -17,7 +26,7 @@ import re
 from . import generate as gen
 from . import latex_blocks as lb
 from .schema import Question
-from .render_tex import question_to_tex, source_tag
+from .render_tex import question_to_tex
 
 # ── 答案标红（出卷子时）────────────────────────────────────────────────
 #
@@ -68,12 +77,12 @@ def red_answer_macros(tex: str) -> str:
         i = end + 1
     return "".join(out)
 
-# 难度 → 显示
-DIFF_STARS = {"简单题": 1, "中档题": 2, "难题": 3}
-
 # ── 按位置定难度 ──────────────────────────────────────────────────────
 #
 # 高考数学的惯例：**难度由题目在卷中的位置决定**，不是题目自带的属性。
+#
+# ⚠️ **难度不印到卷面上**（用户要求：跟讲义一样，印出处、不印难度）。
+# 它现在的唯一去处是**解答题留白**（`blank_for`）：压轴题多留两行地方。
 # 四条规律其实是一个模型：
 #
 #     前 N 个 → 简单题        后 M 个 → 难题        中间 → 中档题
@@ -123,20 +132,6 @@ def position_difficulty(qtype: str, index: int, total: int) -> str:
     if index >= total - hard:
         return "难题"
     return "中档题"
-
-
-def layout_difficulty(questions: list) -> list[tuple]:
-    """算出整卷的「题号 → 难度」布局，用于预览。"""
-    from collections import defaultdict
-    groups: dict[str, list] = defaultdict(list)
-    for q in questions:
-        groups[q.type].append(q)
-    out = []
-    for t in ("single_choice", "multi_choice", "fill_in_blank", "detailed_answer"):
-        items = groups.get(t, [])
-        for i, q in enumerate(items):
-            out.append((t, i + 1, len(items), position_difficulty(t, i, len(items)), q))
-    return out
 
 
 # 库里用到的**自定义 pgfplots 轴样式**。
@@ -212,21 +207,30 @@ def _cap_figure_height(tex: str, cap: str = r"0.46\textheight") -> str:
     return re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", sub, tex)
 
 
-def _star_line(diff: str) -> str:
-    """难度 → `〔★★〕`。讲义题头用。"""
-    n = DIFF_STARS.get(diff, 0)
-    return ("〔" + star_tex(n) + "〕") if n else ""
+def _stem_with_source(tex: str, q: Question) -> str:
+    r"""把出处并进题干**第一行**：`（2023新高考II卷 第22题）题干……`
 
+    为什么插在第一个换行之后：`question_to_tex` 的第一行是
+    `\begin{question}` / `\begin{problem}[points = 12]`，插在它前面会被
+    exam-zh 当成环境自己的参数吃掉。题干与出处**同一行**是用户的要求
+    （跟讲义一致）——出处是这道题的定语，另起一行容易被当成题面的一部分。
 
-def star_tex(n: int) -> str:
-    r"""n 颗星，用于 LaTeX。
+    出处实现**只有一份**：讲义那套 `slidev_handout.source_label()`——高考题
+    「年份 + 卷别 + 第 N 题」，模拟题「卷名 + 第 N 题」，信息不全兜底
+    「精选模拟题 第 N 题」。这里再抄一份的话，卷面和讲义早晚会印出两个不同的
+    出处（本项目最忌讳的"预览与导出不一致"，讲义那边有 `测试/讲义测试.py` 盯着）。
 
-    ⚠️ **必须走 `$\star$`，不能直接写 `★`(U+2605)。**
-    实测：`★ ● ■ ▲ ☆` 这些字符在 fandol / NewCM 字体里**都没有字形**，
-    编译出来是一排豆腐块 □。`\textbullet` 和 `$\circ$` 有字形，但
-    `$\star$` 最像星级标记。
+    卷名是**纯文本**，走 `_esc_text` 转义——库里真有卷名带 `_`、`#` 的题，
+    不转义会被 TeX 当数学下标/宏参数，整份卷子编译不过。
     """
-    return ("$" + r"\star" * n + "$") if n else ""
+    from .slidev_handout import source_label    # 延迟导入：讲义模块只依赖 paths/logutil
+    lab = source_label(q)
+    if not lab:
+        return tex
+    head, sep, rest = tex.partition("\n")
+    if not sep:
+        return tex
+    return head + sep + "（" + _esc_text(lab) + "）" + rest.lstrip("\n")
 
 
 def _texpath(p: str) -> str:
@@ -299,10 +303,6 @@ def blank_for(diff: str, uniform: float = 0.0) -> float:
     if uniform and uniform > 0:
         return uniform
     return BLANK_BY_DIFFICULTY.get(diff, 5.0)
-
-
-def _star(diff: str, stars: int) -> str:
-    return star_tex(stars or DIFF_STARS.get(diff, 0))
 
 
 def choices_columns(q: Question, default: int = 4) -> int:
@@ -641,18 +641,16 @@ def guard_sheet_slots(tex: str) -> str:
     return "\n".join(lines)
 
 
-def _q_tex(q: Question, mode: str, show_answers: bool,
-           diff_override: str = "", default_columns: int = 4,
-           show_source: bool = False, with_solution: bool = True) -> str:
-    # **解析常驻源文件**，显不显示交给 `\examsetup{solution/show-solution}`——
-    # 这是高考模板的做法：不用为了出学生版重写一遍源文件。
-    #
-    # **测试卷**要标来源，高考卷不标——高考卷是仿真卷面，多一行小字就不像真题了。
-    #
-    # 来源**不走 `with_source`**：那样会另起一行排在题干后面，
-    # 题号、难度、来源散成三处。这里统一拼成一个前缀，**跟难度并排**：
-    #
-    #     〔★★★〕（2026年新课标I卷-6）题干……
+def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 4,
+           show_source: bool = True, with_solution: bool = True) -> str:
+    r"""一道题的 LaTeX（三种卷型共用）。
+
+    · **解析常驻源文件**，显不显示交给 `\examsetup{solution/show-solution}`——
+      这是高考模板的做法：不用为了出学生版重写一遍源文件；
+    · `show_source=True`（默认）时在题干**同一行**前面并上出处
+      `（2023新高考II卷 第22题）`，见 `_stem_with_source`；
+    · 卷面上**不印难度**（用户要求）——难度只影响解答题留白。
+    """
     # **选项列数按内容自适应。**
     # exam-zh 默认 `choices/columns = 4`（一行四个），短选项很好看；
     # 但选项一长（比如「样本 $x_1$ 的标准差」这种），四列会挤成一团、
@@ -684,27 +682,12 @@ def _q_tex(q: Question, mode: str, show_answers: bool,
     # **答案标红**：只在"卷面上真的显示答案"时才染（学生版不染，见模块顶部说明）。
     if show_answers:
         tex = red_answer_macros(tex)
-    if mode != "test":
-        return tex
-    # 测试模式：题干第一行前加灰色前缀（`\small\color{gray}` 不抢视线）。
-    # **难度按位置定**（`diff_override`），不是题目自带的那套星级——
-    # 高考卷的难度本来就是由位置决定的（见 POSITION_RULE 的说明）。
-    #
-    # **只标星星，不写「简单题/中档题/难题」**——星星自己会说话，
-    # 加上文字反而占地方、抢视线。
-    diff = diff_override or q.difficulty
-    n = DIFF_STARS.get(diff, 0)
-    star = "〔" + star_tex(n) + "〕" if n else ""
-    # **出处默认不印。** 用户的判断：那串东西没有意义——
-    #   · 高考题印 `（2024年新高考I卷-1）`：题目本身就是真题，读者知道；
-    #   · 模拟题印 `（2027年004-3）`：`004` 是原书的页码，不是卷名。
-    # 占地方、还容易被误当成题面的一部分。**要印就显式开 `show_source`。**
-    src = source_tag(q) if show_source else ""
-    if not (star or src):
-        return tex                       # 两样都没有就不留空壳
-    head, _sep, rest = tex.partition("\n")
-    return (head + "\n" + r"{\small\color{gray}" + star + src + "}"
-            + rest.lstrip("\n"))
+    # **出处并进题干第一行**——三种卷型一视同仁（见模块开头）。
+    # 放在最后：先让上面几道修把题干整好，再往上加字，
+    # `guard_leading_bracket` 补的那个 `{}` 也不会被这句顶开。
+    if show_source:
+        tex = _stem_with_source(tex, q)
+    return tex
 
 
 def _qid_mark(q: Question) -> str:
@@ -729,7 +712,7 @@ def _qid_mark(q: Question) -> str:
 
 def render_paper(questions: list[Question], *, mode: str = "gaokao",
                  title: str = "", subject: str = "数学", show_answers: bool = False,
-                 answers_at_end: bool = False, show_source: bool = False,
+                 answers_at_end: bool = False, show_source: bool = True,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
                  columns: int = 4, graphicspath: str = "",
                  handout_font: str = HANDOUT_FONT_DEFAULT,
@@ -753,10 +736,14 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
 
     `answers_at_end` 会把 `show_answers` 的效果**收起来**：
     括号不显示答案，题目后面不带 `solution` 环境，改成卷末一节。
+
+    `show_source`（**默认开**）：每题题干前并上出处
+    `（2023新高考II卷 第22题）`。用户的要求——三种卷型都印，跟讲义一致；
+    关掉只是留给测试/特殊场合，界面上没有这个开关。
     """
     if mode == "handout":
         return _render_handout(questions, title=title, columns=columns,
-                               qid_marks=qid_marks,
+                               qid_marks=qid_marks, show_source=show_source,
                                graphicspath=_texpath(graphicspath), font=handout_font)
     if mode not in ("gaokao", "test"):
         raise ValueError(f"未知卷型 {mode!r}")
@@ -894,13 +881,17 @@ def preamble(**kw) -> list[str]:
 
 def question_tex(q, *, show_answers: bool = True, columns: int = 4,
                  show_source: bool = False, with_solution: bool = True) -> str:
-    r"""**出题用**的单题 LaTeX（走 `_q_tex` 的高考卷形态：不标难度星、
-    嵌在题干里的 TikZ 换成预渲染图、答案标红）。
+    r"""**出题用**的单题 LaTeX（走 `_q_tex`：嵌在题干里的 TikZ 换成预渲染图、
+    答案标红、按需并上出处）。
 
     和 `preamble()` 一个道理：`_q_tex` 里那步「TikZ→图片」是**渲染期**改动，
     只许在出题时做。别处再抄一遍，就会出现「每次写库悄悄改题干」那种事故。
+
+    `show_source` 这里**默认关**（与 `render_paper` 相反）：本函数的调用方是
+    考点本/脚本里的"分层训练"块（见 `pointbook.training_tex`），出处由那些
+    文档自己决定要不要；`render_paper` 那条卷子路径一律走默认开的开关。
     """
-    return _q_tex(q, "gaokao", show_answers, default_columns=columns,
+    return _q_tex(q, show_answers, default_columns=columns,
                   show_source=show_source, with_solution=with_solution)
 
 
@@ -984,8 +975,8 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             doc.append(r"\needspace{6\baselineskip}")
             if qid_marks:
                 doc.append(_qid_mark(q))
-            doc.append(_q_tex(q, mode, show_answers and not answers_at_end,
-                              diff_override=diff, default_columns=columns,
+            doc.append(_q_tex(q, show_answers and not answers_at_end,
+                              default_columns=columns,
                               show_source=show_source))
             # 解答题留白：**必须 `\vspace*`**（带星号）——
             # 不带星号的 `\vspace` 在分页处会被丢弃，题目落在页底时留白凭空消失
@@ -1005,7 +996,7 @@ def _paper_body(doc: list[str], questions: list[Question], *,
 def _render_handout(questions: list[Question], *, title: str = "",
                     columns: int = 4, graphicspath: str = "",
                     font: str = HANDOUT_FONT_DEFAULT,
-                    qid_marks: bool = False) -> str:
+                    qid_marks: bool = False, show_source: bool = True) -> str:
     r"""**讲义模式：一题一页，A4 横版，无答案。**
 
     用途是**在 iPad 上用笔讲课**：一道题一屏，讲完翻下一页就是下一题。
@@ -1099,10 +1090,9 @@ def _render_handout(questions: list[Question], *, title: str = "",
         # 解答题走 `problem` 环境（`question_to_tex` 对 detailed_answer 用它，
         # 还带 `[points = 12]` 这样的可选参数）——**别忘了它**，漏了整个讲义编译不过
         r"\newenvironment{problem}[1][]{\par\medskip}{\par}",
-        # 题头：品牌色的「例 N」+ 灰色星级
-        r"\newcommand{\hwlabel}[2]{%",
-        r"  {\color{ecolor}\bfseries\large 例\,#1}\hspace{0.7em}%",
-        r"  {\small\color{gray}#2}\par\vspace{0.35em}}",
+        # 题头：品牌色的「例 N」（难度星已按用户要求去掉，见模块开头）
+        r"\newcommand{\hwlabel}[1]{%",
+        r"  {\color{ecolor}\bfseries\large 例\,#1}\par\vspace{0.35em}}",
         "",
         (r"\graphicspath{" + "".join("{" + x + "/}" for x in (graphicspath,)) + "}"
          if graphicspath else ""),
@@ -1118,14 +1108,15 @@ def _render_handout(questions: list[Question], *, title: str = "",
             doc.append(r"\newpage")
         if qid_marks:
             doc.append(_qid_mark(q))
-        # 题头：例 N + 难度星（`star_tex` 走 `$\star$`，字面 `★` 会变豆腐块）
-        star = _star_line(q.difficulty)
-        label = star
-        doc.append(r"\hwlabel{%d}{%s}" % (i, label))
+        # 题头：例 N（难度已不印，见模块开头）
+        doc.append(r"\hwlabel{%d}" % i)
         tex = question_to_tex(q, with_solution=False, with_source=False)
         # TikZ 换成预渲染的矢量图（同其他卷型，见 `_q_tex` 里的说明）
         from . import tikzfig as _tz
         tex, _n = _tz.to_image(tex, q.figures)
+        # **出处并进题干第一行**（同其他卷型，见 `_stem_with_source`）
+        if show_source:
+            tex = _stem_with_source(tex, q)
         # **给图限高。** 一题一页，图太高就会被挤到下一页——
         # 实测例 6 的频率分布直方图就整张飞到了第 7 页，那页只剩一张图。
         # 加 `height` 后 `keepaspectratio` 会同时满足宽和高两个上限，
@@ -1228,12 +1219,9 @@ def _test_head(qs: list[Question], *, subject: str = "数学") -> list[str]:
             cnt[t] += 1
     points = [t for t, _n in cnt.most_common()]
 
-    # 难度分布也是星星，和每题的标记统一
-    diffs = Counter(d for _t, _i, _n, d, _q in layout_difficulty(qs))
-    diff_txt = " · ".join(
-        f"{star_tex(DIFF_STARS.get(k, 0))} {v}" for k, v in
-        sorted(diffs.items(), key=lambda x: DIFF_STARS.get(x[0], 9)))
-
+    # **卷面上不印难度**（用户要求：跟讲义一样，只印出处）。
+    # 原来这里印一行「难度分布：★ 3 · ★★ 5 …」，现在只留题量；
+    # 难度仍在内部用来定解答题留白（`blank_for`）。
     out = [
         r"\information{",
         r"  姓名\underline{\hspace{6em}},",
@@ -1241,7 +1229,7 @@ def _test_head(qs: list[Question], *, subject: str = "数学") -> list[str]:
         r"  学号\underline{\hspace{6em}}",
         r"}",
         "",
-        "本试卷共 " + str(len(qs)) + " 题 · 难度分布：" + diff_txt + "。",
+        "本试卷共 " + str(len(qs)) + " 题。",
         "",
     ]
     # 考点清单。模板用 `notice` 逐条列——**考点少的时候很好读，多了会吃掉整页**。

@@ -45,7 +45,7 @@ SECTION_NAME = {
 # ── 卷面渲染 ──────────────────────────────────────────────────────────
 
 def render_paper(questions: list[Question], *, title: str = "", show_answers: bool = False,
-                 answers_at_end: bool = False, show_source: bool = False,
+                 answers_at_end: bool = False, show_source: bool = True,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
                  columns: int = 4, mode: str = "gaokao",
                  handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
@@ -56,6 +56,9 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
     成了**死代码**——界面上导出的卷子永远没有难度标注，也没有考点小字。
     现在只留一份实现，`mode` 取 `gaokao`（高考卷）/ `test`（纯测试题）/
     `handout`（讲义：一题一页 · A4 横版 · 无答案，给 iPad 讲课用）。
+
+    `show_source` **默认开**：三种卷型每题题干前都印出处
+    （`（2023新高考II卷 第22题）`），跟讲义一致；卷面上不印难度。
 
     ⚠️ 这个包装函数**必须和 `paper.render_paper` 的参数保持同步**。
     实测踩过：给 `paper` 加了 `qid_marks` 却没加到这里，于是
@@ -205,14 +208,17 @@ def first_errors(log: str, n: int = 5) -> list[str]:
 
 def export(keys: list[str], *, title: str = "", out: str = "",
            show_answers: bool = False, answers_at_end: bool = False,
-           show_source: bool = False,
+           show_source: bool = True,
            bottom_sep: str = "0.6em",
            problem_blank_cm: float = 0.0, do_compile: bool = True,
            mode: str = "gaokao", handout_font: str = _paper.HANDOUT_FONT_DEFAULT) -> dict:
     r"""按 key 列表导出。返回落盘位置（**必须回传，UI 要显示"存到哪了"**）。
 
-    `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字与每题难度）/
+    `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字）/
     `handout`（讲义，见 `paper._render_handout`）。
+
+    **三种卷型都印出处、都不印难度**（用户要求，见 `paper` 模块开头）；
+    `show_source=False` 只为测试与特殊场合留一条退路，界面上没有这个开关。
     """
     if mode not in ("gaokao", "test", "handout"):
         return {"ok": False, "error": f"未知卷型 {mode!r}", "missing": []}
