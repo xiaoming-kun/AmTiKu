@@ -26,6 +26,8 @@ slidev/public/img/
 slidev/_handout_build/
 slidev/dist/
 slidev/_canvas_*
+# AI 通过 `slidev mcp` 直接编辑的 deck（内容，不是代码；`slidev mcp agent.md` 指向它）
+slidev/agent.md
 
 # ══ LaTeX 编译中间产物 ══
 # 组卷编译会在 试卷/ 下留 .aux/.log/.out；这些是**可重新生成**的，
@@ -89,6 +91,14 @@ slidev/_canvas_*
 录题-通宵.sh
 题库校对任务-交给大模型.md
 *.bak*
+
+# ══ 全库评价与复核材料（**含完整题干、真实校名**，不进 git）══════
+# 实测踩过同类漏点（`.tobias/`）：这个目录从来没被 git 跟踪过，但也**从来没写进
+# 本文件**，`git status` 一直显示 `??`——一次 `git add -A` 就把 17MB 的
+# `逐题评价.csv`（每行含 stem_preview）和几十个批次目录的 `题面.md` 提交进仓库。
+# 目录里的 .py 脚本也带着真实校名（订正清单的 key），所以**整个目录一起忽略**；
+# 想让脚本进版本库，得先把 key 与题干字样摘出去。
+题库评价/
 
 # ══ demo 数据要进仓库（自己编的题，不是真题）══════════════════
 # 「题目/」「图片/」这类模式会连带匹配 demo数据/ 下的同名子目录，所以要放行
