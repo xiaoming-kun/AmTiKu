@@ -558,8 +558,12 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
 
         <div className="flex min-h-0 flex-1">
           {/* ── 左：设置 ── */}
-          <div className="w-[288px] shrink-0 space-y-5 overflow-y-auto border-r border-border
-                          bg-surface px-4 py-4">
+          {/* 宽度**必须随窗口收缩**：弹窗是 `95vw`，而这一栏原来写死 288px。
+              窗口窄到 ~660px 以下时，288+336 两栏就超过弹窗宽度，最右边的预览列
+              被 `overflow-hidden` 整列裁掉、中间栏切一半 —— 用户看到的就是
+              「点了某个开关之后变成半份」。（实测 612px 窗口：弹窗 572、内容 648。） */}
+          <div className="w-[clamp(232px,26vw,288px)] shrink-0 space-y-5 overflow-y-auto
+                          border-r border-border bg-surface px-4 py-4">
             <Group title="卷型">
               <div className="grid grid-cols-2 gap-1.5">
                 {([['gaokao', '高考卷'], ['test', '纯测试题'], ['coverage', '考点覆盖卷'],
@@ -1082,7 +1086,10 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
           </div>
 
           {/* ── 中：卷子 ── */}
-          <div className="flex w-[336px] shrink-0 flex-col border-r border-border bg-surface-2">
+          {/* 窄屏（<768px）直接隐藏这一栏：它是「这次组了哪些题」的核对视图，
+              不是操作入口。留着会和左栏一起把预览挤没（见左栏上面那段注释）。 */}
+          <div className="hidden w-[336px] shrink-0 flex-col border-r border-border
+                          bg-surface-2 md:flex">
             <div className="flex shrink-0 items-center gap-2 border-b border-border px-3.5 py-2.5
                             text-[11.5px] text-ink-faint">
               <span>卷子内容</span>
