@@ -23,28 +23,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-
-def _safe_console() -> None:
-    r"""把标准输出/错误改成容错编码。
-
-    ⚠️ **Windows 控制台默认 cp1252/cp936，本文件里到处是 `✓` `✗` `⚠` 这类符号，
-    只要输出被重定向（`> log.txt`、`| more`、被别的进程捕获）或系统是英文版，
-    print 就会抛 UnicodeEncodeError 把整个命令打崩** —— 实测 `amti.py diff`
-    在中文 Windows 上重定向输出就直接死在 `print("\n✓ ...")` 那一行。
-
-    同样的坑在 `packaging/amti_frozen.py` / `tex_complete.py` /
-    `win_smoke_api.py` 里各防过一次，**唯独主入口漏了**。这里补上，
-    并在 `main()` 一开始就调用（而不是等某个子命令自己想起来）。
-
-    `errors="replace"`：编码不下的字符退化成 `?`，而不是让程序挂掉。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:                                  # noqa: BLE001
-            pass
-
-
 from amti import store                                    # noqa: E402
 from amti.schema import QTYPE_LABEL                        # noqa: E402
 from amti.render_tex import question_to_tex                # noqa: E402
@@ -191,9 +169,12 @@ def cmd_collect(a) -> int:
 
 
 def cmd_render_tikz(a) -> int:
-    r"""把全库的 TikZ 预渲染成矢量图（卷子里就只剩 \includegraphics 了）。"""
+    r"""把全库的 TikZ 预渲染成矢量图（卷子里就只剩 \includegraphics 了）。
+
+    同时给每张图转一份 PNG——讲解预览是 HTML，`<img>` 只认位图。
+    """
     from amti import tikzfig as T
-    print("渲染全库 TikZ…（已渲染过的会跳过）")
+    print("渲染全库 TikZ…（已渲染过的会跳过；顺带补讲解预览用的 PNG）")
     r = T.render_all(force=a.force)
     print()
     print("新渲染 %d 张，跳过 %d 张（已有缓存）" % (r["rendered"], r["skipped"]))
@@ -201,6 +182,10 @@ def cmd_render_tikz(a) -> int:
         print("✗ %d 张渲染不出来：" % len(r["fails"]))
         for f in r["fails"][:20]:
             print("   %-44s %s" % (f["key"][:44], f["why"][:80]))
+        return 1
+    if r.get("warns"):
+        # 图出来了但字被吞了：PDF 是"成功"的，只有编译日志知道
+        print("! %d 张有丢字/退回无中文字体重画，明细见上" % len(r["warns"]))
         return 1
     print("✓ 全部渲染完成")
     return 0
@@ -300,7 +285,8 @@ def cmd_dedup(a) -> int:
         print("\n[干跑] 什么都没写。确认后加 --apply")
         return 0
     before = sum(store.vol_count(p) for p in store.existing_volumes())
-    r = store.rewrite_all(store.load_unique())
+    _sig = store.volume_signature()
+    r = store.rewrite_all(store.load_unique(), based_on=_sig)
     after = sum(store.vol_count(p) for p in store.existing_volumes())
     print("\n%d 条 → %d 条（去掉 %d），重写为 %d 卷"
           % (before, after, before - after, r["volumes"]))
@@ -428,14 +414,18 @@ def cmd_accept(_a) -> int:
 
     四层，缺一不可：
 
-      ① 单元自检   每个模块自己的回归用例（含检查器的控制样本）
-      ② 规范审查   11 项，全库
+      ① 单元自检   每个模块自己的回归用例 + 四套跨模块回归（接口/讲义/清单/考点）
+      ② 规范审查   16 项，全库；**外加 `verify` 的结构校验**（答案/选项/题型自洽）
       ③ 端到端渲染 用**前端同一条渲染路径**跑全库，查 KaTeX / LaTeX 泄漏 / 图片
       ④ 快照       存量题内容有没有被无故改动
 
     为什么要有这个命令：以前我说"全部规范"，依据是 `conform` 报了个 ✓——
     而 `conform` 自己可能漏报、可能误报。现在"过了"指的是**四层全绿**，
     而且第 ① 层里 `conform --selftest` 会**先证明检查器管用**再报结论。
+
+    ⚠️ 第 ② 层里 **`verify` 不能省**：`conform` 只看写法，不看结构。
+    实测：6 道「单选题却有 3 个答案 / 8 个选项」的坏题，`conform` 全绿、
+    只有 `verify` 报错——不跑它，验收会给出一个假的"全绿"。
     """
     import subprocess
     import sys as _s
@@ -444,10 +434,49 @@ def cmd_accept(_a) -> int:
 
     temp_server = None
 
-    def run(title: str, argv: list[str], grep: str | None = None) -> None:
+    # ── 隔离根目录：给「会重写整库」的自检用 ────────────────────────
+    #
+    # 为什么要有：`amti.trash` 与 `测试/删题安全自检.py` 都要证明「删一道、其余一个
+    # 字节不变、还能原样恢复」，办法是**往真实 `题目/*.tex` 里写一道 fixture 再整份还原**。
+    # 实测 inode 对比：14 个自检里只有这两个会重写全部 7 卷，其余 0 改动。
+    # 于是它们在 accept 里前后脚跑时，**后跑的那个是在「前一个的 fixture 还没清干净」
+    # 的状态上做的快照**，再整份还原就把 fixture 复活了——`题目/备份/` 里留下一份
+    # 30041 道的快照就是这么来的。表现：accept 的自检项**轮流**报错、重跑又绿，
+    # 机检「跑到」列在 15408↔15409、3610↔3611 之间跳。
+    #
+    # 修法不是让它们小心点，而是**根本不让它们碰真实库**：`paths.resolve_root()`
+    # 认 `AMTIKU_ROOT`，所以给每个自检起一份临时根。
+    # `题目/`、`回收站/` 实拷（APFS 写时复制，313M 实测 0.01s），
+    # 其余（含 13G 的 `数据/`）一律符号链接——自检只读它们。
+    sandboxes: list[Path] = []
+
+    def isolated_root() -> Path:
+        import shutil
+        import tempfile
+        sb = Path(tempfile.mkdtemp(prefix="amti-accept-"))
+        sandboxes.append(sb)
+        for entry in root.iterdir():
+            if entry.name in ("题目", "回收站"):
+                continue
+            os.symlink(entry.resolve(), sb / entry.name)
+        dst = sb / "题目"
+        dst.mkdir()
+        for p in (root / "题目").glob("*.tex"):
+            shutil.copy2(p, dst / p.name)
+        if (root / "回收站").is_dir():
+            rdst = sb / "回收站"
+            rdst.mkdir()
+            for p in (root / "回收站").glob("*"):
+                shutil.copy2(p, rdst / p.name)
+        return sb
+
+    def run(title: str, argv: list[str], grep: str | None = None, *,
+            isolated: bool = False) -> None:
         print("\n【%s】" % title)
-        r = subprocess.run(argv, cwd=root, capture_output=True, text=True,
-                           env={**os.environ, "PYTHONWARNINGS": "error::SyntaxWarning"})
+        env = {**os.environ, "PYTHONWARNINGS": "error::SyntaxWarning"}
+        if isolated:
+            env["AMTIKU_ROOT"] = str(isolated_root())
+        r = subprocess.run(argv, cwd=root, capture_output=True, text=True, env=env)
         out = (r.stdout or "") + (r.stderr or "")
         if grep:
             for line in out.splitlines():
@@ -464,19 +493,47 @@ def cmd_accept(_a) -> int:
     # **逐个 `-m` 跑**，不能只 import——自检写在 `__main__` 里，
     # import 一下什么都不执行，那一层就成了摆设（实测踩过）。
     for m in ("schema", "latex_blocks", "render_tex", "images", "dedup",
-              "ingest", "generate", "normalize"):
+              "ingest", "generate", "normalize", "search", "fts"):
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
+    # 存储层：**缩卷**（题数跨过每卷 5000 的边界）时，多余的旧卷必须先删再回读。
+    # 实测「合并重复题」一次删 541 道（7 卷 → 6 卷）被这个顺序 bug 整批回滚。
+    run("单元自检 · store", [_s.executable, "-m", "amti.store", "--selftest"],
+        r"通过|失败")
     run("题目解析回归", [_s.executable, "-m", "amti.latex_ir", "--selftest"], r"通过|失败")
+    # 编译诊断：日志 → 「哪道题 + 什么原因 + 怎么修」。自检覆盖标记扫描、
+    # 行号定位（两种日志格式）、以及每条错误规则的坏样本。
+    run("编译诊断自检", [_s.executable, "-m", "amti.texdiag", "--selftest"], r"通过|失败")
+    # 本地模型：按需启动的解析、读图的 PDF 栅格化与报错翻译。
+    # **这两条自检不碰模型**——否则验收会变成"必须先起 LM Studio"。
+    run("模型按需启动自检", [_s.executable, "-m", "amti.lms", "--selftest"], r"通过|失败")
+    run("读图自检", [_s.executable, "-m", "amti.vlm", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")
     run("录题自检", [_s.executable, "-m", "amti.record", "--selftest"], r"通过|失败")
+    # 录入 v2（Paddle → 27B 结构化）：接口报错的翻译、token 估计、上下文护栏。
+    # 自检**不碰模型**；它守的正是「超过上下文 → UnboundLocalError」那个坑。
+    run("录入 v2 自检", [_s.executable, "-m", "amti.record2", "selftest"], r"通过|失败")
+    # 合订本拆卷：目录解析（两种版式）、页范围校验、拆不了就不拆。
+    # 它守的是「十一套卷共用题号、答案串卷」那个**不报错**的坑。
+    run("合订本自检", [_s.executable, "-m", "amti.bundle", "--selftest"], r"通过|失败")
+    # 讲义抽例题：不碰模型，只测"例题块 → 成品记录"的装配（解析有无都要认）
+    run("讲义抽题自检", [_s.executable, "-m", "amti.examples", "--selftest"], r"通过|失败")
     run("逐题订正自检", [_s.executable, "-m", "amti.fixups", "--selftest"], r"通过|失败")
-    run("回收站自检", [_s.executable, "-m", "amti.trash"], r"通过|失败")
+    run("回收站自检", [_s.executable, "-m", "amti.trash"], r"通过|失败", isolated=True)
     # **删题是危险操作**，单独一层：证明"只动该动的那一道、其余一个字节不变、
     # 能原样恢复、坏路径不执行、改库前留备份"。自检完把库还原并核对指纹。
+    # ⚠️ 这两层都**整份重写 `题目/`**，所以跑在临时根上（见 `isolated_root`）——
+    #    否则它们会把彼此的 fixture 快照还原进真实库，accept 就会轮流报假红。
     run("删题安全自检", [_s.executable, str(root / "测试" / "删题安全自检.py")],
-        r"安全测试|✗")
+        r"安全测试|✗", isolated=True)
     run("检查器自证", [_s.executable, "-m", "amti.conform", "--selftest"], r"通过|失败")
     run("规范审查", [_s.executable, "amti.py", "conform"], r"^共|全部规范")
+    # **结构校验**：`conform` 只查写法，查不出「单选题 3 个答案」「8 个选项」
+    # 这类字段自洽问题。少了这一条，验收能全绿而 `verify` 是红的。
+    run("全库校验", [_s.executable, "amti.py", "verify"], r"不合法|重复 key")
+    # **跨模块回归**：接口边界。
+    # 这些原来只在 AGENTS 里要求"手工跑"，accept 看不到它们红——现在一条命令全跑。
+    # `接口测试` 会 PATCH 一道题再还原（自检式写库），其余只读。
+    run("接口回归", [_s.executable, str(root / "测试" / "接口测试.py")], r"通过")
     temp_server = _ensure_server(root)
     try:
         run("端到端渲染", ["node", "web/check.mjs"],
@@ -490,6 +547,11 @@ def cmd_accept(_a) -> int:
                 temp_server.kill()
     run("快照", [_s.executable, "amti.py", "diff"], r"内容变化|新增|删除|存量")
 
+    # 临时根用完就删（`题目/` 是写时复制的副本，删它不碰真实文件）。
+    import shutil
+    for sb in sandboxes:
+        shutil.rmtree(sb, ignore_errors=True)
+
     print("\n" + "═" * 56)
     if fails:
         print("✗ 未通过：%s" % "、".join(fails))
@@ -498,10 +560,13 @@ def cmd_accept(_a) -> int:
     return 0
 
 
-def cmd_conform(_a) -> int:
-    r"""**规范化验证**：全库写法是不是一个样子（只报不改）。"""
+def cmd_conform(a) -> int:
+    r"""**规范化验证**：全库写法是不是一个样子（只报不改）。
+
+    `--strict-style`：把「风格提示」也算不通过（默认只提示、不拦验收）。
+    """
     from amti import conform
-    return conform.main()
+    return conform.main(strict_style=getattr(a, "strict_style", False))
 
 
 def cmd_rules(_a) -> int:
@@ -669,7 +734,6 @@ def cmd_ingest(a) -> int:
 
 
 def main() -> int:
-    _safe_console()          # 必须在任何 print 之前：中文 Windows 上 ✓/✗ 会打崩
     ap = argparse.ArgumentParser(description="AmTiKu 题库工具")
     sub = ap.add_subparsers(dest="cmd")
 
@@ -711,7 +775,8 @@ def main() -> int:
     co.set_defaults(fn=cmd_collect)
 
     rt = sub.add_parser("render-tikz", aliases=["渲染TikZ"],
-                        help="把全库 TikZ 预渲染成矢量图（卷子编译就不再依赖 TikZ 环境）")
+                        help="把全库 TikZ 预渲染成矢量图 + 讲义用的 PNG"
+                             "（卷子编译就不再依赖 TikZ 环境）")
     rt.add_argument("--force", action="store_true", help="已有缓存也重画")
     rt.set_defaults(fn=cmd_render_tikz)
 
@@ -733,13 +798,17 @@ def main() -> int:
     tr.add_argument("--purge-keys", nargs="*", default=[], metavar="题号",
                     help="只永久删除这些；不给就清空整个回收站")
     tr.add_argument("--yes", action="store_true", help="清空必须显式确认")
-    tr.add_argument("--password", default="", help="删题/清空的口令")
+    tr.add_argument("--password", default="",
+                    help="清空/永久删除的口令（删题已不需要）")
     tr.set_defaults(fn=cmd_trash)
 
     sp = sub.add_parser("dedup", help="去掉库里重复的 key")
     sp.add_argument("--apply", action="store_true", help="真的写盘")
     sp.set_defaults(fn=cmd_dedup)
-    sub.add_parser("conform", help="规范化验证（全库写法一致性）").set_defaults(fn=cmd_conform)
+    cf_p = sub.add_parser("conform", help="规范化验证（全库写法一致性）")
+    cf_p.add_argument("--strict-style", action="store_true",
+                      help="风格项（//、$$、重复选项）也算不通过")
+    cf_p.set_defaults(fn=cmd_conform)
     sub.add_parser("rules", help="列出规则与作用域").set_defaults(fn=cmd_rules)
     sp = sub.add_parser("show", help="看某一道题")
     sp.add_argument("key")

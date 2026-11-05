@@ -5,13 +5,23 @@ name: build-windows
 on:
   workflow_dispatch:          # 手动触发（网页按钮或 gh workflow run）
   push:
-    tags: ['v*']              # 打标签时自动出包
+    tags: ['v*']              # 打标签时自动出包 + 发 Releases
+
+permissions:
+  contents: write             # 建 Release、传资产要用
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      # 版本号只有一个来源：仓库根的 `VERSION`。产物名、Release 标题都用它，
+      # 避免"tag 是 v2.0.0、文件名里写 1.9.3"这种对不上。
+      - name: 读版本号
+        id: ver
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v5
         with:
@@ -106,7 +116,7 @@ jobs:
           "@ | Out-File -Encoding ascii tl.profile
           & "$d\install-tl-windows.bat" -profile tl.profile -no-interaction
           & "$tex\bin\windows\tlmgr.bat" option repository https://mirrors.tuna.tsinghua.edu.cn/CTAN/systems/texlive/tlnet
-          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math fandol tex-gyre makecell pgfplots siunitx varwidth tikzpagenodes environ trimspaces
+          & "$tex\bin\windows\tlmgr.bat" install xetex exam-zh ctex xecjk unicode-math newcomputermodern stix2-otf asana-math fandol tex-gyre elegantnote elegantbook makecell pgfplots siunitx varwidth tikzpagenodes environ trimspaces
 
       # 宏包清单靠猜必然漏（本机就漏在 l3draw.sty 上），所以用项目自带的补包工具：
       # 反复编译参考卷 → 缺哪个包就 tlmgr 装哪个 → 直到编出 PDF。本机与 CI 共用同一逻辑。
@@ -119,8 +129,9 @@ jobs:
           Copy-Item demo数据\图片\* 图片\ -Force
 
       - name: 补全 TeX 宏包（编参考卷自检，缓存命中也会跑一遍兜底）
-        run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex
-        # 编参考卷验证 exam-zh 那条出卷路径的宏包齐不齐。
+        run: python packaging/tex_complete.py --tex tex --papers packaging/test-paper.tex packaging/test-handout.tex
+        # 两篇都要编：试卷走 exam-zh、A4 讲义走 elegantnote，
+        # 只编一种就会出现"另一种卷型从没被验证过"（elegantnote.cls 就是这么漏的）
 
       # 保存必须在 TeX 装完之后（放前面会存进一个空/残缺的树，还会让后续轮次
       # 误命中缓存而跳过安装 —— 我第一次就把它放前面了，结果缓存形同虚设）
@@ -149,7 +160,20 @@ jobs:
           # （仓库里没有题库，指向仓库根会让自检"跳过导出"，等于没验 —— 上一轮就是这样）
           # TeX 直接**解压**到 exe 旁边；不要用 Copy-Item：TeX 树里有符号链接，
           # PowerShell 的递归拷贝对符号链接处理不可靠。
-          Expand-Archive AmTiKu-Windows-tex.zip -DestinationPath dist\AmTiKu\tex -Force
+          #
+          # ⚠️ **这里以前只认「下载下来的预装 zip」，是三次 tag 构建全部失败的根因**：
+          #    那个资产在 v0.1.0 里并不存在（URL 404），而下载步骤 continue-on-error，
+          #    于是静默没有 zip、到这里 Expand-Archive 直接退 1 —— 冒烟没跑、Release 没出，
+          #    看上去像"打包坏了"。现在没有 zip 就用 CI 自己装好的 tex/ 现打一份。
+          $zip = "AmTiKu-Windows-tex.zip"
+          if (!(Test-Path $zip)) {
+            if (!(Test-Path "tex\bin\windows\xelatex.exe")) {
+              throw "既没有预装 zip，也没有 CI 装好的 tex\ —— 无法冒烟"
+            }
+            Write-Host "没有预装 zip：用 CI 装的 tex/ 现打一份（要 2~4 分钟）"
+            Compress-Archive -Path "tex\*" -DestinationPath $zip -CompressionLevel Optimal
+          }
+          Expand-Archive $zip -DestinationPath dist\AmTiKu\tex -Force
           cd dist\AmTiKu
           .\AmTiKu.exe --selftest
 
@@ -180,7 +204,11 @@ jobs:
                   -ArgumentList "--port",$port -PassThru `
                   -RedirectStandardOutput $o -RedirectStandardError $e
             try {
-              python packaging/win_smoke_api.py --port $port
+              # ⚠️ **必须 `| Out-Host`**：PowerShell 函数会把管道输出（这里是
+              #     python 的每一行 stdout）**一并当成返回值**，于是 $c1 变成
+              #     @("✓ 服务已就绪…", …, 0)，`$c1 -ne 0` 恒为真 —— 两项其实
+              #     全过，脚本却报"接口冒烟失败"。第一次让两遍都跑到终点才暴露。
+              python packaging/win_smoke_api.py --port $port | Out-Host
               $code = $LASTEXITCODE
             } finally {
               # 先停进程再读日志：stdout 重定向到文件是**块缓冲**的，
@@ -188,20 +216,47 @@ jobs:
               Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
               Start-Sleep -Milliseconds 500
               Write-Host "──── $tag 的服务输出 ────"
-              Get-Content $o -Tail 25 -ErrorAction SilentlyContinue
-              Get-Content $e -Tail 25 -ErrorAction SilentlyContinue
+              # ⚠️ 同样要 `| Out-Host`：`Get-Content` 默认把每一行写进**管道**，
+              #     也就是函数的返回值 —— 上一步只治了 python 那处，这里又把
+              #     $c1 污染成数组，"全过"仍然报失败。函数的返回值只该是退出码。
+              Get-Content $o -Tail 25 -ErrorAction SilentlyContinue | Out-Host
+              Get-Content $e -Tail 25 -ErrorAction SilentlyContinue | Out-Host
             }
             return $code
           }
 
-          $c1 = Invoke-Smoke "dist\AmTiKu" "原位（ASCII 路径）" 8951
+          # 双保险：万一将来又有人在函数里往管道写东西，取最后一个元素（退出码）。
+          function CodeOf($r) { return [int](@($r)[-1]) }
+
+          $c1 = CodeOf (Invoke-Smoke "dist\AmTiKu" "原位（ASCII 路径）" 8951)
           $dir = "D:\冒烟 测试\AmTiKu"
           New-Item -ItemType Directory -Force -Path (Split-Path $dir) | Out-Null
           Copy-Item dist\AmTiKu $dir -Recurse -Force
-          $c2 = Invoke-Smoke $dir "中文+空格路径" 8952
+          $c2 = CodeOf (Invoke-Smoke $dir "中文+空格路径" 8952)
 
           Write-Host "结果：原位 exit=$c1 ｜ 中文空格 exit=$c2"
           if ($c1 -ne 0 -or $c2 -ne 0) { throw "接口冒烟失败（上面有具体哪一项）" }
+
+      # 用户拿到手的应该是**一个**文件，不是一个文件夹。
+      # 打包前先断言关键部件都在——上一版把 tex 漏在包外的后果是
+      # 「双击能打开、一导出就说找不到 xelatex」，比直接报错更难查。
+      - name: 打成 zip
+        id: pack
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $name = "AmTiKu-$v-Windows-x64"
+          if (!(Test-Path "dist\AmTiKu\tex\bin\windows\xelatex.exe")) {
+            throw "包里没有 tex\bin\windows\xelatex.exe —— 内置 LaTeX 没打进去"
+          }
+          if (!(Test-Path "dist\AmTiKu\_internal\web\dist\index.html")) {
+            throw "包里没有前端 index.html —— 打出来的会是「接口能用、界面 404」"
+          }
+          Compress-Archive -Path "dist\AmTiKu\*" -DestinationPath "$name.zip" -CompressionLevel Optimal
+          $mb = [math]::Round((Get-Item "$name.zip").Length / 1MB)
+          Write-Host "产物：$name.zip（$mb MB）"
+          "zip=$name.zip" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
 
       # if: always() 很关键：以前任何一步失败就什么都取不回来（白等一轮）。
       # 现在无论成败都上传，至少能拿到 exe 与已装好的 TeX。
@@ -220,3 +275,21 @@ jobs:
           name: AmTiKu-Windows-tex
           path: tex/**
           if-no-files-found: warn
+
+      # 打 tag 时直接发到 Releases：用户点链接就能下，不用登 GitHub 取 artifact
+      # （artifact 要登录、还有 90 天过期，不适合当交付物）。
+      - name: 发布到 Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pack.outputs.zip }}
+          name: AmTiKu v${{ steps.ver.outputs.version }}
+          body: |
+            **AmTiKu v${{ steps.ver.outputs.version }}** · 双平台免安装版
+
+            * `AmTiKu-${{ steps.ver.outputs.version }}-Windows-x64.zip` — 解压到**纯英文路径**，
+              双击 `AmTiKu.exe`。自带 Python、LaTeX、前端，**不需要额外安装任何东西**。
+            * macOS 版见同一 Release 的 `.dmg` 资产。
+
+            不含题库，只有 4 道自编示例题；要接自己的题库，见 README。
+            首次启动 Windows 可能弹「Windows 保护了你的电脑」——点「更多信息 → 仍要运行」。

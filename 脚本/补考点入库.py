@@ -80,7 +80,7 @@ def load_plan() -> dict[str, dict]:
 def run(apply: bool = False) -> dict:
     plan = load_plan()
 
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     by_key = {q.key: q for q in qs}
     hash_before = {q.key: q.content_hash() for q in qs}
 
@@ -126,7 +126,7 @@ def run(apply: bool = False) -> dict:
         return out
 
     # ── 落盘：唯一入口 store.rewrite_all（两阶段写盘 + 自带回滚） ──
-    store.rewrite_all(list(by_key.values()))
+    store.rewrite_all(list(by_key.values()), based_on=_sig)
     store.cache_clear()
 
     # 写完从磁盘回读验一遍：考点写进去了、正文指纹没动

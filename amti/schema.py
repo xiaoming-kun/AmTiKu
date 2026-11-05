@@ -27,6 +27,12 @@ from dataclasses import dataclass, field, asdict
 
 QTYPES = ("single_choice", "multi_choice", "fill_in_blank", "detailed_answer")
 
+# 「解析无」是**占位符**（`amti/record.py` 的约定：没有解析就写它），不是解析。
+# 判断"这道题到底有没有解析"一律走 `Question.has_solution`，**不要**直接看
+# `bool(q.solution.strip())` —— 否则占位题会被当成"解析齐全"：待解队列、
+# 「只看缺解析」筛选、录入升级全都会漏掉它们（库里曾有 1202 道这样卡住）。
+NO_SOLUTION_MARKS = ("解析无", "解析无。", "无")
+
 # 题目来源只分两类：高考题 / 模拟题。**不再区分册子**——
 # 千题册、模拟精选、手工录入选进来都是"模拟题"。
 # 做成**派生属性而不是存储字段**：存了就会漂移（改了 book 忘了改 kind），
@@ -47,6 +53,11 @@ HASH_FIELDS = ("type", "stem", "options", "answer", "solution", "figures")
 
 FILLIN_RE = re.compile(r"\\fillin(?![a-zA-Z])")
 IMG_RE = re.compile(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}")
+
+#: 题干里说「如图」这类话——**只说需要图，不代表真有图**。
+#: 用来算「图」这一格的完整度：有图，或者本来就不需要图，才算不缺。
+NEEDS_FIGURE_RE = re.compile(
+    r"如图|如下图|上图|下图|右图|左图|图中|如图\s*\d|如图所示的")
 
 
 # ── 数据结构 ──────────────────────────────────────────────────────────
@@ -141,7 +152,7 @@ class Question:
 
     @property
     def stars(self) -> int:
-        """星级（1–3）。同样优先用题目自带的。"""
+        """星级（1–4；**0 = 未评级**）。同样优先用题目自带的。"""
         own = self.meta.get("stars")
         if isinstance(own, int) and own > 0:
             return own
@@ -175,6 +186,32 @@ class Question:
 
     # ── 完整性（缺什么，不是错） ───────────────────────
 
+    @property
+    def has_solution(self) -> bool:
+        r"""有没有**真正的**解析（占位符「解析无」不算）。
+
+        唯一口径。`missing()` / 求解队列 / 待补队列 / 接口的 `flags["解析"]`
+        都走这里——一处改口径，全系统一致。
+        """
+        s = (self.solution or "").strip()
+        return bool(s) and s not in NO_SOLUTION_MARKS
+
+    @property
+    def figure_ok(self) -> bool:
+        r"""「图」这一格：图**不缺**——有图，或者这题本来就不需要图。
+
+        语义是「完整度」，不是「有图」：列表的「只看缺·图」要的是
+        "题干说如图、实际没图"的题。真正的"有图"是另一个口径
+        （`server._has_figure_real`），别混用——混用会把两万八千道
+        本来就不需要图的题全筛出来。
+        """
+        if self.figures:
+            return True
+        stem = self.stem or ""
+        if "\\includegraphics" in stem or "tikzpicture" in stem:
+            return True
+        return not NEEDS_FIGURE_RE.search(stem)
+
     def missing(self) -> list[str]:
         r"""缺哪些可选内容。**不算错误**——用于筛选"待补"的题。
 
@@ -186,7 +223,7 @@ class Question:
         if not self.answer.strip() and self.type in (
                 "single_choice", "multi_choice", "fill_in_blank"):
             gaps.append("答案")
-        if not self.solution.strip():
+        if not self.has_solution:
             gaps.append("解析")
         if not self.points:
             gaps.append("考点")
@@ -419,6 +456,17 @@ if __name__ == "__main__":
         print(f"{mark} {q.key:6} {QTYPE_LABEL.get(q.type, q.type):6} "
               f"{'合法' if not got else got[0][:52]}")
     print(f"\n{ok}/{len(samples)} 通过")
+
+    # 「图」完整度：不需要图的题算不缺；说「如图」却没图才算缺。
+    # 列表里 98% 的题本来就不需要图，口径写错会满屏红标签。
+    _fig1 = Question(key="f/1", type="detailed_answer", stem="已知函数 $f(x)=x^2$。")
+    _fig2 = Question(key="f/2", type="detailed_answer", stem="如图，已知函数 $f(x)$。")
+    _fig3 = Question(key="f/3", type="detailed_answer",
+                     stem=r"如图 \includegraphics{a1b2c3d4e5f60718.png}")
+    print("图完整度：不需要图的题算不缺 %s；说如图没图算缺 %s；有图算不缺 %s"
+          % ("✓" if _fig1.figure_ok else "✗",
+             "✓" if not _fig2.figure_ok else "✗",
+             "✓" if _fig3.figure_ok else "✗"))
 
     # 指纹稳定性：改标签不改指纹
     q = samples[0][0]

@@ -65,7 +65,7 @@ def _index() -> dict[str, dict]:
                     "topic": topic.get("title", ""),
                     "section": sec_name,
                     # 五要素（核心概念/核心公式/常用方法/常考题型/易错点）——
-                    # 界面要展示它们，索引里顺手带上，
+                    # 按考点印讲解时要用，索引里顺手带上，
                     # 免得别处再读一遍 知识点.json。
                     "fields": p.get("fields") or {},
                 }

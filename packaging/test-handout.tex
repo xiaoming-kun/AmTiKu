@@ -1,0 +1,99 @@
+% 由 AmTiKu 生成（讲义模式：一题一页 · A4 横版 · 无答案）
+\documentclass[cn, device=normal, 11pt, fontset=fandol]{elegantnote}
+\usepackage{amsmath,amssymb}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, calc, angles, quotes, positioning, shapes.geometric}
+\pgfplotsset{
+  exam statistical histogram/.style={
+    ybar interval,
+    bar width=1,
+    axis lines=left,
+    axis line style={-latex},
+    tick align=outside,
+    scaled y ticks=false,
+    clip=false,
+    tick label style={font=\normalsize},
+    label style={font=\normalsize},
+  },
+  exam statistical bar/.style={ybar, bar width=1},
+  exam statistical line/.style={sharp plot},
+}
+\tikzset{
+  exam statistical legend label/.style={anchor=west, inner sep=1pt, font=\normalsize},
+}
+\newcommand{\frequencyylabel}[4][0pt]{%
+  \node[anchor=east, inner sep=1pt, xshift=#1] at (axis cs:#2,#3) {#4};}
+\geometry{landscape, margin=1.7cm}
+\definecolor{ecolor}{RGB}{206,51,138}
+\everymath{\displaystyle}
+
+\AtBeginDocument{\fontsize{12pt}{16.8pt}\selectfont}
+
+% ── exam-zh 兼容层（题库的题干按 exam-zh 的写法存的） ──
+\NewDocumentCommand{\paren}{o}{\hfill（\hspace{2.2em}）}
+\NewDocumentCommand{\fillin}{o}{\underline{\hspace{2.6cm}}}
+\newenvironment{choices}%
+  {\begin{enumerate}[label=\Alph*., leftmargin=2em, itemsep=0.25em, topsep=0.4em, parsep=0pt]}%
+  {\end{enumerate}}
+\newenvironment{question}{\par\medskip}{\par}
+\newcommand{\symbfit}[1]{\boldsymbol{#1}}
+\newcommand{\symbf}[1]{\mathbf{#1}}
+\newenvironment{problem}[1][]{\par\medskip}{\par}
+\newcommand{\hwlabel}[2]{%
+  {\color{ecolor}\bfseries\large 例\,#1}\hspace{0.7em}%
+  {\small\color{gray}#2}\par\vspace{0.35em}}
+
+\graphicspath{{图片/}}
+\begin{document}
+\begin{center}{\LARGE\bfseries\color{ecolor} TeX 依赖自检卷（自编 demo 题）}\end{center}
+\vspace{1em}
+\hwlabel{1}{}
+\begin{question}
+已知集合 $A=\{1,2\}$，$B=\{2,3\}$，则 $A\cap B=$\paren[B]
+\begin{choices}
+  \item $\{1\}$
+  \item $\{2\}$
+  \item $\{3\}$
+  \item $\{1,2,3\}$
+\end{choices}
+\end{question}
+\vfill
+
+\newpage
+\hwlabel{2}{}
+\begin{question}
+已知 $a>0$，$b>0$，且 $a+b=2$，则下列结论正确的是\paren[ABC]
+\begin{choices}
+  \item $ab\leqslant 1$
+  \item $a^{2}+b^{2}\geqslant 2$
+  \item $\dfrac{1}{a}+\dfrac{1}{b}\geqslant 2$
+  \item $a^{3}+b^{3}\leqslant 2$
+\end{choices}
+\end{question}
+\vfill
+
+\newpage
+\hwlabel{3}{}
+\begin{question}
+已知函数 $f(x)=x^{2}-2x$，则 $f(x)$ 在 $[0,3]$ 上的最小值为\fillin[-1]
+\end{question}
+\vfill
+
+\newpage
+\hwlabel{4}{}
+\begin{problem}
+如图，抛物线 $y=x^{2}-2x-3$ 与 $x$ 轴交于 $A$、$B$ 两点（$A$ 在 $B$ 的左侧），与 $y$ 轴交于点 $C$。
+
+(1) 求 $A$、$B$ 两点的坐标；
+
+(2) 求 $\triangle ABC$ 的面积。
+
+\includegraphics[width=0.5\linewidth, height=0.46\textheight, keepaspectratio]{7e044a2c74964f15.png}
+\end{problem}
+\vfill
+
+\end{document}

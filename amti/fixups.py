@@ -36,7 +36,7 @@ import re
 from pathlib import Path
 
 from . import store
-from .schema import Option, Question
+from .schema import Figure, Option, Question
 
 PKG = ROOT
 CHANGE_DIR = PKG / "变更记录"
@@ -59,15 +59,14 @@ CHANGE_DIR = PKG / "变更记录"
 # 这些条目当初是对的，但它们 `expect` 记的是"改动前"的样子；题目后来又
 # 被后面的订正改过（例如题干被补充完整、题型又被改对），于是这张账
 # 既不是"还没改"、也不是"已改成 set 的样子"，全表核对就把它当冲突，
-# **整批拒绝执行**（实测：19 条新订正被这 6 条挡住）。
+# **整批拒绝执行**（实测：19 条新订正被这 6 条挡住；现只余 3 条）。
 # 历史留在 `变更记录/`，这里只注销账目，不再核对。
+# 2026-10-28：030#11、028#51、222#52 三条台账重新与现状对上（expect 命中、
+# 尚未落盘），已从注销名单移出并补做。
 RETIRED_KEYS: set[str] = {
     "2027千题册创新拔高册（上）_images/305#16",
     "2027千题册创新拔高册（下）_images/196#50",
     "2027千题册经典重点册（下）_images/020#30",
-    "2027 高考数学考前模拟十二套卷_images/030#11",
-    "2027千题册经典重点册（上）_images/028#51",
-    "2027千题册经典重点册（下）_images/222#52",
 }
 
 def _load_patches() -> list[dict]:
@@ -232,7 +231,7 @@ _MULTI_AS_SINGLE: list[tuple[str, str, str]] = [
 
 # ── 执行 ──────────────────────────────────────────────────────────────
 
-_FIELDS = ("type", "stem", "answer", "solution", "options", "meta")
+_FIELDS = ("type", "stem", "answer", "solution", "options", "meta", "figures")
 
 
 def _cur_value(q: Question, field: str):
@@ -254,6 +253,13 @@ def _check_expect(q: Question, expect: dict) -> list[str]:
             got = q.type
             if got != want:
                 bad.append("type 现在是 %r，表里写的是 %r" % (got, want))
+            continue
+        if field == "meta":
+            md = q.meta or {}
+            for k, v in (want or {}).items():
+                if md.get(k) != v:
+                    bad.append("meta[%s] 现在是 %r，表里写的是 %r"
+                               % (k, md.get(k), v))
             continue
         got = _cur_value(q, field)
         if field == "options":
@@ -305,6 +311,11 @@ def _matches_target(q: Question, spec: dict, by_key: dict) -> bool:
         for k, v in st["meta"].items():
             if (q.meta or {}).get(k) != v:
                 return False
+    if "figures" in st:
+        want = [Figure(**f) if isinstance(f, dict) else Figure(*f) for f in st["figures"]]
+        if ([(f.id, f.kind, f.width, f.tikz, f.source) for f in q.figures]
+                != [(f.id, f.kind, f.width, f.tikz, f.source) for f in want]):
+            return False
     return True
 
 
@@ -370,9 +381,18 @@ def _apply_one(q: Question, spec: dict, by_key: dict) -> list[str]:
             notes.append("选项改动 %d 处：%s"
                          % (len(diff), "；".join("%s → %s" % (a, b) for a, b in diff)))
     if "meta" in st:
+        # 值为 None ⇒ **删掉这个键**，不是写一个 null。`dup_of` 绑错题时要的是
+        # 「根本没有绑定」，留个 null 会让界面/闸门都看见一个假字段。
         for k, v in st["meta"].items():
-            q.meta[k] = v
+            if v is None:
+                q.meta.pop(k, None)
+            else:
+                q.meta[k] = v
         notes.append("meta 写入 %d 项：%s" % (len(st["meta"]), "、".join(st["meta"])))
+    if "figures" in st:
+        q.figures = [Figure(**f) if isinstance(f, dict) else Figure(*f)
+                     for f in st["figures"]]
+        notes.append("配图登记 %d 项" % len(q.figures))
     if st.get("drop_figures"):
         q.figures = []
         q.meta.pop("figure_missing", None)
@@ -400,13 +420,19 @@ def _is_multi_noise(q: Question) -> bool:
             and not any(c in ans for c in "ABCD"))
 
 
-def run(*, yes: bool = False, quiet: bool = False) -> dict:
+def run(*, yes: bool = False, quiet: bool = False, allow_drift: bool = False) -> dict:
     r"""跑一遍订正账。**没有 `yes=True` 一律不动盘。**
 
     先全表核对 `expect`，**有一条对不上就整批不执行**——
     宁可让人来看，也不要改半截。
+
+    `allow_drift=True` 时把「对不上」降级成**逐条跳过并如实上报**，其余照常执行。
+    为什么要有这个口子：这张账是**跨会话共享**的活账（现 1288 条），别的会话删过题、
+    改过答案，就会留下若干条 `expect` 永远对不上的陈旧行；按原语义，**一条陈旧行能把
+    全库的订正永久冻住**。逐条跳过并没有放松护栏——每一条要改的题仍然各自核对现状、
+    仍然先过 `conform` 才落盘，只是不再被**别人**的陈旧行连坐。
     """
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     by_key = {q.key: q for q in qs}
     tgt = {q.key: q for q in qs}
 
@@ -458,12 +484,12 @@ def run(*, yes: bool = False, quiet: bool = False) -> dict:
         return {"ok": False, "problems": spec_fail + problems,
                 "plan": len(plan), "done": done, "changed": [], "written": False}
 
-    if problems:
+    if problems and not allow_drift:
         return {"ok": False, "problems": problems, "plan": len(plan),
                 "done": done, "changed": [], "written": False}
     if not yes:
         return {"ok": True, "dry_run": True, "plan": len(plan),
-                "done": done, "leftover": leftover,
+                "done": done, "leftover": leftover, "skipped_drift": problems,
                 "items": [{"key": s["key"], "why": s["why"], "src": s["src"]}
                           for s in plan],
                 "changed": [], "written": False}
@@ -488,7 +514,7 @@ def run(*, yes: bool = False, quiet: bool = False) -> dict:
         return {"ok": True, "changed": [], "written": False,
                 "note": "没有要改的", "leftover": leftover}
 
-    store.rewrite_all(qs)
+    store.rewrite_all(qs, based_on=_sig)
 
     CHANGE_DIR.mkdir(parents=True, exist_ok=True)
     report = CHANGE_DIR / ("%s_逐题订正.md"
@@ -588,11 +614,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="逐题订正（默认干跑）")
     ap.add_argument("--yes", action="store_true", help="真的落盘")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--allow-drift", action="store_true",
+                    help="陈旧行（expect 对不上）逐条跳过并上报，不连坐整批")
     a = ap.parse_args()
     if a.selftest:
         return _selftest()
 
-    r = run(yes=a.yes)
+    r = run(yes=a.yes, allow_drift=getattr(a, "allow_drift", False))
+    if r.get("skipped_drift"):
+        print("⚠ 跳过 %d 条对不上的陈旧账目（不动它们，也不被它们连坐）："
+              % len(r["skipped_drift"]))
+        for p_ in r["skipped_drift"][:10]:
+            print("   · %s" % p_)
     if not r.get("ok"):
         print("✗ 有题对不上，整批没执行：")
         for p in r["problems"]:

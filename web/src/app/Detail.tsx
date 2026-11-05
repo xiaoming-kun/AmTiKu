@@ -1,19 +1,20 @@
 /** 题目详情：题干 / 答案 / 解析 / 标签编辑。
  *
  *  从 App.tsx 搬出来的（审查报告 CPLX-1）。这几个组件互相引用，
- *  所以放在同一个文件里（TagsEditor 用 Drawer，DetailBody 用 TexSource
- *  + SolutionEditor）。
+ *  所以放在同一个文件里（TagsEditor 用 Drawer，DetailBody 用 SolutionEditor）。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, Check, ChevronDown, ChevronRight, Copy, FileCode,
+  AlertTriangle, Check, ChevronDown, ChevronRight, FileCode2,
   Loader2, Pencil, Plus, Save, Search, Trash2, X,
 } from 'lucide-react'
-import { renderBlocks } from '@/lib/render'
-import type { Q } from '@/lib/types'
-import { api } from '@/lib/api'
+import { Highlight, renderBlocks } from '@/lib/render'
+import type { Q, SavedHandler } from '@/lib/types'
+import { api, reportErr } from '@/lib/api'
 import { Flags } from '@/app/ui'
-import { DIFF_STARS } from '@/lib/display'
+import SourceEditor from '@/app/SourceEditor'
+import BusyOverlay from '@/app/BusyOverlay'
+import { DIFF_STARS, hasImageOptions, optionRange, starsLabel } from '@/lib/display'
 
 /** 直接录 LaTeX 解析与答案，**经规范审查后**才写入。
  *
@@ -27,7 +28,7 @@ import { DIFF_STARS } from '@/lib/display'
  *  审查和保存走**同一个后端接口**（只差 `dry_run`），所以
  *  "预览看到的" 和 "真写进去的" 必然是同一个东西。 */
 export function SolutionEditor({ q, onSaved, onCancel }: {
-  q: Q; onSaved: (d: Q) => void; onCancel: () => void
+  q: Q; onSaved: SavedHandler; onCancel: () => void
 }) {
   const [sol, setSol] = useState(q.solution || '')
   const [ans, setAns] = useState(q.answer || '')
@@ -47,7 +48,7 @@ export function SolutionEditor({ q, onSaved, onCancel }: {
     }).then((d) => {
       if (d.ok === false) { setErr(d.error || '规范审查没通过'); setRep(d) }
       else if (dry) setRep(d)
-      else { onSaved(d); onCancel() }
+      else { onSaved(d, { refreshList: true, silent: true }); onCancel() }
     }).catch((e) => setErr(String(e.message || e)))
       .finally(() => setBusy(false))
   }
@@ -154,34 +155,133 @@ export function SolutionEditor({ q, onSaved, onCancel }: {
   )
 }
 
-export function Detail({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
+export function Detail({ q, onSaved, facets, onFindPoint, onDeleteAsk, refreshing = false, kw }: {
   q: Q | null
-  onSaved: (d: Q) => void
+  onSaved: SavedHandler
   facets: any
+  /** 搜索词：详情里的题干/答案/解析也高亮命中（可选） */
+  kw?: string
+  /** 列表正在重新拉取（标签保存后的自动刷新）。详情顶部给一条进度条，
+   *  让人看见"页面正在刷新"，而不是数据悄悄换了。 */
+  refreshing?: boolean
   /** 透传给 DetailBody：点考点 → 去列表看同类题 */
   onFindPoint?: (pid: string, title: string) => void
   onDeleteAsk?: () => void
 }) {
   if (!q) return <div className="flex h-full items-center justify-center text-[13px] text-ink-faint">选一道题</div>
 
-  return <DetailBody q={q} onSaved={onSaved} facets={facets}
-                     onFindPoint={onFindPoint} onDeleteAsk={onDeleteAsk} />
+  return <DetailBody q={q} onSaved={onSaved} facets={facets} refreshing={refreshing}
+                     onFindPoint={onFindPoint} onDeleteAsk={onDeleteAsk} kw={kw} />
 }
 
-/** 难度与考点的**编辑**控件（下拉抽屉式）。 */
-export function TagsEditor({ q, onSaved, facets }: {
-  q: Q; onSaved: (d: Q) => void; facets: any
+/** 出处输入框的统一样式（三行共用，别再各写一份）。 */
+const SRC_INPUT = 'h-[30px] w-full rounded-lg border border-border bg-bg px-2 text-[12.5px] ' +
+  'outline-none placeholder:text-ink-faint transition-[border-color,box-shadow] ' +
+  'duration-150 focus:border-brand-line focus:bg-surface ' +
+  'focus:shadow-[0_0_0_3px_var(--color-brand-soft)]'
+
+/** 难度、考点、出处的**编辑**控件（下拉抽屉式）。 */
+export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }: {
+  q: Q; onSaved: SavedHandler; facets: any
+  /** 列表正在重新拉取（由 App 的 loading 传下来） */
+  refreshing?: boolean
+  /** 搜索词：考点名也高亮命中（注意和下面管搜索框的 `kw` 区分） */
+  searchKw?: string
 }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [kw, setKw] = useState('')
+  // 出处四件套：只在这张抽屉里当草稿，**不点保存就不写库**——
+  // 边打字边写库的话，key 会一路跟着变（`书/卷名#题号`），列表刷得停不下来。
+  const [srcBook, setSrcBook] = useState('')
+  const [srcLabel, setSrcLabel] = useState('')
+  const [srcNo, setSrcNo] = useState('')     // 题号 = key 里 `#` 后面那截
+  const [srcYear, setSrcYear] = useState('')
+  // 保存成功后**这一行闪一下 + 冒一个「已保存」**。改难度/考点是高频动作，
+  // 值虽然当场就变了，但没有"收到了"的反馈，人不知道到底存没存。
+  const [flash, setFlash] = useState<'' | '难度' | '考点' | '出处'>('')
+  // 正在存哪一项。整库写回要几秒；这期间 + 之后的列表刷新期间，
+  // 屏幕正中会有一个**阻塞遮罩**（用户要的：刷新时做不了别的事）。
+  const [savingWhat, setSavingWhat] = useState<'' | '难度' | '考点' | '出处'>('')
+  // 保存完了、但列表还没刷完：遮罩留在原地，换成「正在刷新页面…」。
+  const [refreshingTag, setRefreshingTag] = useState(false)
+  const [sawRefresh, setSawRefresh] = useState(false)
+  const flashTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (flashTimer.current) window.clearTimeout(flashTimer.current)
+  }, [])
+  useEffect(() => {
+    if (!refreshingTag) return
+    // 先等列表真的开始拉（refreshing=true），再等它结束（false）才撤遮罩。
+    // 少了"先见到 true"这一步，保存刚结束那一瞬间的 false 会误撤。
+    if (refreshing) setSawRefresh(true)
+    else if (sawRefresh) { setRefreshingTag(false); setSawRefresh(false) }
+  }, [refreshing, refreshingTag, sawRefresh])
+  useEffect(() => {
+    // **兜底**：有些入口没有「列表刷新」这回事（`refreshing` 一直是 false）。
+    // 2 秒内没见到列表开始拉，就认为这次没有刷新，撤掉。
+    if (!refreshingTag || sawRefresh) return
+    const t = window.setTimeout(() => {
+      setRefreshingTag(false); setSawRefresh(false)
+    }, 2000)
+    return () => window.clearTimeout(t)
+  }, [refreshingTag, sawRefresh])
 
-  const save = async (body: Record<string, unknown>) => {
-    setBusy(true); setErr('')
+  // 换题/保存完 → 草稿跟着当前值重置（改名后 key 变了也算换了题，
+  // 否则输入框里还是旧书名，再点一次保存又把它改回去）
+  useEffect(() => {
+    setSrcBook(String(q.meta?.book || ''))
+    setSrcLabel(String(q.meta?.source_label || ''))
+    setSrcNo(q.key.includes('#') ? q.key.slice(q.key.lastIndexOf('#') + 1) : '1')
+    setSrcYear(q.meta?.year ? String(q.meta.year) : '')
+  }, [q.key, q.meta?.book, q.meta?.source_label, q.meta?.year])
+
+  /** 改完出处，key 会变成什么（预览给用户看，别让人保存完才发现动了身份）。 */
+  const keyTail = q.key.includes('#') ? q.key.slice(q.key.lastIndexOf('#') + 1) : '1'
+  const keyHead = q.key.includes('#') ? q.key.slice(0, q.key.lastIndexOf('#')) : q.key
+  const no = srcNo.trim()
+  // 题号统一成不带前导零的正整数——和后端 `patch_question` 同一套规则，
+  // 也保证 `#` 后面那截永远是纯数字。
+  const noOk = /^[1-9]\d*$/.test(no)
+  // key 是不是**由出处拼出来的**。历史数据里有 `书/年份/卷名#号` 这种多一层
+  // 目录的 key，和 `meta.book`+`source_label` 不同构；那种题改出处只动标签，
+  // key 的目录保持原样（否则等于换身份，组过的卷子就断引用）。规则与后端同一份。
+  const keyDerivable = q.key === `${q.meta?.book || ''}/${q.meta?.source_label || ''}#${keyTail}`
+  // **题号是另一回事**：哪怕 key 不同构，用户明确改了题号也该换掉 `#` 后面那截，
+  // 只是别把 `书/年份/卷名` 那层目录重拼（那就成换身份了）。
+  const nextKey = keyDerivable
+    ? `${srcBook.trim()}/${srcLabel.trim()}#${no || keyTail}`
+    : `${keyHead}#${no || keyTail}`
+
+  const saveSrc = () => {
+    const book = srcBook.trim()
+    const label = srcLabel.trim()
+    if (!book || !label) { setErr('来源和出处都不能空'); return }
+    if (!noOk) { setErr('题号要是正整数，如 22'); return }
+    save({ source: { book, label, year: srcYear.trim(), no } }, '出处')
+  }
+
+  const markSaved = (what: '难度' | '考点' | '出处') => {
+    setFlash(what)
+    if (flashTimer.current) window.clearTimeout(flashTimer.current)
+    flashTimer.current = window.setTimeout(() => setFlash(''), 1600)
+  }
+
+  const save = async (body: Record<string, unknown>, what: '难度' | '考点' | '出处') => {
+    setBusy(true); setErr(''); setSavingWhat(what)
+    setRefreshingTag(false); setSawRefresh(false)
     try {
-      onSaved(await api.patch(q.key, body))
+      // `refreshList`：标签一改，当前筛选下的列表/计数就可能变，
+      // 让列表带着筛选条件**重新拉一遍**（用户说的「自动刷新」）。
+      onSaved(await api.patch(q.key, body), { refreshList: true })
+      markSaved(what)
+      // 遮罩不撤：从「保存」平滑过渡到「刷新」，直到列表拉完
+      setSavingWhat('')
+      setRefreshingTag(true)
     } catch (e: any) {
       setErr(e.message || '保存失败')
+      setSavingWhat('')
+      setRefreshingTag(false); setSawRefresh(false)
     } finally {
       setBusy(false)
     }
@@ -208,14 +308,28 @@ export function TagsEditor({ q, onSaved, facets }: {
   return (
     <div className="space-y-2">
       {/* ── 难度：抽屉 ── */}
-      <Drawer label="难度"
+      <Drawer label="难度" flash={flash === '难度'}
         summary={
-          <span className="inline-flex items-baseline gap-1.5">
-            <span className="tracking-tight text-warn">{'★'.repeat(n) || '—'}</span>
-            <span className="text-[11.5px] text-ink-soft">{q.difficulty || '未定'}</span>
-            <span className="text-[11px] text-ink-faint">
-              {q.meta?.difficulty ? '（手动）' : '（按主考点）'}
+          <span className={`inline-flex items-baseline gap-1.5 rounded px-1 -mx-1 ${
+            flash === '难度' ? 'anim-flash' : ''}`}>
+            <span className={`tracking-tight ${n > 0 ? 'text-warn' : 'text-ink-faint'}`}>
+              {starsLabel(n)}
             </span>
+            <span className="text-[11.5px] text-ink-soft">{q.difficulty || '未评级'}</span>
+            <span className="text-[11px] text-ink-faint">
+              {q.meta?.difficulty_source === 'model' ? '（模型推定）'
+                : q.meta?.difficulty ? '（手动）' : '（按主考点）'}
+            </span>
+            {savingWhat === '难度' ? (
+              <span className="anim-fade-in inline-flex items-center gap-0.5 text-[10.5px] text-brand-ink">
+                <Loader2 size={10} className="animate-spin" />保存中…
+              </span>
+            ) : flash === '难度' ? (
+              <span className="anim-fade-up inline-flex items-center gap-0.5 text-[10.5px]
+                               font-medium text-has">
+                <Check size={10} />已保存
+              </span>
+            ) : null}
           </span>}>
         <div className="flex flex-wrap gap-1.5">
           {['简单题', '中档题', '难题'].map((d) => {
@@ -223,18 +337,19 @@ export function TagsEditor({ q, onSaved, facets }: {
             const k = DIFF_STARS[d] || 0
             return (
               <button key={d} disabled={busy}
-                onClick={() => save({ difficulty: d, stars: k })}
+                onClick={() => save({ difficulty: d, stars: k }, '难度')}
                 className={`press flex flex-1 items-center justify-center gap-1 rounded-full border
                             px-2 py-[5px] text-[12px] font-medium transition-colors ${
                   on ? 'border-brand bg-brand text-white shadow-[0_2px_8px_-3px_var(--color-brand)]'
-                     : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                     : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}
+                            ${on && flash === '难度' ? 'anim-bump' : ''}`}>
                 <span className="tracking-tight">{'★'.repeat(k)}</span>
                 <span className="text-[11px]">{d.replace('题', '')}</span>
               </button>
             )
           })}
           {q.meta?.difficulty && (
-            <button disabled={busy} onClick={() => save({ difficulty: '', stars: 0 })}
+            <button disabled={busy} onClick={() => save({ difficulty: '', stars: 0 }, '难度')}
               title="清掉手改的难度，恢复成按主考点自动派生"
               className="press rounded-full border border-border bg-surface px-2.5 py-[5px]
                          text-[11.5px] text-ink-faint transition-colors hover:border-border-strong
@@ -246,25 +361,43 @@ export function TagsEditor({ q, onSaved, facets }: {
       </Drawer>
 
       {/* ── 考点：抽屉 ── */}
-      <Drawer label="考点"
+      <Drawer label="考点" flash={flash === '考点'}
         warn={q.point_titles.length > 3 ? `${q.point_titles.length} 个` : undefined}
         summary={
-          <span className="inline-flex flex-wrap items-baseline gap-1">
+          <span className={`inline-flex flex-wrap items-baseline gap-1 rounded px-1 -mx-1 ${
+            flash === '考点' ? 'anim-flash' : ''}`}>
             {q.point_titles.length === 0
               ? <span className="text-[11.5px] text-ink-faint">未标</span>
               : q.point_titles.map((t, i) => (
                   <span key={i} className={`rounded-full px-1.5 py-[1px] text-[11px] font-medium ${
                     i === 0 ? 'bg-brand-soft text-brand-ink' : 'bg-muted text-ink-soft'}`}>
                     {i === 0 && <span className="mr-0.5 text-[9.5px] font-normal opacity-70">主</span>}
-                    {t}
+                    <Highlight text={t} kw={searchKw} />
                   </span>
                 ))}
+            {q.meta?.point_source && (
+              <span className="rounded-full border border-border px-1.5 py-[1px] text-[10px] text-ink-faint"
+                title="考点标注来源">
+                {q.meta.point_source === 'human' ? '人工标注' : 'AI标注'}
+              </span>
+            )}
+            {savingWhat === '考点' ? (
+              <span className="anim-fade-in inline-flex items-center gap-0.5 text-[10.5px] text-brand-ink">
+                <Loader2 size={10} className="animate-spin" />保存中…
+              </span>
+            ) : flash === '考点' ? (
+              <span className="anim-fade-up inline-flex items-center gap-0.5 text-[10.5px]
+                               font-medium text-has">
+                <Check size={10} />已保存
+              </span>
+            ) : null}
           </span>}>
         <div className="text-[11px] leading-relaxed text-ink-faint">
           <X size={11} className="mr-1 inline-block align-middle" />
           删掉这条 · 下面搜名字加一条 · 与主考点<b className="font-medium text-ink-soft">不同章</b>的会标出章名
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className={`mt-2 flex flex-wrap items-center gap-1.5 ${
+          flash === '考点' ? 'anim-bump' : ''}`}>
           {q.point_titles.map((t, i) => {
             const off = offChapter(q.points[i], i)
             return (
@@ -274,7 +407,7 @@ export function TagsEditor({ q, onSaved, facets }: {
                   i === 0 ? 'border-brand-line bg-brand-soft text-brand-ink'
                           : 'border-border bg-surface text-ink-soft'}`}>
                 {i === 0 && <span className="text-[9.5px] font-normal opacity-70">主</span>}
-                {t}
+                <Highlight text={t} kw={searchKw} />
                 {off && (
                   <span className="rounded-full bg-warn-soft px-1 text-[9.5px] font-normal text-warn"
                     title="与主考点不在同一章，留神是不是标错了">
@@ -284,7 +417,7 @@ export function TagsEditor({ q, onSaved, facets }: {
                 {i > 0 && (
                   <button disabled={busy}
                     onClick={() => save({
-                      points: [q.points[i], ...q.points.filter((_, j) => j !== i)] })}
+                      points: [q.points[i], ...q.points.filter((_, j) => j !== i)] }, '考点')}
                     title="设为主考点（难度按主考点派生）"
                     className="text-[9.5px] font-normal text-ink-faint transition-colors
                                hover:text-brand-ink">
@@ -292,7 +425,7 @@ export function TagsEditor({ q, onSaved, facets }: {
                   </button>
                 )}
                 <button disabled={busy}
-                  onClick={() => save({ points: q.points.filter((_, j) => j !== i) })}
+                  onClick={() => save({ points: q.points.filter((_, j) => j !== i) }, '考点')}
                   title="从这道题上删掉这个考点"
                   className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-ink-faint
                              transition-colors hover:bg-warn-soft hover:text-warn">
@@ -317,7 +450,7 @@ export function TagsEditor({ q, onSaved, facets }: {
           <div className="mt-2 flex flex-wrap gap-1.5">
             {hits.map((p) => (
               <button key={p.value}
-                onClick={() => { save({ points: [...q.points, p.value] }); setKw('') }}
+                onClick={() => { save({ points: [...q.points, p.value] }, '考点'); setKw('') }}
                 className="press rounded-full border border-border bg-surface px-2 py-[3px]
                            text-[11.5px] text-ink-soft transition-colors hover:border-brand-line
                            hover:bg-brand-soft/50 hover:text-brand-ink">
@@ -327,6 +460,83 @@ export function TagsEditor({ q, onSaved, facets }: {
             {!hits.length && <span className="text-[11.5px] text-ink-faint">没有匹配的考点</span>}
           </div>
         )}
+      </Drawer>
+
+      {/* ── 出处：抽屉 ──
+          用户的原话：「录入时出处填错了，录完就改不回来」。四样都能改，
+          而 key 是 `书/卷名#题号` 拼出来的，所以**改名会连 key 一起改**——
+          下面直接把新 key 摆出来，别让人保存完才发现自己动了身份。 */}
+      <Drawer label="出处" flash={flash === '出处'}
+        summary={
+          <span className={`inline-flex min-w-0 items-baseline gap-1 rounded px-1 -mx-1 ${
+            flash === '出处' ? 'anim-flash' : ''}`}>
+            <span className="truncate text-[11.5px] text-ink-soft">
+              {q.meta.book || '未标来源'}
+            </span>
+            <span className="text-[11px] text-ink-faint">/</span>
+            <span className="truncate text-[11.5px] text-ink-soft">
+              {q.meta.source_label || '未标出处'}
+            </span>
+            {q.meta.year ? (
+              <span className="text-[11px] text-ink-faint">· {q.meta.year}</span>
+            ) : null}
+            {savingWhat === '出处' ? (
+              <span className="anim-fade-in inline-flex items-center gap-0.5 text-[10.5px] text-brand-ink">
+                <Loader2 size={10} className="animate-spin" />保存中…
+              </span>
+            ) : flash === '出处' ? (
+              <span className="anim-fade-up inline-flex items-center gap-0.5 text-[10.5px]
+                               font-medium text-has">
+                <Check size={10} />已保存
+              </span>
+            ) : null}
+          </span>}>
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-[38px_1fr] items-center gap-1.5">
+            <span className="text-[11.5px] text-ink-faint">来源</span>
+            <input value={srcBook} onChange={(e) => setSrcBook(e.target.value)}
+              placeholder="书 / 大类，如 2027模拟卷" className={SRC_INPUT} />
+          </div>
+          <div className="grid grid-cols-[38px_1fr] items-center gap-1.5">
+            <span className="text-[11.5px] text-ink-faint">出处</span>
+            <input value={srcLabel} onChange={(e) => setSrcLabel(e.target.value)}
+              placeholder="卷名，如 陕晋青百师联盟10月测试" className={SRC_INPUT} />
+          </div>
+          <div className="grid grid-cols-[38px_1fr] items-center gap-1.5">
+            <span className="text-[11.5px] text-ink-faint">题号</span>
+            <input value={srcNo} onChange={(e) => setSrcNo(e.target.value)}
+              placeholder="第几题，如 22" inputMode="numeric" className={SRC_INPUT} />
+          </div>
+          <div className="grid grid-cols-[38px_1fr] items-center gap-1.5">
+            <span className="text-[11.5px] text-ink-faint">年份</span>
+            <input value={srcYear} onChange={(e) => setSrcYear(e.target.value)}
+              placeholder="如 2027（可空）" inputMode="numeric" className={SRC_INPUT} />
+          </div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          {!noOk ? (
+            <span className="text-warn">题号要是正整数（如 22）——它同时决定 key 和卷面上的出处。</span>
+          ) : nextKey !== q.key ? (
+            <>key 会跟着改 → <code className="font-mono text-ink-soft">{nextKey}</code>
+              <div className="mt-0.5">
+                旧：<code className="font-mono line-through opacity-70">{q.key}</code>
+                <span className="ml-1">（已组进卷子/讲义的会一起改）</span>
+              </div>
+            </>
+          ) : !keyDerivable ? (
+            <>key 不动：这道题的 key 是历史结构（如 <code className="font-mono">书/年份/卷名#号</code>），
+              不是出处拼出来的 —— 保存只改出处标签。</>
+          ) : (
+            <>key 不变：<code className="font-mono text-ink-soft">{q.key}</code></>
+          )}
+        </div>
+        <button disabled={busy || !srcBook.trim() || !srcLabel.trim() || !noOk} onClick={saveSrc}
+          className="press mt-2 h-[28px] w-full rounded-lg border border-brand-line bg-brand-soft
+                     text-[12px] font-medium text-brand-ink transition-colors
+                     hover:bg-brand hover:text-white disabled:cursor-not-allowed
+                     disabled:border-border disabled:bg-muted disabled:text-ink-faint">
+          保存出处
+        </button>
       </Drawer>
 
       {err && (
@@ -339,12 +549,24 @@ export function TagsEditor({ q, onSaved, facets }: {
           <Loader2 size={12} className="animate-spin" />保存中…
         </div>
       )}
+
+      {/* **居中阻塞遮罩**：保存和随后的列表刷新期间，屏幕正中一张卡片，
+          鼠标/键盘都过不去。保存完不立刻撤，等列表真的刷完再撤。 */}
+      {(savingWhat || refreshingTag) && (
+        <BusyOverlay
+          title={savingWhat ? `正在保存${savingWhat}…` : '已保存，正在刷新页面…'}
+          note={savingWhat
+            ? '正在写回题库，请稍候（约需几秒）'
+            : '列表和筛选项正在重新加载'} />
+      )}
     </div>
   )
 }
 
-export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
-  q: Q; onSaved: (d: Q) => void; facets: any
+export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refreshing = false, kw }: {
+  q: Q; onSaved: SavedHandler; facets: any
+  refreshing?: boolean
+  kw?: string
   onFindPoint?: (pid: string, title: string) => void
   onDeleteAsk?: () => void
 }) {
@@ -362,19 +584,30 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
     const body: Record<string, unknown> = { type: typeNew }
     if (typeAns !== (q.answer || '')) body.answer = typeAns
     api.patch(q.key, body)
-      .then((d) => { onSaved(d); setTypeEdit(false) })
+      .then((d) => { onSaved(d, { refreshList: true, silent: true }); setTypeEdit(false) })
       .catch((e: any) => setTypeErr(String(e.message || e)))
       .finally(() => setTypeBusy(false))
   }
   const [solEdit, setSolEdit] = useState(false)
+  // 改源码：**整道题的 LaTeX 正文**（不是只改答案/解析）。入口要显眼，
+  // 题干里的公式写坏时不用再去找 `题目/*.tex`。
+  const [srcEdit, setSrcEdit] = useState(false)
   const [ansEdit, setAnsEdit] = useState(false)
   const [ansText, setAnsText] = useState('')
   const [ansBusy, setAnsBusy] = useState(false)
   const [ansErr, setAnsErr] = useState('')
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const toggleReview = () => {
+    setReviewBusy(true)
+    api.patch(q.key, { reviewed: !q.meta?.reviewed_at })
+      .then((d) => onSaved(d, { refreshList: true, silent: true }))
+      .catch(reportErr)
+      .finally(() => setReviewBusy(false))
+  }
   const saveAnswer = () => {
     setAnsBusy(true); setAnsErr('')
     api.patch(q.key, { answer: ansText })
-      .then((d) => { onSaved(d); setAnsEdit(false) })
+      .then((d) => { onSaved(d, { refreshList: true, silent: true }); setAnsEdit(false) })
       .catch((e: any) => setAnsErr(String(e.message || e)))
       .finally(() => setAnsBusy(false))
   }
@@ -395,6 +628,19 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
     'shadow-[var(--shadow-card)]'
   return (
     <div className="h-full overflow-y-auto px-5 py-4">
+      {/* **页面正在刷新**：标签保存后列表会带着筛选重新拉一遍。
+          数据变化本身是无声的，所以给一条不定长进度条——不假装知道百分比，
+          只说明"还在动"。sticky 保证滚到解析中段时也看得见。 */}
+      {refreshing && (
+        <div className="anim-fade-in sticky top-0 z-30 -mx-5 -mt-4 mb-3 border-b border-border
+                        bg-surface/95 px-5 py-2 backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-[10.5px] font-medium text-brand-ink">正在刷新列表…</span>
+            <div className="progress-track flex-1" />
+          </div>
+        </div>
+      )}
+
       {/* ── 状态行：题型 / 类别 / 完整度 / hash ── */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
         <button onClick={() => { setTypeEdit(true); setTypeNew(q.type); setTypeAns(q.answer || ''); setTypeErr('') }}
@@ -410,7 +656,17 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
           q.kind === '高考' ? 'border-brand bg-brand text-white' : 'border-border bg-surface text-ink-soft'}`}>
           {q.kind}题
         </span>
-        <Flags flags={q.flags} size="md" />
+        <Flags flags={q.flags} size="md" type={q.type} />
+        {/* **改源码**：题干/选项/答案/解析整段 LaTeX 都在这里改。
+            不设口令；打开就是编辑器，保存前过规范审查。 */}
+        <button onClick={() => setSrcEdit(true)}
+          title="直接改这道题的 LaTeX 源码"
+          className="press inline-flex items-center gap-1.5 rounded-full border border-border
+                     bg-surface px-2.5 py-[5px] text-[12.5px] text-ink-faint
+                     transition-colors hover:border-brand-line hover:bg-brand-soft/50
+                     hover:text-brand-ink">
+          <FileCode2 size={13} />改源码
+        </button>
         <span className="ml-auto font-mono text-[10.5px] text-ink-faint">#{q.hash}</span>
       </div>
 
@@ -462,16 +718,21 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
       {/* ── 题干 ── */}
       <div className="mb-5">
         <div className={`mb-1.5 ${sectionTitle}`}>题干</div>
-        <div className="q-stem text-ink">{renderBlocks(q.blocks?.stem)}</div>
-        {q.options.length > 0 && (
+        <div className="q-stem text-ink">{renderBlocks(q.blocks?.stem, kw)}</div>
+        {q.options.length > 0 && !hasImageOptions(q) && (
           <ul className="q-options mt-3 space-y-1">
             {q.options.map((o, i) => (
               <li key={o.label}>
                 <span className="lbl">{o.label}.</span>
-                <span>{renderBlocks(q.blocks?.options?.[i])}</span>
+                <span>{renderBlocks(q.blocks?.options?.[i], kw)}</span>
               </li>
             ))}
           </ul>
+        )}
+        {hasImageOptions(q) && (
+          <div className="mt-2 text-[11.5px] text-ink-faint">
+            选项见图（{optionRange(q)}，图片在题干中）
+          </div>
         )}
       </div>
 
@@ -493,9 +754,21 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
               {q.answer ? '改' : '补答案'}
             </button>
           )}
-          {q.meta?.answer_source === 'human' && (
-            <span className="text-[11px] text-ink-faint">人工填的</span>
+          {q.meta?.answer_source && (
+            <span className="rounded-full border border-border px-1.5 py-[1px] text-[10px] text-ink-faint"
+              title="答案来源：human=人工改过 / workbuddy=模型生成 / legacy=历史存量">
+              {q.meta.answer_source === 'human' ? '人工'
+                : q.meta.answer_source === 'workbuddy' ? '模型' : '历史存量'}
+            </span>
           )}
+          <button onClick={toggleReview} disabled={reviewBusy}
+            title={q.meta?.reviewed_at ? `已复核：${q.meta.reviewed_at}` : '标记为已复核（答案和解析都看过了）'}
+            className={`press rounded-full border px-1.5 py-[1px] text-[10px] transition-colors ${
+              q.meta?.reviewed_at
+                ? 'border-has-line bg-has-soft text-has'
+                : 'border-border bg-surface text-ink-faint hover:border-brand-line hover:text-brand-ink'}`}>
+            {q.meta?.reviewed_at ? '已复核' : '标记复核'}
+          </button>
         </div>
         {ansEdit ? (
           <div className={panel}>
@@ -530,7 +803,7 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
         ) : q.answer ? (
           // 答案**标红**（用户要求：要一眼看到）。学生版/题目列表不受影响。
           <div className="text-[14.5px] font-semibold leading-relaxed text-danger">
-            {renderBlocks(q.blocks?.answer)}
+            {renderBlocks(q.blocks?.answer, kw)}
           </div>
         ) : (
           <div className="text-[12.5px] text-ink-faint">（暂时没有答案）</div>
@@ -558,7 +831,7 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
         {solEdit
           ? <SolutionEditor q={q} onSaved={onSaved} onCancel={() => setSolEdit(false)} />
           : q.solution
-            ? <div className="q-solution text-ink-soft">{renderBlocks(q.blocks?.solution)}</div>
+            ? <div className="q-solution text-ink-soft">{renderBlocks(q.blocks?.solution, kw)}</div>
             : <div className="text-[12.5px] text-ink-faint">（暂时没有解析）</div>}
       </div>
 
@@ -594,7 +867,7 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
             </div>
           </div>
         )}
-        <TagsEditor q={q} onSaved={onSaved} facets={facets} />
+        <TagsEditor q={q} onSaved={onSaved} facets={facets} refreshing={refreshing} searchKw={kw} />
         {q.missing.length > 0 && (
           <div className="flex items-center gap-1.5 text-[11.5px] text-warn">
             <AlertTriangle size={12} className="shrink-0" />缺：{q.missing.join('、')}
@@ -625,71 +898,29 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk }: {
           {q.meta.year ? ` · ${q.meta.year}` : ''} · <code className="font-mono">{q.key}</code>
         </div>
       </div>
+
+      {/* 源码编辑器用 portal 挂到 body（详情抽屉带 transform 动画，
+          `fixed` 留在里面会以抽屉为参照跑偏），这里只负责开关。 */}
+      {srcEdit && (
+        <SourceEditor q={q} onSaved={onSaved} onClose={() => setSrcEdit(false)} />
+      )}
     </div>
   )
 }
 
-/** LaTeX 源码面板。
- *
- *  只在抽屉展开时才挂载（`Drawer` 的 children 是打开才渲染），
- *  所以**不展开就不会多打一次接口**。
- *  源码取自 `/api/questions/{key}` 的 `tex`——那是 `render_tex.py`
- *  真正会写进 `.tex` 文件的内容，不是前端照猫画虎拼的。 */
-export function TexSource({ qkey }: { qkey: string }) {
-  const [tex, setTex] = useState('')
-  const [err, setErr] = useState('')
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    setTex(''); setErr('')
-    api.get(qkey).then((d) => setTex(d?.tex || '（没有源码）'))
-      .catch((e) => setErr(String(e)))
-  }, [qkey])
-
-  const copy = () => {
-    navigator.clipboard?.writeText(tex).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 1200)
-    }).catch(() => {})
-  }
-
-  if (err) return (
-    <div className="flex items-start gap-1.5 text-[11.5px] text-warn">
-      <X size={12} className="mt-[2px] shrink-0" />{err}
-    </div>
-  )
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <FileCode size={13} className="shrink-0 text-ink-faint" />
-        <span className="text-[11.5px] leading-relaxed text-ink-faint">
-          这段就是写进 .tex 文件的内容，可直接粘到别处用
-        </span>
-        <button onClick={copy}
-          className="press ml-auto inline-flex h-[28px] shrink-0 items-center gap-1.5 rounded-lg
-                     border border-border bg-surface px-2.5 text-[11.5px] text-ink-soft
-                     transition-colors hover:border-border-strong hover:text-ink">
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          {copied ? '已复制' : '复制'}
-        </button>
-      </div>
-      {/* 保留原始换行与缩进；横向不折行，长公式靠横向滚动看全 */}
-      <pre className="max-h-[420px] overflow-auto rounded-lg border border-border bg-surface-2
-                      p-3 font-mono text-[11.5px] leading-relaxed text-ink-soft">
-        {tex || '读取中…'}
-      </pre>
-    </div>
-  )
-}
 /** 难度与考点的**编辑**控件。 */
 /** 通用**下拉抽屉**：点标题展开，收起时只占一行。
  *  考点和难度都用它——详情页本来就窄，两排常驻控件太占地方。 */
-export function Drawer({ label, summary, children, warn }: {
+export function Drawer({ label, summary, children, warn, flash }: {
   label: string; summary: React.ReactNode; children: React.ReactNode; warn?: string
+  /** 刚保存完：外圈扩一下（标签类修改的「收到了」反馈） */
+  flash?: boolean
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface
-                    shadow-[var(--shadow-card)] transition-colors hover:border-border-strong">
+    <div className={`overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface
+                     shadow-[var(--shadow-card)] transition-colors hover:border-border-strong
+                     ${flash ? 'anim-saved-ring' : ''}`}>
       {/* ⚠️ 用 `div role=button` 而不是 `<button>`：抽屉标题里可能要放
           **可点的考点标签**，而按钮不能嵌套按钮——浏览器会直接忽略里层，
           点了没反应（实测踩过）。 */}

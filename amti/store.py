@@ -24,6 +24,9 @@ from __future__ import annotations
 from .paths import ROOT
 import json
 import os
+import shutil
+import subprocess
+import sys
 import time
 import re
 from contextlib import contextmanager
@@ -55,6 +58,108 @@ def existing_volumes() -> list[Path]:
     return sorted(TOPIC_DIR.glob("[0-9][0-9][0-9].tex")) if TOPIC_DIR.exists() else []
 
 
+# ── 乐观并发：让「读全库 → 改 → 整库写回」不再丢题 ────────────────────
+#
+# 光给 `append`/`rewrite_all` 各自加锁**不够**。真正丢题的是调用方那个
+# 更大的读改写环：
+#
+#     T1  rewrite_all 的调用方   load_all()            ← 锁外！拿到快照 S
+#     T2  append                  拿锁、追加 x          → 库里是 S+x
+#     T1                          拿锁、rewrite_all(S) → **x 被覆盖掉**
+#
+# 两个写操作各自都是原子的，可它们拼起来的这个环不是。要让这个环安全，
+# 只有两条路：① 整个环包进一把锁（要改 14 个调用点的结构）；② 乐观并发 ——
+# 写回时校验「库还是不是我读到的那个」，不是就拒绝，让调用方重读重试。
+# 这里走 ②，因为它的改动面小、失败是响的、且不需要把锁跨函数持有（跨函数
+# 持锁很容易和别的路径撞成死锁）。
+#
+# 校验用**卷签名**（卷文件名 + mtime_ns + size），不重新解析全库：
+# 全库指纹要 2~3 秒，而签名只要 7 次 stat。任何一次写盘都会改动某个卷的
+# mtime 或 size，所以它足以回答「我读完之后有没有别人写过」。
+# 代价是**可能误报**（内容写成完全一样，mtime 也变了）——方向是安全的：
+# 宁可让调用方白重试一次，也不能让它覆盖掉别人的写入。
+
+class ConcurrentWrite(RuntimeError):
+    r"""库在「读」之后、「写」之前被别人改了。
+
+    调用方应当**重读全库、重做这次改动**再试；不要吞掉这个异常 ——
+    吞掉就等于把别人的写入覆盖掉，正是它要防的事。
+    """
+
+
+def volume_signature() -> tuple:
+    r"""当前卷签名。`load_for_update()` 与 `rewrite_all(based_on=…)` 配对使用。"""
+    return _vol_signature()
+
+
+def load_for_update() -> tuple[list[Question], tuple]:
+    r"""**改库前读全库的正确入口**：返回 `(题目列表, 卷签名)`。
+
+    改完把签名原样传回 `rewrite_all(..., based_on=sig)`：
+
+        qs, sig = store.load_for_update()
+        ...改 qs...
+        store.rewrite_all(qs, based_on=sig)
+
+    直接用 `load_all()` + `rewrite_all()` 会丢并发写入（见上面那段说明）。
+    本函数**不走缓存**：写路径必须看到最新状态。
+
+    ⚠️ 顺序是**先取签名、再读内容**，不能反。
+
+    反过来（先读内容、后取签名）会漏掉一种情形：读内容与取签名之间别人写了
+    一道，于是签名记的是**别人写完之后**的状态，手里那份内容却还是旧的 ——
+    校验时"签名相符"，于是拿旧内容把别人的写入覆盖掉。**这正是要防的丢题。**
+
+    先取签名就没这个洞：两者之间别人写了，则手里内容更新、签名偏旧，
+    写回时对不上 → 拒绝 → 重试。方向永远安全（宁可白重试，不可覆盖）。
+    """
+    sig = _vol_signature()
+    qs = load_all()
+    return qs, sig
+
+
+def update(fn, *, dry_run: bool = False):
+    r"""**改库的首选形态**：在同一把锁里完成「读全库 → `fn(qs)` → 整库写回」。
+
+        done = []
+        def _do(qs):
+            for q in qs:
+                if 该改(q):
+                    q.answer = ...        # 原地改，或
+                    done.append(q.key)
+            return qs                     # 返回要写回的列表；返回 None = qs
+        store.update(_do)
+
+    `fn` 拿到的 `qs` 是**当前最新的全库**；它**返回**的那份列表就是写回的内容
+    （想删题就返回过滤后的新列表，返回 `None` 等价于原样写回 `qs`）。
+    需要带出"改了哪几道"，在闭包里往外塞即可（像上面的 `done`）。
+
+    为什么它比 `load_for_update()` + `based_on` 好：
+    那两个是**乐观**并发 —— 读和写之间仍有窗口，别人写了就抛
+    `ConcurrentWrite` 让你重试。而这里读和写**在同一把锁内**，
+    窗口根本不存在：既不会丢别人的写入，也不会因为并发而失败。
+    代价是持锁期间要把全库读+解析一遍（约 0.6 秒）；
+    并发写本来就少，这点代价换掉一整类竞态是值的。
+
+    `based_on` 那条路仍然保留：批量迁移工具（fixups/audit/exchange）的改动
+    逻辑散在几百行里、不容易收成一个闭包，用乐观校验更省事；它们本来
+    就该在没人写库的时候跑。
+    """
+    with lib_lock():
+        qs = load_all()
+        out = fn(qs)
+        if out is NO_WRITE:
+            return {"skipped": True}
+        report = _rewrite_all_locked(list(qs if out is None else out), dry_run=dry_run)
+        return report
+
+
+#: `update()` 的 fn 返回它 = 「这次不写库」（见 update 的说明）。
+#: 为什么需要它：校验不通过时若照样把原样写回，会改 mtime ——
+#: 于是别的进程辛苦做的 `based_on` 校验会白白失败一次。
+NO_WRITE = object()
+
+
 def active_volume() -> tuple[Path, int]:
     """返回 (活卷路径, 卷号)。没有卷就返回 1 号（尚未创建）。"""
     vols = existing_volumes()
@@ -81,28 +186,57 @@ def append(questions: list[Question], *, dry_run: bool = False) -> list[str]:
 
     **只追加**：本函数不读、不重写已有内容，只在文件末尾写下新块。
     活卷写满 PER_VOLUME 题后自动开新卷。
+
+    ⚠️ 必须拿写锁，而且**读 `active_volume`/`vol_count` 也得在同一把锁里**：
+    不拿的话，两个 append 会同时选中同一卷、甚至同时翻卷，行的先后次序就乱；
+    而且 append 可能正好落在 `rewrite_all` 逐卷 rename 的中途。
+    这是项目自己在 `数据/录题/待批_作答括号认三角号_D.py:66` 记过的
+    「最高风险口子」的一半。
+
+    🔴 **但这把锁单独并不足以防丢题** —— 别把它当成"已经修好了"。
+    本函数只锁住「追加」这一段；真正的丢题发生在**调用方的
+    「读全库 → 改 → 整库写回」**这个更大的读改写环里：
+
+        T1  rewrite_all 的调用方   load_all()            ← 锁外！快照 S
+        T2  append（本函数）        拿锁、追加 x          → 库里是 S+x
+        T1                          拿锁、rewrite_all(S) → **x 被覆盖掉**
+
+    实测（/tmp 上的副本，60 次 append 与 40 次 rewrite_all 并发）：
+    加了本锁仍然**丢 17 道**。要真正堵住，得让 `load_all` 与 `rewrite_all`
+    处在同一个临界区（乐观并发：调用方带 `based_on` 指纹，写回时校验）。
+    那是 14 个调用点的改动，仍未实施。
+
+    `dry_run` 不进锁：它一个字节都不写，进了反而会被别人的整库重写白白堵住。
+    锁是文件锁、**不可重入**；四条调用路径（ingest / trash.restore /
+    trash 自检 / migrate）都没有持有它，所以不会自锁。
     """
     log: list[str] = []
     if not questions:
         return log
 
-    path, no = active_volume()
-    count = vol_count(path)
+    def _run() -> list[str]:
+        path, no = active_volume()
+        count = vol_count(path)
 
-    for q in questions:
-        if count >= PER_VOLUME:
-            no += 1
-            path = volume_path(no)
-            count = 0
-            log.append(f"开新卷 {path.name}")
-        block = render_question(q)
-        if not dry_run:
-            TOPIC_DIR.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as f:
-                f.write("\n" + block)
-        count += 1
-        log.append(f"追加 {path.name}  {q.key}  hash={q.content_hash()}")
-    return log
+        for q in questions:
+            if count >= PER_VOLUME:
+                no += 1
+                path = volume_path(no)
+                count = 0
+                log.append(f"开新卷 {path.name}")
+            block = render_question(q)
+            if not dry_run:
+                TOPIC_DIR.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as f:
+                    f.write("\n" + block)
+            count += 1
+            log.append(f"追加 {path.name}  {q.key}  hash={q.content_hash()}")
+        return log
+
+    if dry_run:
+        return _run()
+    with lib_lock():
+        return _run()
 
 
 def vol_count(path: Path) -> int:
@@ -137,6 +271,24 @@ def list_backups() -> list[Path]:
     return sorted(ds, key=lambda d: d.name, reverse=True)
 
 
+def _copy_file(src: Path, dst: Path) -> None:
+    r"""复制一个卷文件；macOS 上优先用 APFS 写时复制（`cp -c`）。
+
+    整库 89MB，每次改一道题都真拷一份备份太贵（16 次改标签 = 1.4GB）。
+    APFS 的 clonefile 让备份几乎不占空间、也不花时间；文件系统不支持
+    （或不是 macOS）就退回普通复制，行为不变。
+    """
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(["cp", "-c", str(src), str(dst)],
+                               capture_output=True, timeout=30)
+            if r.returncode == 0:
+                return
+        except Exception:                                   # noqa: BLE001
+            pass
+    shutil.copy2(src, dst)
+
+
 def _backup_volumes() -> Path | None:
     r"""把当前卷文件整份复制到 `题目/备份/<时间戳>/`。返回备份目录。
 
@@ -155,7 +307,7 @@ def _backup_volumes() -> Path | None:
         d = BACKUP_DIR / ("%s_%d" % (stamp, n))
     d.mkdir(parents=True, exist_ok=True)
     for p in vols:
-        (d / p.name).write_bytes(p.read_bytes())
+        _copy_file(p, d / p.name)
     # 只留最近 KEEP_BACKUPS 代，免得越堆越多
     for old in list_backups()[KEEP_BACKUPS:]:
         for f in old.iterdir():
@@ -282,7 +434,44 @@ def _tmp_path(path: Path) -> Path:
     return path.with_name("%s.tmp.%d" % (path.name, os.getpid()))
 
 
-def rewrite_all(questions: list[Question], *, dry_run: bool = False) -> dict:
+def replace_question(q: Question, *, expect_hash: str = "") -> dict:
+    r"""按 key **原子替换一道题**（读、改、写都在同一把锁里）。
+
+    为什么需要它：求解器/审题/补答案是「读一道 → 模型想几分钟 → 写回」。
+    老写法在模型返回后 `load_all()` 再 `rewrite_volume(那一卷)`，读和写
+    之间仍有窗口——别人往同一卷追加一道，就会在这次整卷重写里被抹掉。
+
+    `expect_hash` 给了就做**同题并发校验**：库里这道题如果已经被别人改过
+    （内容指纹变了），返回 `conflict=True` 且**不写**。模型结果可以重跑，
+    别人的改动丢了就找不回来了。
+
+    返回 `{"found": bool, "conflict": bool, ...}`。
+    """
+    key = q.key
+    found = [False]
+    conflict = [False]
+
+    def _do(qs):
+        for i, x in enumerate(qs):
+            if x.key != key:
+                continue
+            if expect_hash and x.content_hash() != expect_hash:
+                conflict[0] = True
+                return NO_WRITE
+            qs[i] = q
+            found[0] = True
+            return qs
+        return NO_WRITE
+
+    rep = update(_do)
+    rep["found"] = found[0]
+    rep["conflict"] = conflict[0]
+    return rep
+
+
+def rewrite_all(questions: list[Question], *, dry_run: bool = False,
+                based_on: tuple | None = None,
+                changed_keys: list[str] | None = None) -> dict:
     r"""**改若干道题并保存的正确入口。**
 
     按 `PER_VOLUME` 重新分卷写回，并删掉多余的卷文件。
@@ -292,6 +481,20 @@ def rewrite_all(questions: list[Question], *, dry_run: bool = False) -> dict:
     为什么要这样：`rewrite_volume(1, load_all())` 会把所有卷的题
     都写进第 1 卷，而其它卷文件还在，`load_all()` 一读就重复。
     这个错误不会报错、不会崩，只会让库**悄悄变大**——最坏的那种 bug。
+
+    ── `based_on`：防「读改写」丢题 ──
+    传 `load_for_update()` 给你的那个卷签名。本函数会在**拿到写锁之后**
+    重新算一次签名，对不上就抛 `ConcurrentWrite`，**拒绝覆盖**。
+
+    不传 = 不校验。那意味着：你在读全库之后、写回之前的这段时间里，
+    别人（求解器、另一个 `amti.py`、界面）写进来的题会被你**静默覆盖掉**。
+    所以除了"我刚刚才 load 过、且只读不改"这种确知的情形，都应该传。
+
+    ── `changed_keys`：只写受影响的卷 ──
+    日常“改一道题的标签/答案”只动一卷，没必要把 6 卷 89MB 全部重写。
+    传改动过的 key（改名时**旧 key 和新 key 都传**），本函数会把题目数量、
+    卷数、未受影响卷的 key 顺序逐项核对；任何一条不成立就自动退回整库重写，
+    不会为了省 I/O 把库写坏。不传 = 维持原来的整库重写。
     """
     # 同一个 key 只留一份（后出现的覆盖先出现的）
     uniq: dict[str, Question] = {}
@@ -301,15 +504,173 @@ def rewrite_all(questions: list[Question], *, dry_run: bool = False) -> dict:
 
     _last_dup_dropped[0] = len(questions) - len(ordered)
     with lib_lock():
-        return _rewrite_all_locked(ordered, dry_run=dry_run)
+        if based_on is not None:
+            now = _vol_signature()
+            if now != based_on:
+                raise ConcurrentWrite(
+                    "库在本函数读到它之后被别的进程改过（卷签名 %s → %s），"
+                    "拒绝用这份快照覆盖。请重新 load_for_update() 后重做本次改动。"
+                    % (_sig_text(based_on), _sig_text(now)))
+        return _rewrite_all_locked(ordered, dry_run=dry_run,
+                                   changed_keys=changed_keys)
+
+
+def _sig_text(sig: tuple) -> str:
+    """把卷签名压成一行便于看日志/报错。"""
+    return "[" + " ".join("%s:%d/%d" % s for s in sig) + "]"
+
 
 
 # 去重掉了几条（包装函数算好放这儿，正体只读它）
 _last_dup_dropped = [0]
 
 
-def _rewrite_all_locked(ordered: list[Question], *, dry_run: bool = False) -> dict:
+def _volume_keys(path: Path) -> list[str]:
+    """一卷里所有题的 key，**按文件顺序**。只读元数据行，不解析正文。"""
+    out: list[str] = []
+    for block in split_questions(path.read_text(encoding="utf-8")):
+        if GRAVE_MARK in block:
+            continue
+        m = META_RE.search(block)
+        if not m:
+            continue
+        try:
+            k = json.loads(m.group(1)).get("key", "")
+        except ValueError:
+            k = ""
+        if k:
+            out.append(k)
+    return out
+
+
+def _tmp_verified(chunk: list[Question], i: int) -> Path:
+    r"""把第 i 卷写成 `.tmp` 并**回读核对**；不合就删掉 tmp 抛错。
+
+    这是 `_rewrite_all_locked` 第 1 层安全网的原体，抽出来给“只写受影响的卷”
+    复用——两条写路径必须用同一套回读校验，不能一条严一条松。
+    """
+    body = "\n".join(render_question(q) for q in chunk)
+    tmp = _tmp_path(volume_path(i))
+    tmp.write_text(body + "\n", encoding="utf-8")
+    try:
+        back = [q for q in (question_from_block(b)
+                            for b in split_questions(tmp.read_text(encoding="utf-8")))
+                if q is not None and q.key]
+        want_keys = [q.key for q in chunk]
+        got_keys = [q.key for q in back]
+        if len(set(got_keys)) != len(got_keys):
+            raise ValueError("写第 %d 卷时出现重复 key，已中止（正式文件未改动）" % i)
+        if set(want_keys) != set(got_keys):
+            miss = sorted(set(want_keys) - set(got_keys))[:3]
+            extra = sorted(set(got_keys) - set(want_keys))[:3]
+            raise ValueError(
+                "写第 %d 卷后回读对不上，已中止（正式文件未改动）：少 %s，多 %s"
+                % (i, miss, extra))
+        want_hash = {q.key: q.content_hash() for q in chunk}
+        now_hash = {q.key: q.content_hash() for q in back}
+        lost = sorted(k for k in want_hash if want_hash[k] != now_hash.get(k))
+        if lost:
+            raise ValueError(
+                "写第 %d 卷后**内容**对不上（%d 道，正式文件未改动）：%s——"
+                "多半是 `render_tex.question_to_tex` 少写了字段"
+                % (i, len(lost), lost[:3]))
+        return tmp
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _rewrite_some_locked(ordered: list[Question],
+                         changed: set[str]) -> dict | None:
+    r"""只重写**受影响的卷**。返回 None = 这个场景不适用，调用方退回整库重写。
+
+    适用条件很窄，但正好覆盖日常的“改标签/改一道题的答案”：
+      · 题目**数量没变**、卷数没变（删/增/翻卷一律退回整库）；
+      · 未受影响的卷，key 顺序和磁盘上一模一样；
+      · 受影响的卷能通过同一条 `.tmp` 回读校验。
+
+    为什么值得：改一个标签要写 6 卷 89MB，而实际只有 1 卷变了；备份仍然
+    整份留（APFS clonefile 之后几乎零成本），恢复语义不变。
+    """
+    chunks = [ordered[i:i + PER_VOLUME]
+              for i in range(0, len(ordered), PER_VOLUME)] or [[]]
+    old: dict[int, list[str]] = {}
+    for p in existing_volumes():
+        try:
+            old[int(p.stem)] = _volume_keys(p)
+        except ValueError:
+            return None
+    if (len(chunks) != len(old)
+            or len(ordered) != sum(len(v) for v in old.values())):
+        return None
+
+    new_vol: dict[str, int] = {}
+    for i, chunk in enumerate(chunks, start=1):
+        for q in chunk:
+            new_vol[q.key] = i
+
+    affected: set[int] = set()
+    for k in changed:
+        if k in new_vol:
+            affected.add(new_vol[k])
+        else:
+            hit = [i for i, ks in old.items() if k in ks]
+            if not hit:
+                return None
+            affected.update(hit)
+    if not affected:
+        return {"volumes": 0, "count": len(ordered), "duplicates_dropped": 0,
+                "changed": [], "reports": [], "partial": True}
+
+    # 没受影响的卷必须原样不动；否则说明分卷边界/顺序变了，整库重写更稳。
+    for i, chunk in enumerate(chunks, start=1):
+        if i in affected:
+            continue
+        if [q.key for q in chunk] != old.get(i, []):
+            return None
+
+    tmps: dict[int, Path] = {}
+    try:
+        for i in sorted(affected):
+            tmps[i] = _tmp_verified(chunks[i - 1], i)
+        _backup_volumes()
+        for i, tmp in tmps.items():
+            tmp.replace(volume_path(i))
+    except Exception:
+        for tmp in tmps.values():
+            tmp.unlink(missing_ok=True)
+        raise
+
+    try:
+        for i in sorted(affected):
+            if _volume_keys(volume_path(i)) != [q.key for q in chunks[i - 1]]:
+                raise ValueError("第 %d 卷写盘后 key 顺序不符" % i)
+    except Exception:
+        restore_backup()
+        raise
+
+    return {
+        "volumes": len(affected),
+        "count": len(ordered),
+        "duplicates_dropped": _last_dup_dropped[0],
+        "changed": sorted(changed),
+        "reports": [{"volume": volume_path(i).name,
+                     "count": len(chunks[i - 1]),
+                     "changed": [q.key for q in chunks[i - 1] if q.key in changed]}
+                    for i in sorted(affected)],
+        "partial": True,
+    }
+
+
+def _rewrite_all_locked(ordered: list[Question], *, dry_run: bool = False,
+                        changed_keys: list[str] | None = None) -> dict:
     r"""`rewrite_all` 的正体。**调用方必须已经持有写锁。**"""
+    # 只改了少数几道、题目数量没变 → 只写受影响的卷。
+    # 调用方明确给了 changed_keys 才走这条路；没给就按老规矩整库写。
+    if changed_keys is not None and not dry_run:
+        rep = _rewrite_some_locked(ordered, set(changed_keys))
+        if rep is not None:
+            return rep
     chunks = [ordered[i:i + PER_VOLUME]
               for i in range(0, len(ordered), PER_VOLUME)] or [[]]
     ordered_keys = [q.key for q in ordered]
@@ -339,30 +700,15 @@ def _rewrite_all_locked(ordered: list[Question], *, dry_run: bool = False) -> di
     # 每一卷写成 `.tmp` 之后**重新解析一遍**，核对：
     #   · 解析回来的 key 集合和预期**一模一样**（不多不少）
     #   · 没有重复 key
+    #   · **每道题的内容指纹也没变**（题干/选项/答案/解析/配图）
     # 任何一条不符就**当场抛错，正式卷文件一个字节都没动**。
     # 这一步挡的是"渲染/写入逻辑有 bug，把库写坏"——最要命的那种。
-    tmps: list[Path] = []
-    for i, chunk in enumerate(chunks, start=1):
-        body = "\n".join(render_question(q) for q in chunk)
-        tmp = _tmp_path(volume_path(i))
-        tmp.write_text(body + "\n", encoding="utf-8")
-
-        back = [q for q in (question_from_block(b)
-                            for b in split_questions(tmp.read_text(encoding="utf-8")))
-                if q is not None and q.key]
-        want_keys = [q.key for q in chunk]
-        got_keys = [q.key for q in back]
-        if len(set(got_keys)) != len(got_keys):
-            tmp.unlink(missing_ok=True)
-            raise ValueError("写第 %d 卷时出现重复 key，已中止（正式文件未改动）" % i)
-        if set(want_keys) != set(got_keys):
-            tmp.unlink(missing_ok=True)
-            miss = sorted(set(want_keys) - set(got_keys))[:3]
-            extra = sorted(set(got_keys) - set(want_keys))[:3]
-            raise ValueError(
-                "写第 %d 卷后回读对不上，已中止（正式文件未改动）：少 %s，多 %s"
-                % (i, miss, extra))
-        tmps.append(tmp)
+    #
+    # ⚠️ 指纹这一条是**血的教训**：只核 key 不够。曾把「解析无」占位符
+    # 从序列化里跳过（导出层顺手改的），1205 道题的 `solution` 在下一次
+    # 读盘时被悄悄清空，而 key 集合完全正常——`diff` 才发现内容变化。
+    tmps = [_tmp_verified(chunk, i)
+            for i, chunk in enumerate(chunks, start=1)]
 
     # ── 第 2 层安全网：**改名前留一份上一代** ──
     _backup_volumes()
@@ -377,17 +723,15 @@ def _rewrite_all_locked(ordered: list[Question], *, dry_run: bool = False) -> di
 
     # ── 第 3 层安全网：**改完再从磁盘验一遍** ──
     #
-    # 万一改名阶段出了意外（磁盘满、被打断），这里能立刻发现。
-    # 发现不对就把上一代拷回来——**宁可回到改之前，也不留半坏的库**。
-    try:
-        on_disk = [q.key for _f, q in iter_questions()]
-        if len(set(on_disk)) != len(on_disk) or set(on_disk) != set(ordered_keys):
-            raise ValueError("回读的 key 集合与预期不符")
-    except Exception as e:
-        restore_backup()
-        raise ValueError("写盘后校验失败，已回滚到改之前：%s" % e)
-
-    # 删掉不再需要的卷文件（比如从 2 卷缩回 1 卷）
+    # ⚠️ 先把**多出来的旧卷**删掉，再回读校验。
+    #
+    # 题数跨卷边界（比如 30024 → 29483，7 卷缩成 6 卷）时，第 1–6 卷已经是
+    # 新内容，第 7 卷还是旧内容；如果先校验再删，回读必然多出整卷旧题 →
+    # `key 集合不符` → 整批回滚。实测「合并重复题」一次删 541 道就踩中了，
+    # 而删一两道（不跨卷）永远发现不了。
+    #
+    # 删卷放在这里仍然安全：失败时 `restore_backup()` 会把备份里的所有卷
+    # （包括刚删掉的第 7 卷）原样拷回来。
     if not dry_run:
         for extra in sorted(TOPIC_DIR.glob("*.tex")):
             if ".tmp" in extra.name:
@@ -398,6 +742,16 @@ def _rewrite_all_locked(ordered: list[Question], *, dry_run: bool = False) -> di
                 continue
             if no > len(chunks):
                 extra.unlink()
+
+    # 万一改名阶段出了意外（磁盘满、被打断），这里能立刻发现。
+    # 发现不对就把上一代拷回来——**宁可回到改之前，也不留半坏的库**。
+    try:
+        on_disk = [q.key for _f, q in iter_questions()]
+        if len(set(on_disk)) != len(on_disk) or set(on_disk) != set(ordered_keys):
+            raise ValueError("回读的 key 集合与预期不符")
+    except Exception as e:
+        restore_backup()
+        raise ValueError("写盘后校验失败，已回滚到改之前：%s" % e)
 
     return {
         "volumes": len(chunks),
@@ -695,8 +1049,12 @@ def snapshot() -> dict:
     data = {"questions": len(items), "fingerprints": items,
             "solved": solved, "upgraded": upgraded, "edited": edited,
             "migrated": migrated, "fixed": fixed}
-    SNAPSHOT.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True),
-                        encoding="utf-8")
+    # **原子写**：这份 11.8MB。直接 write_text 写到一半被读，`/api/baseline`
+    # 会 json 解析失败直接 500；临时名带进程号，两个进程同时存基线不互抢。
+    tmp = _tmp_path(SNAPSHOT)
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True),
+                   encoding="utf-8")
+    tmp.replace(SNAPSHOT)
     return data
 
 
@@ -741,6 +1099,50 @@ def load_snapshot_upgraded() -> dict:
     return json.loads(SNAPSHOT.read_text(encoding="utf-8")).get("upgraded", {})
 
 
+RENAME_LEDGER = "数据/改出处.jsonl"
+
+
+def renames() -> dict[str, str]:
+    r"""旧 key → 新 key 的**改名台账**（界面改出处时一条一条追加）。
+
+    为什么要这张表：key 是自然键（`书/卷名#题号`），改了出处就得改名。
+    可基线快照是按 key 存的——不做映射的话，改一次出处，`diff()` 就会
+    报「删了一道 + 加了一道」，把"正经改名"和"数据丢了"混成同一个红灯。
+
+    台账是**追加式**的，同一个 key 可能被改过多次（A→B、B→C），
+    这里顺着链走到底；遇到环就停（防手改坏了把 `diff()` 卡死）。
+    """
+    p = ROOT / RENAME_LEDGER
+    if not p.is_file():
+        return {}
+    one: dict[str, str] = {}
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue                      # 半行（写到一半被杀）不当真
+            a, b = (d or {}).get("from"), (d or {}).get("to")
+            if a and b and a != b:
+                one[str(a)] = str(b)
+    except OSError:
+        return {}
+    out: dict[str, str] = {}
+    for start in one:
+        cur, seen = start, {start}
+        while cur in one:
+            cur = one[cur]
+            if cur in seen:                   # 环：退回上一跳，别死循环
+                break
+            seen.add(cur)
+        if cur != start:
+            out[start] = cur
+    return out
+
+
 def diff() -> dict:
     r"""对比基线：返回 {新增, 内容变化, 删除, 求解写入, 录入升级, 界面补录}。
 
@@ -750,13 +1152,23 @@ def diff() -> dict:
     `求解写入` 是 `内容变化` 里**求解时间比基线新**的那部分：那些是
     `amti.solve` 一道一道做出来的，属于正常产出，不该混进"规则动了
     存量"里一起报警。剩下的才是真正要人去查的。
+
+    基线是**按 key** 存的，而 key 会因为「改出处」而变。所以先把基线里那些
+    旧 key 按台账映射成新 key（`renames()`），否则改一次出处就会报成
+    「删一道 + 加一道」——见 `RENAME_LEDGER` 的说明。
     """
+    _alias = renames()
     base = load_snapshot()
     base_solved = load_snapshot_solved()
     base_upgraded = load_snapshot_upgraded()
     base_edited = load_snapshot_edited()
     base_migrated = load_snapshot_migrated()
     base_fixed = load_snapshot_fixed()
+    if _alias:                                # key 改过名的，基线跟着改名
+        def _rm(d: dict) -> dict:
+            return {_alias.get(k, k): v for k, v in d.items()}
+        base, base_solved, base_upgraded = _rm(base), _rm(base_solved), _rm(base_upgraded)
+        base_edited, base_migrated, base_fixed = _rm(base_edited), _rm(base_migrated), _rm(base_fixed)
     rows = list(iter_questions())
     now = {q.key: q.content_hash() for _f, q in rows}
     added = sorted(set(now) - set(base))
@@ -808,9 +1220,121 @@ def diff() -> dict:
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+def _selftest() -> int:
+    r"""自检：**缩卷**时不能把多余的旧卷算进回读校验。
+
+    这是实测踩到的真事故：题数从 30024 删到 29483，7 卷要缩成 6 卷。
+    第 1–6 卷已经是新内容、第 7 卷还是旧内容；老写法**先回读校验、后删
+    多余卷**，于是回读多出整卷旧题 → `key 集合不符` → 整批回滚。
+    删一两道（不跨卷边界）永远发现不了，所以要专门造一个跨卷的场景。
+    """
+    import shutil
+    import tempfile
+
+    global TOPIC_DIR, BACKUP_DIR, LOCK_FILE, PER_VOLUME
+    old = (TOPIC_DIR, BACKUP_DIR, LOCK_FILE, PER_VOLUME)
+    tmp = Path(tempfile.mkdtemp(prefix="amti-store-"))
+    fails = 0
+
+    def check(name, cond, extra=""):
+        nonlocal fails
+        print(("  ✓ " if cond else "  ✗ ") + name + (("  " + extra) if extra else ""))
+        if not cond:
+            fails += 1
+
+    try:
+        TOPIC_DIR = tmp / "题目"
+        TOPIC_DIR.mkdir()
+        BACKUP_DIR = TOPIC_DIR / "备份"
+        LOCK_FILE = TOPIC_DIR / ".写锁"
+        PER_VOLUME = 2
+
+        def mk(i):
+            return Question(key="t/%d" % i, type="fill_in_blank",
+                            stem=r"$1+%d=$\fillin[%d]。" % (i, i + 1),
+                            answer=str(i + 1))
+
+        qs = [mk(i) for i in range(5)]
+        rewrite_all(qs)
+        check("5 道 / 每卷 2 道 → 3 卷",
+              len(existing_volumes()) == 3,
+              str([p.name for p in existing_volumes()]))
+
+        # 只写受影响的卷：改第 2 卷的 t/3，第 1/3 卷不该被碰
+        time.sleep(0.01)
+        m0 = {p.name: p.stat().st_mtime_ns for p in existing_volumes()}
+        q3 = next(x for x in qs if x.key == "t/3")
+        q3.answer = "100"
+        q3.stem = r"$1+3=$\fillin[100]。"
+        rep = rewrite_all(qs, changed_keys=["t/3"])
+        m1 = {p.name: p.stat().st_mtime_ns for p in existing_volumes()}
+        check("只写受影响的卷（第 1/3 卷 mtime 不变）",
+              m0["001.tex"] == m1["001.tex"] and m0["003.tex"] == m1["003.tex"],
+              str((m0, m1)))
+        check("受影响的第 2 卷确实写了", m0["002.tex"] != m1["002.tex"])
+        check("部分写回内容生效",
+              [x.answer for _f, x in iter_questions()]
+              == ["1", "2", "3", "100", "5"],
+              str([x.answer for _f, x in iter_questions()]))
+        check("只写了 1 卷", rep.get("partial") and rep.get("volumes") == 1, str(rep))
+
+        # 没有任何改动时不该碰盘
+        m2 = {p.name: p.stat().st_mtime_ns for p in existing_volumes()}
+        rewrite_all(qs, changed_keys=[])
+        m3 = {p.name: p.stat().st_mtime_ns for p in existing_volumes()}
+        check("changed_keys=[] 不写盘", m2 == m3, str((m2, m3)))
+
+        # 同卷改名（旧 key + 新 key 都传）：只写这一卷，回读是新 key
+        q3.key = "t/3x"
+        rep = rewrite_all(qs, changed_keys=["t/3", "t/3x"])
+        check("同卷改名只写 1 卷", rep.get("partial") and rep.get("volumes") == 1, str(rep))
+        check("改名后的 key 已落盘",
+              "t/3x" in [x.key for _f, x in iter_questions()]
+              and "t/3" not in [x.key for _f, x in iter_questions()],
+              str([x.key for _f, x in iter_questions()]))
+        q3.key = "t/3"
+
+        # **缩卷**：3 卷 → 1 卷。老写法在这里必然失败并回滚。
+        rewrite_all(qs[:2])
+        check("缩卷成功且多余旧卷已删", len(existing_volumes()) == 1,
+              str([p.name for p in existing_volumes()]))
+        check("回读只有 2 道、顺序正确",
+              [q.key for _f, q in iter_questions()] == ["t/0", "t/1"],
+              str([q.key for _f, q in iter_questions()]))
+        check("内容没有丢", [q.answer for _f, q in iter_questions()] == ["1", "2"])
+
+        # 原子替换 + 同题并发校验
+        cur = list(iter_questions())[0][1]
+        base = cur.content_hash()
+        newq = mk(0)
+        newq.answer = "99"
+        newq.stem = r"$1+0=$\fillin[99]。"   # 作答位与答案栏必须同步
+        rep = replace_question(newq, expect_hash=base)
+        check("按 key 原子替换", rep["found"] and not rep["conflict"], str(rep))
+        check("替换后内容生效",
+              [q.answer for _f, q in iter_questions()] == ["99", "2"])
+        stale = mk(0)
+        stale.answer = "100"
+        stale.stem = r"$1+0=$\fillin[100]。"
+        rep = replace_question(stale, expect_hash=base)
+        check("同题已被别人改过 → 拒绝覆盖",
+              (not rep["found"]) and rep["conflict"], str(rep))
+        check("拒绝后库里内容没变",
+              [q.answer for _f, q in iter_questions()] == ["99", "2"])
+    finally:
+        TOPIC_DIR, BACKUP_DIR, LOCK_FILE, PER_VOLUME = old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print("\nstore 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
+    return 1 if fails else 0
+
+
 if __name__ == "__main__":
     import sys
     cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    if cmd in ("--selftest", "selftest"):
+        raise SystemExit(_selftest())
+
     if cmd == "status":
         vols = existing_volumes()
         total = sum(vol_count(p) for p in vols)

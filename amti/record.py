@@ -107,11 +107,36 @@ def last() -> dict:
     return getattr(_TL, "last", {})
 
 
+def _small_path(img: Path) -> Path:
+    r"""页图 → 「缩小图」缓存路径。
+
+    **纯函数，单独拎出来就是为了能被 `_selftest` 测到**（自检只测纯函数）。
+    这个路径算错一次的后果不是报错，而是**静默串页**：
+    多份源文件共用一个 `small/`、又只按 `pNNN` 命名时，
+    第二份的 p001 会直接复用第一份的 p001，模型照着错的图转录，
+    产物格式完全正常、只是内容属于另一个文件。见 `shrink` 的说明。
+    """
+    return img.parent / "small" / (img.stem + ".jpg")
+
+
+def _crop_path(img: Path, bi: int) -> Path:
+    r"""页图 + 图序号 → 「裁图」缓存路径。同上，必须跟着源文件走。"""
+    return img.parent / "crops" / ("%s_%02d.jpg" % (img.stem, bi))
+
+
 def shrink(img: Path, *, max_px: int = MAX_PIXELS) -> Path:
     r"""把页图压进 token 预算。**超过预算的图不能发给模型**——见 `MAX_PIXELS`。
 
-    缩好的图放 `<work>/small/`，跟 `pages/` 分开：`pages_of` 靠
-    `p001.*` 找缓存，缩小图混进去会让它认错文件。
+    缩好的图放**该页图旁边**的 `small/`（`<pages>/<某一份>/small/pNNN.jpg`）。
+
+    ⚠️ 2026-10-02 修：原来写的是 `img.parent.parent / "small" / ...`，
+    也就是**所有源文件共用一个 `pages/small/`、而且只按 `pNNN` 命名**。
+    这在"一次只处理一个 PDF"时看不出来（赵礼显那本就是），
+    但**一次处理多个**时是**静默串页**：第二份文件的 p001 直接复用了
+    第一份的 p001，模型于是照着错的图转录，产物看着完全正常、
+    只是内容属于另一个文件。实测 `2026概率大题合集` 的 p001 被答成
+    `第01讲：数与式`——页图是对的、输出是别人的。
+    按"图旁边"放就没有跨源碰撞，`pages_of` 也照样认不错（它只 glob `p*.png`）。
     """
     from PIL import Image
 
@@ -120,7 +145,7 @@ def shrink(img: Path, *, max_px: int = MAX_PIXELS) -> Path:
         if w * h <= max_px:
             return img
         k = (max_px / (w * h)) ** 0.5
-        out = img.parent.parent / "small" / (img.stem + ".jpg")
+        out = _small_path(img)
         if not out.exists():
             out.parent.mkdir(parents=True, exist_ok=True)
             im.convert("RGB").resize((max(1, int(w * k)), max(1, int(h * k))),
@@ -538,7 +563,9 @@ _FIG_CACHE: dict[str, bool] = {}
 
 def _band_has_figure(img: Path, bi: int) -> bool:
     """某条带里有没有图（按页缓存，一页只问一遍）。"""
-    crop = img.parent.parent / "crops" / ("%s_%02d.jpg" % (img.stem, bi))
+    # 同 `shrink`：放**该页图旁边**，不能用 `parent.parent`——那样
+    # 多份源文件会共用同一个 `crops/`，只按 `pNNN_ii` 命名就会串。
+    crop = _crop_path(img, bi)
     if not crop.exists():
         return True                      # 裁不出来也不能当"没有"
     key = str(crop)
@@ -1434,6 +1461,7 @@ def fixup(tex: str) -> str:
     裸 `i`（该写 `\mathrm{i}`）**不碰**——它可能是虚数单位，也可能是求和
     下标、普通字母，改了就是引入错误。宁可留着给人看。
     """
+    orig = tex
     tex = _TEXT_MATH.sub(r"\\mathrm{\1}", _BB.sub(r"\\mathbb{\1}", tex))
     # `\(…\)` → `$…$`：规范要求行内公式一律 `$…$`。
     # PaddleOCR-VL 默认就吐 `\(…\)`，而 normalize 的"行内公式统一"规则
@@ -1442,6 +1470,7 @@ def fixup(tex: str) -> str:
     # **`%` 必须转义。** LaTeX 里它是注释符：题干「…的80%分位数为\paren[D]」
     # 会把 `%` 后面整段注释掉，连答案括号一起没了
     # （实测青岛第 1 题，conform 报「选择题答案没写进 \paren[…]」）。
+    before = tex.count("$")
     tex = re.sub(r"(?<!\\)%", r"\\%", tex)
     # ⚠️ **必须在 `\(…\)` 归一成 `$…$` 之后再包中文**——先包的话，
     # 那些还是 `\(…\)` 形态的公式根本没被当成数学模式，中文照样漏
@@ -1451,7 +1480,14 @@ def fixup(tex: str) -> str:
     # `$$…$$` → `$…$`：规范里行间公式是 `\[…\]`，`$$` 块解析器不认
     # （实测华师联盟第 19 题的解析里混了 `$$`，KaTeX 渲染直接失败、四层验收挂掉）。
     # 直接换成单 `$` 最稳：定界符个数不变，永远配平。
-    return tex.replace("$$", "$")
+    out = tex.replace("$$", "$")
+    # **配平优先**：上面每条替换单看都有理，叠在一起却可能改变 `$` 的奇偶。
+    # 实测（26届拼好卷第六套第 18 题）：OCR 原样漏了一个 `\)`，原文 `\(` 有 1 个、
+    # `\)` 有 0 个；`\(`→`$` 之后整题变成奇数个 `$`，闸门按"`$` 不成对"整题拒掉。
+    # 一旦奇偶变了就整段回退——宁可保留 `\(` 原样，也不造一个配不平的式子。
+    if (out.count("$") - before) % 2:
+        return orig
+    return out
 
 
 def strip_marker(sol: str) -> str:
@@ -1529,15 +1565,20 @@ def unbalanced(tex: str) -> bool:
     if tex.count("$") % 2:
         return True
     depth = 0
-    for i, ch in enumerate(tex):
-        if ch == "\\":
-            continue
+    i, n = 0, len(tex)
+    while i < n:
+        ch = tex[i]
+        if ch == "\\":            # **转义序列整段跳过**：`\{`/`\}` 是字面大括号，
+            i += 2               # 不参与配对计数。以前只跳过反斜杠、下一个字符
+            continue             # 照样当分组括号数，于是 `\left\{ … \right.` 这种
+                                 # 合法写法被误判成"不配平"，整题被拒（实测保定 4 题）。
         if ch == "{":
             depth += 1
         elif ch == "}":
             depth -= 1
             if depth < 0:
                 return True
+        i += 1
     return depth != 0
 
 
@@ -2427,6 +2468,21 @@ $a=1$
 """
 
     p1 = parse_marked(RAW)
+    # ── 缩小图/裁图的缓存路径：必须**跟着源文件走** ──────────────────
+    # 2026-10-02 实测事故：`parent.parent / "small"` 让 27 个源文件共用
+    # 一个 `pages/small/`，只按 `pNNN` 命名 → 第二份文件的 p001 复用了
+    # 第一份的 p001，`2026概率大题合集` 的封面被答成「第01讲：数与式」。
+    # 以前没暴露是因为每次只处理一个 PDF。这三条把这个坑钉死。
+    _a = _small_path(Path("w/pages/甲/p001.png"))
+    _b = _small_path(Path("w/pages/乙/p001.png"))
+    check("不同源的同名页 → 缩小图路径不同", _a != _b, "%s vs %s" % (_a, _b))
+    check("同一页 → 路径稳定", _a == _small_path(Path("w/pages/甲/p001.png")))
+    check("缩小图在页图自己的 small/ 下（不会被 pages_of 的 p*.png 扫到）",
+          _a.parent.name == "small" and _a.parent.parent.name == "甲", str(_a))
+    check("裁图路径同样跟着源文件走",
+          _crop_path(Path("w/pages/甲/p001.png"), 2) !=
+          _crop_path(Path("w/pages/乙/p001.png"), 2))
+
     check("解析出 3 道题", len(p1["questions"]) == 3, str(len(p1["questions"])))
     check("页信息认出来了", p1["page"] == {"kind": "试题", "title": "某卷 数学"},
           str(p1["page"]))

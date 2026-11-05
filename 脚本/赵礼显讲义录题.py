@@ -512,22 +512,75 @@ def cmd_figs(a) -> int:
     scans = load_scans()
     boxes = load_boxes()
     FIGDIR.mkdir(exist_ok=True)
-    made, skipped, map_ = 0, [], {}
+    made, skipped, map_, unaligned = 0, [], {}, []
     for n, pg in sorted(scans.items()):
         page_img = PAGES / ("p%03d.png" % n)
         if not page_img.exists():
             continue
         with Image.open(page_img) as im:
             W, H = im.size
+            # ── 把这一页的框**分派给题目** ──────────────────────────────
+            # 先按题号精确匹配；对不上再退回顺序对齐。
+            #
+            # ⚠️ 为什么需要退回：**两遍读到的题号本来就可能不一样。**
+            # 实测（2026概率）：p009 两边都是 6,7 → 对得上；
+            # 但 p010 第一遍给 `n=1`、第二遍读到卷面印的 `18`；
+            # p019 第一遍给 `1,2,3`、第二遍读到 `19` —— 第一遍在小节边界
+            # **重新起编**，第二遍读的是**印在卷面上的号**。
+            # 对不上就一道图都裁不出来，而且**日志完全正常**，
+            # 只在"待裁"里留一条（这一条就是为此加的，别删）。
+            fqs = [q for q in pg["questions"] if q["figure"]]
+            raw_boxes = boxes.get(n, [])
+            mine: dict[str, list] = {q["n"]: [] for q in fqs}
+            exact = 0
+            for item in raw_boxes:
+                if item[0] in mine:
+                    mine[item[0]].append(item)
+                    exact += 1
+            unmatched = [b for b in raw_boxes if b[0] not in mine]
+            # ⚠️ **只有"一个都没匹配上"时才退回对齐。**
+            # 有精确匹配的说明题号是可读的，那些没匹配上的框属于**别的题**
+            # （实测 p009：第二遍给了 `q=6,6,7`，`q=7` 精确匹配上了，另外两个
+            #   `q=6` 是另一道题的图）。这时若还"本页只有一道带图题 →
+            #   全给它"，就是把别人的图**挂错题**了 —— 产物看着正常、
+            #   图也是真的、只是归属错了，比"不裁"更坏（宁缺勿错）。
+            # 一个都没匹配上才说明两遍的编号体系不同，这时对齐才有意义。
+            if unmatched and fqs and exact == 0:
+                how = ""
+                if len(fqs) == 1:
+                    # 这一页只有一道带图题 → 所有框都属于它，没有歧义
+                    mine[fqs[0]["n"]] += unmatched
+                    how = "本页只有一道带图题"
+                elif len(unmatched) == len(fqs):
+                    # 框数与带图题数**相等** → 按页面顺序一一对应
+                    for q, b in zip(fqs, unmatched):
+                        mine[q["n"]].append(b)
+                    how = "框数与带图题数相等，按页面顺序对齐"
+                if how:
+                    unaligned.append(
+                        "p%03d：第一遍题号 %s，第二遍读到 %s —— %s"
+                        % (n, ",".join(q["n"] for q in fqs),
+                           ",".join(sorted({b[0] for b in unmatched})), how))
+                    print("  p%03d ↷ 题号对不上（第一遍 %s / 第二遍 %s）：%s"
+                          % (n, ",".join(q["n"] for q in fqs),
+                             ",".join(sorted({b[0] for b in unmatched})), how))
+
             for q in pg["questions"]:
                 if not q["figure"]:
+                    continue
+                # ⚠️ **题号不是数字的直接跳过** —— 跟 `collect_questions` 一致。
+                # 实测（2026-10-02，圆锥曲线）：模型对某些块给 `n=->`，
+                # `collect_questions` 会把它们丢掉（所以不会进 .tex），
+                # 但这里**直接遍历原始 questions**、照样裁图并登记成
+                # `<页>#->` —— 于是裁出来的图**谁都不引用**，白占
+                # 全库共用的 `图片/`（实测 11 张）。`verify` 会报出来，
+                # 但源头堵住更干净。
+                if not (q.get("n") or "").strip().isdigit():
                     continue
                 key = "%d#%s" % (n, q["n"])
                 rec = {"stem": [], "opts": {}}
                 # ① 第二遍的分项框优先（能区分题干图 / A–D 选项图）
-                for no, where, raw in boxes.get(n, []):
-                    if no != q["n"]:
-                        continue
+                for no, where, raw in mine.get(q["n"], []):
                     box = _figbox(raw, W, H)
                     if box is None:
                         continue
@@ -555,6 +608,11 @@ def cmd_figs(a) -> int:
     nopt = sum(len(v["opts"]) for v in map_.values())
     print("裁出 %d 张图（其中选项图 %d 张），%d 道带图题没裁到图"
           % (made, nopt, len(skipped)))
+    if unaligned:
+        print("⚠️ %d 页两遍读到的题号对不上，已按顺序对齐（**值得抽查**）："
+              % len(unaligned))
+        for x in unaligned:
+            print("   %s" % x)
     for n, no, desc in skipped:
         print("  待裁：p%03d 第%s题  %s" % (n, no, desc))
     return 0
@@ -599,6 +657,17 @@ def _figbox(s: str | None, W: int, H: int):
     x0, y0, x1, y1 = (float(v) for v in nums)
     if max(x0, y0, x1, y1) <= 1.5:                     # 模型给了 0–1 的比例
         x0, y0, x1, y1 = x0 * 1000, y0 * 1000, x1 * 1000, y1 * 1000
+    # ⚠️ 提示词要的是**本页宽高的千分比 0–1000**，实测模型会吐像素值
+    # （`figbox=100,1450,900,1700`）。这种值**不能猜**：
+    #   · 当千分比用 → 越界被夹到页边 → y0==y1 → 0 高的图 →
+    #     PIL 抛 «cannot write empty image» → **整个 figs 崩掉、一张图都裁不出来**；
+    #   · 当像素用 → 是在赌它想框哪儿，框错了还看不出来。
+    # 按「宁缺勿错」判为无效、返回 None：上层会登记成 `figure_todo`
+    # （待裁缺口，`build` 里看得见），宁可留个明账，也不要看着像图、
+    # 其实框错地方的产物。
+    if not (0 <= x0 <= 1000 and 0 <= y0 <= 1000
+            and 0 <= x1 <= 1000 and 0 <= y1 <= 1000):
+        return None
     if x1 <= x0 or y1 <= y0:
         return None
     if (x1 - x0) < 30 or (y1 - y0) < 20:               # 太小的框是噪声
@@ -611,7 +680,12 @@ def _figbox(s: str | None, W: int, H: int):
     def hi(v, S):
         return max(0, min(S, int((v + pad) / 1000.0 * S)))
 
-    return (lo(x0, W), lo(y0, H), hi(x1, W), hi(y1, H))
+    bx0, by0, bx1, by1 = lo(x0, W), lo(y0, H), hi(x1, W), hi(y1, H)
+    # **夹取之后必须再查一次退化**：贴边的值会被夹到同一个边界上，
+    # 于是 x0==x1 或 y0==y1。原来只在夹取**之前**查了一次，没防住这条路径。
+    if bx1 <= bx0 or by1 <= by0:
+        return None
+    return (bx0, by0, bx1, by1)
 
 
 def _png(im) -> bytes:
@@ -1028,8 +1102,19 @@ def cmd_selftest(a) -> int:
           str(box))
     check("_figbox 收 0–1 比例", _figbox("0.1,0.2,0.9,0.8", 1000, 1000) == box,
           str(_figbox("0.1,0.2,0.9,0.8", 1000, 1000)))
-    for bad in ("-", "", "1,2,3", "900,800,100,200", "0,0,10,10"):
+    # ⚠️ 越界坐标（模型没照提示词写千分比，吐了像素值）必须**判无效**，
+    # 不能当像素猜、也不能让它走到"夹取后压塌成 0 高"那条路：
+    # 实测 `figbox=100,1450,900,1700` 夹取后 y0==y1，`im.crop` 收 0 高图，
+    # PIL 抛 «cannot write empty image» —— **整个 figs 崩掉、一张图都裁不出来**。
+    for bad in ("-", "", "1,2,3", "900,800,100,200", "0,0,10,10",
+                "100,1450,900,1700", "0,0,1000,1008", "-5,10,600,700"):
         check("_figbox 拒收 %r" % bad, _figbox(bad, 1000, 1000) is None)
+    # 贴满整页的框**不能**因为夹取退化而被误拒
+    check("_figbox 收贴满整页", _figbox("0,0,1000,1000", 2481, 3508) ==
+          (0, 0, 2481, 3508), str(_figbox("0,0,1000,1000", 2481, 3508)))
+    # 合规千分比 → 精确像素范围（lo 减 pad=8、hi 加 pad=8 后按比例换算）
+    check("_figbox 精确换算", _figbox("100,200,600,700", 2481, 3508) ==
+          (228, 673, 1508, 2483), str(_figbox("100,200,600,700", 2481, 3508)))
 
     # lecture_map / lect_of：讲次由**页眉标题**决定，不由目录页码决定
     fake = {9: {"page": {"kind": "正文", "title": "第1讲：不等式(1)"}, "questions": []},

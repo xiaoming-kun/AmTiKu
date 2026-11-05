@@ -13,13 +13,14 @@
  */
 import { useEffect } from 'react'
 import {
-  LayoutGrid, ScanLine, FolderTree, Sparkles,
+  LayoutGrid, ScanLine, FolderTree, Sparkles, Activity,
   ClipboardList, Trash2, History,
   PanelLeftClose, PanelLeft, Check,
 } from 'lucide-react'
+import Appearance from '@/app/Appearance'
 
 export type NavKey =
-  | 'workbench' | 'ingest' | 'points'
+  | 'workbench' | 'health' | 'ingest' | 'points'
   | 'export' | 'paper' | 'trash' | 'changes'
 
 type Item = {
@@ -36,7 +37,9 @@ export const NAV_GROUPS: { label: string; items: Item[] }[] = [
     label: '工作流',
     items: [
       { key: 'workbench', label: '工作台', hint: 'W', icon: LayoutGrid, desc: '找题、挑题、组卷' },
-      { key: 'ingest', label: '录题', hint: 'I', icon: ScanLine, desc: '把 LaTeX 粘进来入库' },
+      { key: 'health', label: '题库体检', hint: 'H', icon: Activity, desc: '覆盖、难度、缺口和待补队列' },
+      { key: 'ingest', label: '手工录入', hint: 'I', icon: ScanLine,
+        desc: '粘贴 LaTeX / 拖 .tex 进来入库' },
       { key: 'points', label: '知识点', hint: 'K', icon: FolderTree, desc: '按章节考点筛题' },
     ],
   },
@@ -53,11 +56,13 @@ export const NAV_GROUPS: { label: string; items: Item[] }[] = [
 
 /** 快捷键 → 导航项。App.tsx 单键监听用这张表。 */
 export const NAV_BY_HINT: Record<string, NavKey> = Object.fromEntries(
-  NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.hint.toLowerCase(), i.key])),
+  NAV_GROUPS.flatMap((g) => g.items.filter((i) => i.hint)
+    .map((i) => [i.hint.toLowerCase(), i.key] as [string, NavKey])),
 )
 
-const W_OPEN = 208
-const W_SHUT = 60
+/** 展开 / 收起时的栏宽。**导出**：布局预算要知道它占多少（见 App 的 drawerMax）。 */
+export const NAV_W_OPEN = 208
+export const NAV_W_SHUT = 60
 
 export default function Nav({
   active, onPick, collapsed, onCollapsed, kind, onKind, kinds, total, pointsCovered, pointsTotal,
@@ -83,7 +88,7 @@ export default function Nav({
 
   return (
     <aside
-      style={{ width: collapsed ? W_SHUT : W_OPEN }}
+      style={{ width: collapsed ? NAV_W_SHUT : NAV_W_OPEN }}
       className="relative z-20 flex shrink-0 flex-col border-r border-border bg-surface
                  transition-[width] duration-200 ease-[cubic-bezier(.22,.61,.36,1)]"
     >
@@ -148,11 +153,13 @@ export default function Nav({
                       <>
                         <span className={`min-w-0 flex-1 truncate text-left text-[13px]
                                           ${on ? 'font-semibold' : 'font-medium'}`}>{it.label}</span>
-                        <kbd className={`shrink-0 rounded border px-1 text-[10px] font-medium leading-[15px]
-                                         ${on ? 'border-brand-line bg-surface/70 text-brand-ink'
-                                              : 'border-border bg-surface-2 text-ink-faint'}`}>
-                          {it.hint}
-                        </kbd>
+                        {it.hint && (
+                          <kbd className={`shrink-0 rounded border px-1 text-[10px] font-medium leading-[15px]
+                                           ${on ? 'border-brand-line bg-surface/70 text-brand-ink'
+                                                : 'border-border bg-surface-2 text-ink-faint'}`}>
+                            {it.hint}
+                          </kbd>
+                        )}
                       </>
                     )}
                   </button>
@@ -192,7 +199,7 @@ export default function Nav({
             <div className="mt-2 flex items-center gap-1.5 px-0.5 text-[10.5px] text-ink-faint">
               <span className="tnum font-semibold text-ink-soft">{total.toLocaleString()}</span>
               <span>道题</span>
-              <span className="text-border-strong">·</span>
+              <span className="text-ink-faint">·</span>
               <span className="tnum">考点 {pointsCovered}/{pointsTotal}</span>
             </div>
           </>
@@ -211,6 +218,11 @@ export default function Nav({
           <Check size={11} strokeWidth={2.6} />{kind}
         </div>
       )}
+
+      {/* ── 外观 ──
+          明暗和强调色是**全局口径**，和上面的「当前范围」同类，所以放同一层。
+          不放进顶栏：顶栏那一排是"对当前这些题做什么"，主题不是动作。 */}
+      <Appearance collapsed={collapsed} />
     </aside>
   )
 }

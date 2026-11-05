@@ -139,10 +139,10 @@ def pending(*, kind: str = "", difficulty: str = "", book: str = "",
     for _f, q in store.iter_questions():
         if stage == "solution":
             # 只补解析：必须有答案、且确实没解析
-            if not q.answer.strip() or q.solution.strip():
+            if not q.answer.strip() or q.has_solution:
                 continue
         else:
-            if q.solution.strip() or q.answer.strip():
+            if q.has_solution or q.answer.strip():
                 continue
         if kind and q.kind != kind:
             continue
@@ -297,7 +297,7 @@ def collect(path: str | Path, *, dry_run: bool = True,
     if not parsed:
         return {"ok": False, "error": "没解析出任何解答", "notes": notes}
 
-    qs = store.load_all()
+    qs, _sig = store.load_for_update()
     by_key = {q.key: q for q in qs}
     done: list[dict] = []
     bad: list[dict] = []
@@ -373,7 +373,7 @@ def collect(path: str | Path, *, dry_run: bool = True,
             q.meta["answer_source"] = "workbuddy"
         import time as _t
         q.meta["edited_at"] = _t.strftime("%Y-%m-%d %H:%M")
-    store.rewrite_all(qs)
+    store.rewrite_all(qs, based_on=_sig)
 
     return {"ok": True, "dry_run": False, "written": len(done),
             "bad": bad, "missing": missing, "notes": notes}

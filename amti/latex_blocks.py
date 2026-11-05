@@ -607,20 +607,26 @@ def _flush(buf: list[str], blocks: list[dict]) -> None:
     buf.clear()
     if not raw.strip():
         return
-    nodes = inline(raw)
-    if not nodes:
-        return
-    # 段落里夹着插图时拆出来，让图独占一行（居中、好排版）
-    run: list[dict] = []
-    for nd in nodes:
-        if nd["t"] == "fig":
-            if run:
-                blocks.append({"t": "p", "in": run}); run = []
-            blocks.append({"t": "fig", "id": nd["id"], "width": nd["width"]})
-        else:
-            run.append(nd)
-    if run:
-        blocks.append({"t": "p", "in": run})
+    # **空行 = 段落分隔**（LaTeX 就是这么认的）。原来整段塞进一个 `p`，
+    # 前端 `<span>` 把换行吞了——预览与导出对不上，行内小问也挤成一段。
+    for para in re.split(r"\n[ \t]*\n", raw):
+        para = para.strip()
+        if not para:
+            continue
+        nodes = inline(para)
+        if not nodes:
+            continue
+        # 段落里夹着插图时拆出来，让图独占一行（居中、好排版）
+        run: list[dict] = []
+        for nd in nodes:
+            if nd["t"] == "fig":
+                if run:
+                    blocks.append({"t": "p", "in": run}); run = []
+                blocks.append({"t": "fig", "id": nd["id"], "width": nd["width"]})
+            else:
+                run.append(nd)
+        if run:
+            blocks.append({"t": "p", "in": run})
 
 
 def _make_list(env: str, body: str) -> dict:
@@ -716,11 +722,55 @@ def _make_table(env: str, src: str, bs: int, be: int) -> dict:
     return {"t": "table", "rows": rows, "env": env}
 
 
-def parse_blocks(src: str) -> list[dict]:
-    """正文 LaTeX → 块级 IR。"""
+#: 行内的小问编号：句末标点后紧跟 `（1）`/`(i)`/`（II）`，且后面是汉字。
+#:
+#: 这类题**不是** enumerate——渲染时会和上一句挤在同一段，卷面看不出层级。
+#: 存量里还剩二十来道（顶层/嵌套迁移规则只认行首，行内的够不着）。
+#: 这是**排版的兜底**，不改编号、不改文字：只在编号前补一个空行，
+#: 三种渲染路径（块级 IR / 讲义 markdown / 试卷 LaTeX）都因此换段。
+_INLINE_PART = re.compile(
+    r"([。；;.．])[ \t]*([（(])[ \t]*([1-9]|i{1,3}|I{1,3}|iv|IV)[ \t]*([)）])"
+    r"(?=[\u4e00-\u9fff])")
+
+
+def break_inline_parts(text: str) -> str:
+    r"""句中的 `（1）`/`(i)` 小问编号前补空行（**只影响排版，不改内容**）。
+
+    `$…$` 里的 `(1)` 不动（如 `$S_n(1)$`）；已经在行首的不动。
+    幂等：补过一次后，标点与编号之间隔着换行，正则不再命中。
+    """
+    if not text:
+        return text
+    out: list[str] = []
+    last = 0
+    for m in _INLINE_PART.finditer(text):
+        # 数学模式里的 (1)/(i) 不是分问
+        if text.count("$", 0, m.start()) % 2:
+            continue
+        pre = text[:m.start()]
+        line = pre[pre.rfind("\n") + 1:]
+        if not line.strip():                      # 已在行首
+            continue
+        out.append(text[last:m.start() + 1])      # 连句末标点
+        out.append("\n\n")
+        last = m.start(2)                         # 从 `（` 开始
+    if not out:
+        return text
+    out.append(text[last:])
+    return "".join(out)
+
+
+def parse_blocks(src: str, *, parts: bool = False) -> list[dict]:
+    """正文 LaTeX → 块级 IR。
+
+    `parts=True` 只给**题干**用：行内 `（1）`/`(i)` 小问前补空行。
+    答案/解析/选项不需要——那里的 `(1)` 多是引用，补空行只会把排版弄碎。
+    """
     if not src:
         return []
     src = _COMMENT_RE.sub("", src)
+    if parts:
+        src = break_inline_parts(src)
 
     blocks: list[dict] = []
     buf: list[str] = []

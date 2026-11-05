@@ -125,7 +125,7 @@ export default function CommandPalette({ open, onClose, commands, onSearch }: {
 
   return (
     <div className={`${closing ? 'anim-fade-out' : 'anim-fade-in'} fixed inset-0 z-[70]
-                    flex items-start justify-center bg-ink/25 px-4 pt-[12vh] backdrop-blur-[2px]`}
+                    flex items-start justify-center bg-scrim px-4 pt-[12vh] backdrop-blur-[2px]`}
       onMouseDown={onClose}>
       <div role="dialog" aria-modal="true" aria-label="命令面板"
         onMouseDown={(e) => e.stopPropagation()}

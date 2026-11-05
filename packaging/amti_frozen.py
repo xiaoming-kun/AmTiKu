@@ -1,7 +1,9 @@
 r"""免安装版入口（PyInstaller 打包用）。
 
 双击 exe → 起服务 → 自动打开浏览器；关掉页面 25 秒后自动退出。
-数据放在 **exe 同目录**（题目/ 图片/ 知识点.json）；没有就先用随包的 demo 题库。
+数据目录由 `amti.paths.resolve_root()` 决定：Windows 放在 exe 同目录（便携，
+整个文件夹拷走就搬家）；macOS 放在 `~/Library/Application Support/AmTiKu`
+（`.app` 是只读包体，往里写会破坏签名）。没有题库时先用随包的 demo 题库。
 """
 import os
 import shutil
@@ -10,9 +12,15 @@ from pathlib import Path
 
 
 def _root() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
+    r"""数据目录：**必须走 `amti.paths.resolve_root()`**，别在这儿再实现一遍。
+
+    曾经这里是 `Path(sys.executable).parent` 的副本，于是 macOS 上把题库写进了
+    `AmTiKu.app/Contents/MacOS/`——签名被破坏、用户也找不到自己的数据。
+    平台差异（Windows 放 exe 旁、macOS 放 Application Support）只该有一个地方决定。
+    """
+    from amti import paths
+
+    return paths.resolve_root()
 
 
 def _ensure_data(root: Path) -> None:
@@ -71,9 +79,15 @@ def _setup_tex(root: Path) -> None:
     TeX Live 自己会用 $SELFAUTOPARENT 定位这些树，所以理论上只需把 bin 放进 PATH；
     这里把 TEXMF* 也显式设上，避免用户机器上装了别的 TeX 时被抢走。
     """
-    binroot = root / "tex" / "bin"
-    if not binroot.is_dir():
+    # 两处都找：随包**只读资源**（.app 里在 Contents/Frameworks，Windows onedir 在 _internal），
+    # 以及数据目录旁边（用户自己拷一棵 TeX 进来也能生效）。
+    from amti import paths
+
+    tex = next((p for p in (paths.resolve_resources() / "tex", root / "tex")
+                if (p / "bin").is_dir()), None)
+    if tex is None:
         return
+    binroot = tex / "bin"
     exe = "xelatex.exe" if os.name == "nt" else "xelatex"
     for d in sorted(binroot.iterdir()):
         if (d / exe).exists():
@@ -83,8 +97,8 @@ def _setup_tex(root: Path) -> None:
             # ——30 毫秒退出、日志里连 `!` 都没有（CI 上定位了好几轮）。
             # 但中文 Windows 的 ANSI 代码页是 GBK，同样路径反而能跑，
             # 所以**不猜，花 200 毫秒真跑一次 `--version`**。
-            if any(ord(c) > 127 for c in str(root)) and not _tex_runs(d / exe):
-                print("⚠ 内置 LaTeX 在这个路径下起不来：", root)
+            if any(ord(c) > 127 for c in str(tex)) and not _tex_runs(d / exe):
+                print("⚠ 内置 LaTeX 在这个路径下起不来：", tex)
                 print("  原因：路径含中文/非 ASCII 字符，kpathsea 无法启动"
                       "（报 Can't get long name）。")
                 sys_xe = shutil.which(exe)
@@ -95,12 +109,18 @@ def _setup_tex(root: Path) -> None:
                 print("    1) 把整个文件夹移到纯英文路径，例如 D:\\AmTiKu；")
                 print("    2) 自行安装 TeX Live（见《TeXLive安装.md》），它会装在英文路径下。")
             os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
-            tex = root / "tex"
-            os.environ.setdefault("TEXMFCNF", str(tex / "texmf-dist" / "web2c"))
-            os.environ.setdefault("TEXMFROOT", str(tex))
-            os.environ.setdefault("TEXMFDIST", str(tex / "texmf-dist"))
-            os.environ.setdefault("TEXMFVAR", str(tex / "texmf-var"))
-            os.environ.setdefault("TEXMFSYSVAR", str(tex / "texmf-var"))
+            if not any(ord(c) > 127 for c in str(tex)):
+                # 纯 ASCII 路径：显式钉住各棵树，免得被机器上别的 TeX 抢走。
+                #
+                # ⚠️ 路径含非 ASCII 时**一个都不能设**：kpathsea 读到这些变量会走
+                #    runscript.tlu 的 os.setenv，而 os.setenv 处理不了非 ASCII ——
+                #    于是"明明已经从 ASCII 目录联接启动了引擎"仍然失败（CI 实测过）。
+                #    不设的话，引擎会按自身位置（那条联接）推 SELFAUTOPARENT，正好是 ASCII。
+                os.environ.setdefault("TEXMFCNF", str(tex / "texmf-dist" / "web2c"))
+                os.environ.setdefault("TEXMFROOT", str(tex))
+                os.environ.setdefault("TEXMFDIST", str(tex / "texmf-dist"))
+                os.environ.setdefault("TEXMFVAR", str(tex / "texmf-var"))
+                os.environ.setdefault("TEXMFSYSVAR", str(tex / "texmf-var"))
             print("已加载内置 LaTeX:", d.name)
             return
 
@@ -147,7 +167,7 @@ def _export_smoke() -> bool | None:
     r"""走**程序自己的导出代码**编一份 PDF，而不只是看 xelatex 在不在。
 
     被一个真 bug 逼出来的：server.py 的 export() 里用了 _paper 却没导入，
-    只在某个字段为空时触发 NameError——只测 xelatex 的自检完全发现不了。
+    只在 handout_font 为空时触发 NameError——只测 xelatex 的自检完全发现不了。
     返回 True 通过 / False 失败 / None 跳过（没有数据或没装 TeX）。
     """
     import tempfile

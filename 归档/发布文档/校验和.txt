@@ -1,0 +1,28 @@
+# AmTiKu 发布包校验和（sha256）　更新：2026-09-23
+#
+# 核对：Windows  certutil -hashfile "文件名" SHA256
+#       macOS    shasum -a 256 "文件名"
+# 路径都相对 `发布/`。带「别发」的只留档，别外发。
+
+# ══ 可公开（GitHub Release 附件）══════════════════════════════════
+78932ce6912108d36cdf1a0871fa95e6f64705c2b33f4642ebc7280e88634c20  源码版/AmTiKu-源码版-20260923.zip
+#   2026-09-23 Windows 源码版，403 MB：内置 LaTeX + 已构建前端 + 离线依赖 + 内置 Python 安装包
+#   只含 4 道自编 demo 题，不含真题库；已核 UTF-8 名标记齐全（Windows 解压不乱码）
+
+# ══ 内部（含题库 / 交接用，绝不公开）══════════════════════════════
+9da9647227c8044f0c2aa6d77b1073ef8186ffb40126d1c1c2e188387de5d3be  交接/AmTiKu-交接-20260922.zip
+825e822a80e05138f796d8dce144fa720de7fcf8380655bf9a5e822dafa48698  免安装/AmTiKu-macOS-免安装版（含题库）.zip
+0ad546faf0bfc2d99afc4bb2ac8b12debc93c7853e906b00710b450ec44864ef  试用/AmTiKu-macOS-试用版（无题库）.zip
+#   ↑ macOS 两个包已实测可用（首页 / 导出 / 写库 13 项端到端）；本轮不发布
+
+# ══ 别发（留档，见 旧版-别发/说明.md）═════════════════════════════
+f5539c4fdf5b883a73d21b070cbc121c9fd7d3f19d8b90857cd1d1ea45c8357c  旧版-别发/AmTiKu-Windows-免安装版（含题库）.zip
+ce6e7cd315fc9b807738c6e1925f020326c3c34b2431497c90674d7bae41e128  旧版-别发/AmTiKu-Windows-试用版（无题库）.zip
+3e4bcee0f6aac71e82f50a5207a4f2f68738d17edededcbd6a82527e5d7afdc5  旧版-别发/20260922-别发-Windows首页打不开/AmTiKu-Windows-免安装版（含题库）.zip
+4475101baf2a316d110858eaeae0a69a0c08bd5c88486f61f807e9debf73aea0  旧版-别发/20260922-别发-Windows首页打不开/AmTiKu-Windows-试用版（无题库）.zip
+#   ↑ 这两个打开首页是 404（PyInstaller 找不到 _internal/web/dist），已修（commit 5d4e341），包是修前打的
+8338219a1d579f2bb58e8befd17fb888cd05e75ff460774ebaa3474482dcfa98  旧版-别发/AmTiKu-slim.zip
+489899009ad42185a82b2ed945dc696f816476375c20ee8255fe81a37cf1e7d1  旧版-别发/AmTiKu-macOS-arm64.zip
+86e479856db9400c6566240b6ee49c195a35d2afd398aa6e7fcaaa4500fd0438  旧版-别发/AmTiKu-windows-x64.zip
+c8e54bf0ecfe9435151d34639729cf555d07924469789edb3e4a2cf7b9029f93  AmTiKu-Windows-tex.zip
+#   ↑ 上面四个 = GitHub v0.1.0 原有的 4 个附件，本轮已从 Release 下架（本地这几个文件就是原件，逐字节一致）

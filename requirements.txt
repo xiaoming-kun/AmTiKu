@@ -1,16 +1,15 @@
-# AmTiKu 的 Python 依赖。
+# AmTiKu 运行时依赖（打发布包 / CI 用这一份）
 #
-# 装在项目内的 `.venv/`（**不是用户级 site-packages**），
-# 这样换台机器、或者系统 Python 升级了，项目都还能跑。
+# 从 `amti/` 里真实的 import 归纳而来（PIL→pillow、fitz→pymupdf），
+# 版本锁在发布时的开发机状态，保证"我这儿能跑 → 用户那儿同版本"。
 #
-# 装： .venv/bin/python -m pip install --no-user -r requirements.txt
-# 版本是**照当前能跑的这份钉死的**——升版本前先跑 `python3 amti.py accept` 验一遍。
-fastapi==0.141.1
-uvicorn==0.52.4
-pydantic==2.13.5
+# 装：python3 -m pip install -r requirements.txt
+# 国内镜像（pypi.org 常常连不上，实测 000）：
+#   -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+fastapi==0.136.1
+uvicorn==0.47.0
+pydantic==2.13.4
 pillow==12.2.0
 numpy==2.4.6
-PyMuPDF==1.27.2.3
-
-# 测试用：fastapi.testclient 需要它（测试/接口测试.py 起不来就是这个缺的）
-httpx==0.28.1
+pymupdf==1.28.2

@@ -9,12 +9,13 @@
 * 后端：Python 3，自研 HTTP 服务（`amti/`，端口 8899）
 * 前端：React 18 + TypeScript + Tailwind（`web/src/`，构建产物 `web/dist/`，由后端一起发）
 * 题目：**LaTeX**（界面用 KaTeX 渲染）
+* 目录：**根目录只放"入口"和"数据区"**，一次性产物进 `归档/`——每个目录的职责见 `docs/目录规范.md`
 
 ## 二、改完必须验收
 
 ```bash
 python3 amti.py accept          # 四层：单元自检 / 规范审查 / 端到端渲染 / 快照——必须全绿
-python3 测试/接口测试.py         # 接口回归 18 项
+python3 测试/接口测试.py         # 接口回归（项数以实际输出为准）
 cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run build
 ```
 
@@ -34,7 +35,8 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 
 ## 四、改数据的规矩
 
-1. **先读格式规范**（公开版：`docs/题目格式.md`；内部完整版在本地 `设计/题目规范.md`），再动数据。
+1. **先读规范入口**：本地 `设计/题目格式与录题规范-总纲.md`（优先级/验收分级）→ `设计/题目规范.md`（格式真相）；
+   公开版见 `docs/题目格式.md`。再动数据。
 2. **批量改动**走 `normalize.py`（成片规则）/ `fixups.py`（逐题订正）/ `exchange.collect`（补答案与解析），
    不要直接编辑 `题目/*.tex`。
 3. **答案与解析**：没有答案或解析的题**一律不许入库**（`ingest` 会整批拒绝）；
@@ -53,11 +55,12 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 
 | 坑 | 表现 | 防法 |
 |---|---|---|
-| **预览与导出不一致** | 编辑器看着对，PDF 不一样 | 前后端成对的转换函数**必须同步改**（`web/src/lib/qlatex.ts` ↔ `amti/paper.py`），并有测试逐题比对 |
+| **预览与导出不一致** | 编辑器看着对，PDF 不一样 | 界面（`web/src/lib/qlatex.ts`，KaTeX）与导出（`amti/paper.py`，exam-zh）是两条渲染路径，题干写法**必须两边都验证**，并有测试逐题比对 |
 | **构建成功 ≠ 渲染正确** | 静默失败、出空 PDF / 源码泄漏 | 必须看产物的文本层（`accept` 层③ 就是干这个的） |
 | **改完没重新构建前端** | 界面还是旧行为 | 改 `web/src` 后必须 `npm run build` |
 | **一处漏 catch 就静默失败** | 界面表现成"没数据" | 请求统一走 `lib/api.ts` 的 `request()`，错误有全局提示 |
 | **改了接口约束把验收脚本打挂** | `测试/` 报错 | 改约束时全仓搜调用点（`grep -rn "limit="`） |
+| **照着旧文档录题** | 图题不录/解析无/题型按题号等旧规则 | 先看总纲 §0 的文档状态表；旧线文档只作历史，不能照做 |
 
 ## 七、提交信息
 

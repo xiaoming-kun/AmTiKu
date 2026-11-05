@@ -17,9 +17,10 @@
  * 全量库 20706 题里 25.1% 带列表、2.3% 带表格。在前端打补丁是追不平的，
  * 所以语法解析整体收回 Python，前端不再碰。
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import katex from 'katex'
 import type { ReactNode } from 'react'
+import { send } from '@/lib/api'
 
 /* ══ IR 类型（对应 amti/latex_blocks.py 的输出） ═══════════ */
 
@@ -81,7 +82,43 @@ function Math({ tex, display }: { tex: string; display: boolean }) {
 
 /* ══ 行内 ═════════════════════════════════════════════════ */
 
+/** TikZ 在 HTML 里画不了：点一下交给后端渲成 PNG，再审图。 */
+function TikzRaw({ tex }: { tex: string }) {
+  const [src, setSrc] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const load = async () => {
+    if (busy || !tex.trim()) return
+    setBusy(true); setErr('')
+    try {
+      const r: any = await send('/api/tikz/render', 'POST', { tex })
+      setSrc(`/api/figure?path=${encodeURIComponent(r.path)}`)
+    } catch (e) {
+      setErr(String((e as any)?.message || e))
+    } finally { setBusy(false) }
+  }
+  return (
+    <div className="q-raw">
+      <span className="q-raw-tag">TikZ 图形</span>
+      {src ? (
+        <img className="q-img" src={src} alt="TikZ" style={{ maxWidth: '100%' }} />
+      ) : (
+        <button onClick={load} disabled={busy}
+          className="press rounded-md border border-border bg-surface px-2 py-[3px]
+                     text-[11px] text-ink-soft hover:border-brand-line disabled:opacity-50">
+          {busy ? '渲染中…' : '显示 TikZ 图'}
+        </button>
+      )}
+      {err && <div className="mt-1 text-[10.5px] text-warn">{err}</div>}
+    </div>
+  )
+}
+
 function Img({ id, width }: { id: string; width: string }) {
+  const [missing, setMissing] = useState(false)
+  if (missing) {
+    return <span className="text-[10px] text-warn">图片缺失（见卡片下方预览）</span>
+  }
   return (
     <img
       className="q-img"
@@ -89,17 +126,45 @@ function Img({ id, width }: { id: string; width: string }) {
       alt="题图"
       style={{ width }}
       loading="lazy"
+      onError={() => setMissing(true)}
     />
   )
 }
 
-function Inlines({ nodes }: { nodes: Inline[] }) {
+/** 搜索命中高亮：大小写不敏感，只包命中的片段。
+ *
+ *  只对**纯文本**做（题干里的公式是 KaTeX 渲染的，不拆）；出处、考点名、
+ *  题干文字都能用。`kw` 为空原样返回，别为没搜索的列表加一层节点。 */
+export function Highlight({ text, kw }: { text: string; kw?: string }): ReactNode {
+  const k = (kw || '').trim()
+  if (!text || !k) return text
+  const low = text.toLowerCase()
+  const kl = k.toLowerCase()
+  if (!low.includes(kl)) return text
+  const out: ReactNode[] = []
+  let i = 0
+  let n = 0
+  while (i < text.length) {
+    const j = low.indexOf(kl, i)
+    if (j < 0) { out.push(text.slice(i)); break }
+    if (j > i) out.push(text.slice(i, j))
+    out.push(
+      <mark key={n++} className="rounded-[3px] bg-warn-soft px-0.5 text-inherit">
+        {text.slice(j, j + k.length)}
+      </mark>,
+    )
+    i = j + k.length
+  }
+  return <>{out}</>
+}
+
+function Inlines({ nodes, kw }: { nodes: Inline[]; kw?: string }) {
   return (
     <>
       {nodes.map((n, i) => {
         switch (n.t) {
           case 's':
-            return <span key={i}>{n.s}</span>
+            return <span key={i}><Highlight text={n.s} kw={kw} /></span>
           case 'm':
             return <Math key={i} tex={n.s} display={!!n.display} />
           case 'fig':
@@ -132,12 +197,12 @@ const RAW_LABEL: Record<string, string> = {
   axis: '坐标图',
 }
 
-function BlockView({ b }: { b: Block }) {
+function BlockView({ b, kw }: { b: Block; kw?: string }) {
   switch (b.t) {
     case 'p':
       return (
         <div className="q-p">
-          <Inlines nodes={b.in} />
+          <Inlines nodes={b.in} kw={kw} />
         </div>
       )
 
@@ -149,7 +214,7 @@ function BlockView({ b }: { b: Block }) {
       )
 
     case 'list': {
-      const items = b.items.map((it, i) => <li key={i}>{renderBlocks(it)}</li>)
+      const items = b.items.map((it, i) => <li key={i}>{renderBlocks(it, kw)}</li>)
       return b.ordered
         ? <ol className="q-list">{items}</ol>
         : <ul className="q-list">{items}</ul>
@@ -166,8 +231,8 @@ function BlockView({ b }: { b: Block }) {
                     <td key={j} colSpan={c.span > 1 ? c.span : undefined}>
                       {/* 单元格里可能是**嵌套的表格**（老卷子常用 tabular 套 tabular
                           做排版），那种情况整格按块渲染，画出来就是表里套表。 */}
-                      {c.blocks ? renderBlocks(c.blocks)
-                                : <Inlines nodes={c.in || []} />}
+                      {c.blocks ? renderBlocks(c.blocks, kw)
+                                : <Inlines nodes={c.in || []} kw={kw} />}
                     </td>
                   ))}
                 </tr>
@@ -180,7 +245,7 @@ function BlockView({ b }: { b: Block }) {
     case 'box':
       return (
         <div className={`q-box q-${b.kind}`} style={b.width ? { maxWidth: '100%' } : undefined}>
-          {renderBlocks(b.blocks)}
+          {renderBlocks(b.blocks, kw)}
         </div>
       )
 
@@ -192,6 +257,9 @@ function BlockView({ b }: { b: Block }) {
       )
 
     case 'raw':
+      if (b.env === 'tikzpicture' && b.tex) {
+        return <TikzRaw tex={b.tex} />
+      }
       return (
         <div className="q-raw">
           <span className="q-raw-tag">{RAW_LABEL[b.env || ''] || b.env || '原样内容'}</span>
@@ -205,9 +273,9 @@ function BlockView({ b }: { b: Block }) {
 }
 
 /** 渲染一段块级 IR。`blocks` 为空时返回 null。 */
-export function renderBlocks(blocks?: Block[] | null): ReactNode {
+export function renderBlocks(blocks?: Block[] | null, kw?: string): ReactNode {
   if (!blocks || blocks.length === 0) return null
-  return <>{blocks.map((b, i) => <BlockView key={i} b={b} />)}</>
+  return <>{blocks.map((b, i) => <BlockView key={i} b={b} kw={kw} />)}</>
 }
 
 /** 块级 IR → 纯文本（搜索摘要、剪贴板用）。 */

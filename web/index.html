@@ -4,6 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AmTiKu · 题库</title>
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      /* 首屏防闪：在**第一次绘制之前**把主题定下来。
+       *
+       * 这段必须内联、必须阻塞、必须放在 <head>。放到 React 里的话，
+       * 暗色用户会先看到一帧纯白（浏览器默认底色）再"啪"地变黑 ——
+       * 库有两万多道题，那一帧里首屏的骨架已经画出来了，闪得很明显。
+       *
+       * 只做两件事：读 localStorage → 给 <html> 挂 class / data 属性。
+       * 具体规则见 src/lib/theme.ts，**两处的键名和取值必须一致**。
+       * 外面包 try：隐私模式下 localStorage 会抛，那时跟随系统即可。 */
+      (function () {
+        var mode = 'system', accent = 'rose';
+        try {
+          var m = localStorage.getItem('amtiku.theme');
+          if (m === 'light' || m === 'dark' || m === 'system') mode = m;
+          var a = localStorage.getItem('amtiku.accent');
+          if (/^(rose|indigo|ocean|emerald|violet|graphite)$/.test(a)) accent = a;
+        } catch (e) {}
+        var dark = mode === 'dark' ||
+          (mode === 'system' && window.matchMedia &&
+           window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var el = document.documentElement;
+        if (dark) el.classList.add('dark');
+        el.setAttribute('data-accent', accent);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

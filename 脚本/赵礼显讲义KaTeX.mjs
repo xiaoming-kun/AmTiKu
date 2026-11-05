@@ -18,7 +18,16 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const OUT = path.join(HERE, '..', '数据/录题/赵礼显/out')
+// 产物目录可以传进来（`node 脚本/赵礼显讲义KaTeX.mjs 数据/录题/其他杂项/out`），
+// 不传就还是赵礼显那一批——保持原来的用法不变。
+// 为什么值得参数化：这套检查的全部价值在于"**暂存产物也得先证明 KaTeX 画得出来**"，
+// 而暂存产物不止一批；复制一份脚本 = 两个真相，改一处忘一处。
+const OUT = process.argv[2]
+  ? path.resolve(process.cwd(), process.argv[2])
+  : path.join(HERE, '..', '数据/录题/赵礼显/out')
+const LABEL = process.argv[2]
+  ? path.relative(process.cwd(), OUT)
+  : '赵礼显讲义'
 
 // `katex` 只装在 `web/node_modules` 里，而这个脚本在 `脚本/`——
 // ESM 是按**脚本所在目录**找包的，直接 `import 'katex'` 会 ERR_MODULE_NOT_FOUND。
@@ -132,7 +141,7 @@ for (const f of files) {
   }
 }
 
-console.log(`赵礼显讲义 KaTeX 检查：${files.length} 个文件，${nQ} 道题，${nMath} 段公式`)
+console.log(`${LABEL} KaTeX 检查：${files.length} 个文件，${nQ} 道题，${nMath} 段公式`)
 for (const [key, tex, msg] of fails.slice(0, 40)) {
   console.log(`  ✗ ${key}\n      ${JSON.stringify(tex)}\n      ${msg}`)
 }

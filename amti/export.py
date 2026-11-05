@@ -32,7 +32,9 @@ from . import store
 
 PKG = ROOT
 IMG_DIR = PKG / "图片"
-from .paths import OUT_DIR   # 导出位置**唯一来源**（可在 数据/导出位置.txt 里改）
+# 导出位置与分类子目录**唯一来源**（位置在 数据/导出位置.txt 里改，
+# 分类见 `amti/paths.py` 的 OUT_KINDS：试卷 / 测试卷 / 讲义）
+from .paths import OUT_KINDS, PREVIEW_DIR, kind_of, out_kind_dir, out_kind_label
 
 # 分节顺序（组卷时按这个排）
 SECTION_ORDER = ("single_choice", "multi_choice", "fill_in_blank", "detailed_answer")
@@ -47,20 +49,34 @@ SECTION_NAME = {
 # ── 卷面渲染 ──────────────────────────────────────────────────────────
 
 def render_paper(questions: list[Question], *, title: str = "", show_answers: bool = False,
-                 answers_at_end: bool = False, show_source: bool = False,
+                 answers_at_end: bool = False, show_source: bool = True,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
-                 columns: int = 4, mode: str = "gaokao") -> str:
+                 columns: int = 0, mode: str = "gaokao",
+                 handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
+                 qid_marks: bool = False,
+                 score_box: bool = True, seal_line: bool = True) -> str:
     """渲染成完整的 exam-zh 文档。**委托给 `paper.py`。**
 
     这里早先自己实现过一份，结果 `paper.py` 的两种卷型和「按位置定难度」
     成了**死代码**——界面上导出的卷子永远没有难度标注，也没有考点小字。
-    现在只留一份实现，`mode` 取 `gaokao`（高考卷）/ `test`（纯测试题）。
+    现在只留一份实现，`mode` 取 `gaokao`（高考卷）/ `test`（纯测试题）/
+    `handout`（讲义：一题一页 · A4 横版 · 无答案，给 iPad 讲课用）。
+
+    `show_source` **默认开**：三种卷型每题题干前都印出处
+    （`（2023新高考II卷）`，**不印原卷题号**），跟讲义一致；卷面上不印难度。
+
+    ⚠️ 这个包装函数**必须和 `paper.render_paper` 的参数保持同步**。
+    实测踩过：给 `paper` 加了 `qid_marks` 却没加到这里，于是
+    `export.export()` 传参直接 `TypeError` —— **整个导出功能 500**，
+    而验收四层全绿（层③ 走的是 `paper`，不经过这里，没覆盖到）。
     """
     return _paper.render_paper(
         questions, mode=mode, title=title, show_answers=show_answers,
         answers_at_end=answers_at_end, show_source=show_source,
         bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
-        columns=columns, graphicspath=str(IMG_DIR))
+        columns=columns, graphicspath=str(IMG_DIR),
+        handout_font=handout_font, qid_marks=qid_marks,
+        score_box=score_box, seal_line=seal_line)
 
 
 # ── 编译 ──────────────────────────────────────────────────────────────
@@ -145,6 +161,10 @@ def ascii_engine(engine: str) -> tuple[str, str]:
     """
     if not any(ord(c) > 127 for c in engine):
         return engine, ""                      # 本来就是纯 ASCII，不折腾
+    if os.name != "nt":
+        # 只有 Windows 的 kpathsea 会死在非 ASCII 路径上（macOS/Linux 用 UTF-8 文件名，
+        # 引擎照常启动）。别在 mac 上白试 `mklink`。
+        return engine, ""
     if engine in _ASCII_LINK_CACHE:
         return _ASCII_LINK_CACHE[engine], ""
     try:
@@ -198,17 +218,27 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
     # （报错长这样：`runscript.tlu:952: unable to change environment`，
     # 或者更早的 `(null): fatal: Can't get long name for D:\?? ??\AmTiKu.`）。
     #
-    # ⚠️ 以前这里只是**检测并告知**（让用户自己把文件夹移到英文路径），
+    # ⚠️ 以前这里只是**检测并告知**（让用户自己把文件夹移到英文路径）。
     #    实测发现**可以自动绕开**：给 TeX 安装根建一个 ASCII 目录联接，
     #    从联接里启动引擎即可（见 `ascii_engine`）。绕不了才回落到那句提示。
     xe = shutil.which("xelatex") or "xelatex"
     xe_run, link = ascii_engine(xe)
+    # 引擎换成 ASCII 联接后，**环境里指向原中文路径的变量必须一起改**：
+    # 只换可执行文件不够——TEXMF* 和 PATH 里还是 `D:\冒烟 测试\...`，
+    # kpathsea 一读就走到 runscript.tlu 的 os.setenv，照样炸。
+    env = None
+    if link:
+        old_root = str(Path(xe).resolve().parent.parent.parent)
+        env = dict(os.environ)
+        for k in list(env):
+            if k == "PATH" or k.startswith("TEXMF"):
+                env[k] = env[k].replace(old_root, link)
     xe_hint = ""
     if link:
         xe_hint = ("检测到内置 LaTeX 在含中文/非 ASCII 的路径下：\n"
                    f"    {xe}\n"
                    f"    已自动改用 ASCII 目录联接启动：{link}\n")
-    elif any(ord(c) > 127 for c in xe):
+    elif os.name == "nt" and any(ord(c) > 127 for c in xe):
         xe_hint = ("检测到内置 LaTeX 位于含中文/非 ASCII 字符的路径：\n"
                    f"    {xe}\n"
                    "这个引擎（kpathsea）在这种路径下**无法启动**，导出必定失败。\n"
@@ -227,8 +257,10 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
         for _ in range(passes):
             r = subprocess.run(
                 [xe_run, "-interaction=nonstopmode", "-halt-on-error",
+                 "-file-line-error",
                  build_tex.name],
                 cwd=build_dir, capture_output=True, text=True,
+                env=env,                      # None=继承；走联接时是改写过的副本
                 # 显式指定 UTF-8：默认按系统 locale 解码（英文 Windows 是 cp1252），
                 # 而 xelatex 的输出里有中文（标题、路径、题目），strict 解码直接抛
                 # UnicodeDecodeError，把"导出失败"变成一段看不懂的异常。
@@ -248,6 +280,14 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
         produced = build_dir / "main.pdf"
         if not produced.exists():
             return False, xe_hint + log
+        # 把 .aux 留在 PDF 旁边：导出后的排版体检要用它把
+        # `\label{amtiq…}` 的页码读出来（判断解答题有没有跨页）。
+        try:
+            aux = build_dir / "main.aux"
+            if aux.exists():
+                shutil.copy2(aux, tex_path.with_suffix(".aux"))
+        except OSError:
+            pass
         shutil.move(str(produced), str(tex_path.with_suffix(".pdf")))
         return True, log
     finally:
@@ -270,16 +310,35 @@ def first_errors(log: str, n: int = 5) -> list[str]:
 
 def export(keys: list[str], *, title: str = "", out: str = "",
            show_answers: bool = False, answers_at_end: bool = False,
-           show_source: bool = False,
+           show_source: bool = True,
            bottom_sep: str = "0.6em",
            problem_blank_cm: float = 0.0, do_compile: bool = True,
-           mode: str = "gaokao") -> dict:
+           mode: str = "gaokao", handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
+           kind: str = "", preview: bool = False,
+           score_box: bool = True, seal_line: bool = True) -> dict:
     r"""按 key 列表导出。返回落盘位置（**必须回传，UI 要显示"存到哪了"**）。
 
-    `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字与每题难度）。
+    `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字）/
+    `handout`（讲义，见 `paper._render_handout`）。
+
+    `kind` 是**分类子目录**（试卷 / 测试卷 / 讲义，见 `paths.OUT_KINDS`），
+    默认由卷型推出来；界面把「考点覆盖卷」归到 `试卷`（它渲染用的是
+    `test` 卷型），所以留了个显式指定的口子。**非法值直接拒绝**——
+    这个值会被拼进路径，不能让它带 `../`。
+
+    `preview=True` 是**只编译给人看**：产物落 `数据/预览/`，
+    **不写存档、不计使用频次**（使用频次由调用方 server 计）。
+    「编译预览」和「导出并保存」以前是同一个动作，点一次预览就在用户的
+    资料夹里留一份 PDF，还把题目的「用过 N 次」+1。
+
+    **三种卷型默认都印出处、都不印难度**（用户要求，见 `paper` 模块开头）；
+    `show_source=False` 是界面上的「印出处」开关（用户 2026-11-05 要求可关）。
     """
-    if mode not in ("gaokao", "test"):
+    if mode not in ("gaokao", "test", "handout"):
         return {"ok": False, "error": f"未知卷型 {mode!r}", "missing": []}
+    kind = kind or kind_of(mode)
+    if kind not in OUT_KINDS:
+        return {"ok": False, "error": f"未知导出分类 {kind!r}", "missing": []}
 
     qs: list[Question] = []
     missing: list[str] = []
@@ -298,49 +357,103 @@ def export(keys: list[str], *, title: str = "", out: str = "",
         out = f"{title.strip() or '试卷'}_{stamp}"
     name = re.sub(r"[^\w\u4e00-\u9fff\-]+", "_", out).strip("_") or "试卷"
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    tex_path = OUT_DIR / f"{name}.tex"
+    # 分类落盘：`<导出位置>/<分类>/`（试卷 / 测试卷 / 讲义，见 paths.py）。
+    # 预览放应用数据里，不污染用户的资料夹。
+    dest = PREVIEW_DIR if preview else out_kind_dir(kind)
+    dest.mkdir(parents=True, exist_ok=True)
+    tex_path = dest / f"{name}.tex"
+    # `qid_marks=do_compile`：**要编译才写标记**。
+    # 标记是每题前面一行 `% AMTIKU-Q: <key>` 注释（不上卷面），
+    # 作用是编译失败时把 xelatex 给的行号翻成"是哪道题"（见 `amti/texdiag.py`）。
+    # 不编译就没人需要它，白白在导出源码里多 N 行。
     tex_path.write_text(render_paper(qs, title=title, show_answers=show_answers,
                                      answers_at_end=answers_at_end,
                                      show_source=show_source,
                                      bottom_sep=bottom_sep, mode=mode,
-                                     problem_blank_cm=problem_blank_cm),
+                                     problem_blank_cm=problem_blank_cm,
+                                     handout_font=handout_font,
+                                     qid_marks=do_compile,
+                                     score_box=score_box, seal_line=seal_line),
                         encoding="utf-8")
 
-    res = {"ok": True, "name": name, "questions": len(qs), "missing": missing,
-           "tex_abs": str(tex_path), "pdf_abs": None, "dir_abs": str(OUT_DIR),
-           "saved_hint": f"{name} 已保存到 {OUT_DIR.name}/",
-           "out_dir": str(OUT_DIR), "log": ""}
+    res = {"ok": True, "name": name, "kind": kind, "preview": preview,
+           "questions": len(qs), "missing": missing,
+           "tex_abs": str(tex_path), "pdf_abs": None, "pdf_rel": None,
+           "dir_abs": str(dest),
+           "saved_hint": (f"{name} 预览已生成（未保存、不计使用频次）" if preview
+                          else f"{name} 已保存到 {out_kind_label(kind)}/"),
+           "out_dir": str(dest), "log": ""}
     if do_compile:
         ok, log = compile_tex(tex_path)
         res["ok"] = ok
         if ok:
             res["pdf_abs"] = str(tex_path.with_suffix(".pdf"))
+            # 相对导出位置（或预览目录）的路径：前端预览 `/api/pdf?path=` 直接用它，
+            # 不用自己把「分类子目录」再拼一遍（那份拼法迟早和后端分叉）。
+            res["pdf_rel"] = (f"{name}.pdf" if preview else f"{kind}/{name}.pdf")
+            from . import pdfcheck as _pc
+            res.update(_pc.inspect(res["pdf_abs"], tex_path=tex_path,
+                                   aux_path=tex_path.with_suffix(".aux")))
+            if preview:
+                _prune_previews()
         else:
             # 挑出日志里的报错行；**一行都没挑到就把原文尾巴带上**——
             # 否则界面上只显示"导出失败："后面空着，连"找不到 xelatex"这种
             # 一眼能看懂的提示都被过滤掉了（CI 上就吃过这个闷亏）。
-            res["log"] = ("\n".join(first_errors(log, 6))
-                          or (log[-800:].strip()
-                              or "编译失败，但 LaTeX 没有任何输出（引擎可能没跑起来）"))
+            # 先把「哪道题 + 什么原因 + 怎么修」放在最前面——那才是用户要的。
+            # 原始报错行仍原样附在后面：翻译错了也不能把原文弄丢。
+            from . import texdiag as _td
+            try:
+                res["log"] = _td.explain(log, tex_path.read_text(encoding="utf-8"))
+            except Exception:
+                res["log"] = ""            # 诊断本身出问题绝不能盖住真正的报错
+            raw = ("\n".join(first_errors(log, 6))
+                   or (log[-800:].strip()
+                       or "编译失败，但 LaTeX 没有任何输出（引擎可能没跑起来）"))
+            res["log"] = (res["log"] + "\n\n" + raw).strip()
             full_log = tex_path.with_suffix(".log")
             if full_log.exists():          # 完整日志（含被过滤掉的那些行）
                 res["log"] += f"\n\n完整日志：{full_log}"
 
     # **存档**：出了什么卷、用了哪些题、什么参数。
-    # 不记的话「上次那套卷呢」只能去 试卷/ 翻文件名。
+    # 不记的话「上次那套卷呢」只能去导出文件夹里翻文件名（现在按分类分了子目录）。
     # 编译失败也存——题目选好了就是成果，编译是另一回事。
-    try:
-        from . import papers as _papers
-        _papers.add(name, [q.key for q in qs], title=title or name, mode=mode,
-                    params={"show_answers": show_answers, "bottom_sep": bottom_sep,
-                            "problem_blank_cm": problem_blank_cm, "mode": mode},
-                    kind="试卷")
-        res["archived"] = True
-    except Exception as e:
-        res["archived"] = False
-        res["archive_error"] = str(e)
+    # **预览不存档**：那是"看一眼排版"，不是一份要留的卷子。
+    if not preview:
+        try:
+            from . import papers as _papers
+            _papers.add(name, [q.key for q in qs], title=title or name, mode=mode,
+                        params={"show_answers": show_answers, "show_source": show_source,
+                                "bottom_sep": bottom_sep,
+                                "problem_blank_cm": problem_blank_cm, "mode": mode,
+                                "answers_at_end": answers_at_end,
+                                "score_box": score_box, "seal_line": seal_line},
+                        # 存进「存档」的分类跟着卷型走（以前恒写"试卷"，导一份
+                        # 讲义也在存档列表里显示成"试卷"）。
+                        kind=kind)
+            res["archived"] = True
+        except Exception as e:
+            res["archived"] = False
+            res["archive_error"] = str(e)
     return res
+
+
+def _prune_previews(keep: int = 20) -> None:
+    """预览目录只留最近 `keep` 份 PDF。
+
+    预览文件名带时间戳，不清理会一直堆；这些都是"看一眼"的产物，
+    没有保留价值（改走「导出并保存」才会进存档和资料夹）。
+    """
+    try:
+        files = sorted(PREVIEW_DIR.glob("*.pdf"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        for p in files[keep:]:
+            p.unlink(missing_ok=True)
+            # 同一份预览的 .tex/.log 一起清掉，别只留下源码
+            p.with_suffix(".tex").unlink(missing_ok=True)
+            p.with_suffix(".log").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

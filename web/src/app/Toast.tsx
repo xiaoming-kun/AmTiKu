@@ -109,8 +109,8 @@ function One({ t, onDone, leaving }: {
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       className={`${leaving ? 'anim-toast-out' : 'anim-fade-up'} pointer-events-auto relative
-                 flex items-center gap-3 overflow-hidden rounded-full bg-ink py-2 pl-3.5 pr-2
-                 text-[12.5px] text-white shadow-[var(--shadow-pop)]`}>
+                 flex items-center gap-3 overflow-hidden rounded-full bg-solid py-2 pl-3.5 pr-2
+                 text-[12.5px] text-solid-ink shadow-[var(--shadow-pop)]`}>
       <Tone size={14} strokeWidth={2.4}
         className={t.tone === 'warn' ? 'shrink-0 text-warn-line' : 'shrink-0 text-has-line'} />
       <span className="max-w-[42ch] truncate">{t.text}</span>
@@ -118,17 +118,17 @@ function One({ t, onDone, leaving }: {
         <button
           onClick={() => { t.action!.run(); onDone(t.id) }}
           className="press shrink-0 rounded-full px-2 py-[3px] font-medium text-brand-soft
-                     underline underline-offset-2 hover:bg-white/10 hover:text-white">
+                     underline underline-offset-2 hover:bg-solid-ink/10 hover:text-solid-ink">
           {t.action.label}
         </button>
       )}
       <button onClick={() => onDone(t.id)} title="关掉"
         className="press grid h-5 w-5 shrink-0 place-items-center rounded-full
-                   text-white/45 hover:bg-white/10 hover:text-white">
+                   text-solid-ink/45 hover:bg-solid-ink/10 hover:text-solid-ink">
         <X size={12} />
       </button>
       {/* 倒计时细线：**如实告诉人还剩多久**，而不是突然消失 */}
-      <span className="absolute bottom-0 left-0 h-[2px] w-full bg-white/15">
+      <span className="absolute bottom-0 left-0 h-[2px] w-full bg-solid-ink/15">
         <span
           className="block h-full origin-left bg-brand-line"
           style={{

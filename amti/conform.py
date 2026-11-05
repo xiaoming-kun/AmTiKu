@@ -427,6 +427,92 @@ def style_double_dollar(text: str):
     return None
 
 
+# ── 竖线定界符「开闭不同类」 ──────────────────────────────────────────
+#
+# `\left\|x\right|` 这种「双竖线开、单竖线闭」**LaTeX 不报错**，
+# 会老实排成 ‖x|。所以它同时躲过了两道防线：
+#   · xelatex / KaTeX 都编译成功（语法合法）；
+#   · accept 层③「端到端渲染」只查渲染残留和图片可取，也放行。
+# 这正是 AGENTS.md 里那条「构建成功 ≠ 渲染正确」。
+#
+# ⚠️ 为什么**只判 `\left…\right` 这一对**，不去数裸竖线：
+# 数出来的是错的。`\left\| |MF_2|-|NF_2| \right\|` 是**对的**
+# （外层范数 ‖、内层绝对值 |），但按「相邻两个竖线两两配对」会数成
+# DOUBLE,SINGLE,SINGLE,SINGLE,SINGLE,DOUBLE —— 报假阳性。
+# `\left`/`\right` 天生自带配对关系，不需要推测，精度是 100%。
+# 而 `|x|`、`|OM||ON|`、`\{x\,|\,x>0\}` 这些不会进这个检查，天然免疫。
+#
+# ⚠️ 也不能判「左右不同就报错」：`\left[0,1\right)` 是**故意的**半开区间。
+# 只有竖线的两个**类**之间搞混才是错 —— 单竖线（| \vert \lvert）
+# 与双竖线（\| \Vert \lVert）之间不存在任何合法混用。
+_SINGLE_BAR = r"\||\\vert\b|\\lvert\b|\\rvert\b"
+_DOUBLE_BAR = r"\\\||\\Vert\b|\\lVert\b|\\rVert\b"
+_DELIM = r"(?:%s|%s)" % (_SINGLE_BAR, _DOUBLE_BAR)
+_LR_BAR = re.compile(r"\\left\s*(%s)|\\right\s*(%s)" % (_DELIM, _DELIM))
+
+
+def _bar_kind(s: str) -> str:
+    return "DOUBLE" if re.search(_DOUBLE_BAR, s) else "SINGLE"
+
+
+def chk_bar_pair(text: str):
+    r"""`\left…\right` 两侧的竖线必须是**同一类**。
+
+    实测全库 7 道（烟台适应测试#19、广东中山一中仿真#18、杭州二中十月#11、
+    厦门外国语十月月考#11、银川一中第一次月考#8、山西太原二模#17 等）。
+    样本：`$g(x)=5-\left\|x\right|-1$` → 印成 `‖x|`。
+
+    ⚠️ 用**栈**而不是「找最近的一对」：`\left|a\left|b\right|\right|`
+    是真会出现的写法，按前两个 `\left` 配前两个 `\right` 就配错了。
+
+    ⚠️ **已知覆盖边界**：只查 `\left…\right` 这一对，所以**裸竖线**的
+    开闭错配它抓不到。实测这类还有 3 道（`\|NF_1|=n`、`\|BF| - |AF\|`、
+    `\alpha_1\|\alpha_2\|\alpha_3\|\alpha_4`）。不扩大范围是**故意的**：
+    裸竖线没有配对信息，`\{x\,|\,x>0\}`（1 个，such that）、
+    `$3|6$`（1 个，整除）都只有单根竖线，一旦按奇偶去数就是成片的假阳性。
+    要覆盖这一档，得先有"这根竖线是定界符还是关系符"的判断 —— 那是
+    `latex_ir` 的活，不该塞进这里。
+    """
+    stack: list[tuple[str, str]] = []      # (类别, 原始写法)
+    for m in _LR_BAR.finditer(text):
+        tok = m.group(1) or m.group(2) or ""
+        if m.group(1) is not None:          # \left
+            stack.append((_bar_kind(tok), tok))
+        else:                               # \right
+            if not stack:
+                continue                    # 落单的 \right 归 chk_delim 管
+            kind_l, tok_l = stack.pop()
+            kind_r = _bar_kind(tok)
+            if kind_l != kind_r:
+                return ("`\\left%s` 与 `\\right%s` 不是同一类竖线"
+                        "（会印成 `%s…%s`）"
+                        % (tok_l, tok, "‖" if kind_l == "DOUBLE" else "|",
+                           "‖" if kind_r == "DOUBLE" else "|"))
+    return None
+
+
+def chk_slash_parallel(text: str):
+    r"""数学模式里拿 `//` 当平行号 —— 会**原样印出两道斜杠**。
+
+    实测全库 210 道。样本：`$DE // \text{平面} BCC_1B_1$`、
+    `$\overrightarrow{DE}\ //\ \overrightarrow{BC}$`、
+    `$DE // BC$`。KanTeX 把 `//` 当两个普通字符排，得到 `DE//BC`
+    而不是 `DE∥BC` —— 卷面上就是对的题印错了符号。
+
+    同样躲过编译：`//` 是合法字符，xelatex 与 KaTeX 都不会报错。
+
+    ⚠️ 只查**数学段**。正文里的 `//`（比如链接、注释性文字）不管，
+    那是行文不是公式。
+    ⚠️ 用前后否定排除 `://`（URL）和 `\\//`（换行后接两个斜杠）。
+    """
+    for m in _MATH_SEG.finditer(text):
+        body = next((g for g in m.groups() if g is not None), "")
+        if re.search(r"(?<![\\:/])//(?![:/])", body):
+            return ("数学模式里用 `//` 当平行号（会印成两道斜杠），"
+                    "请写 `\\parallel`")
+    return None
+
+
 CHECKS = [
     ("环境配对", chk_env, "text"),
     ("美元符落单", chk_double_dollar, "text"),
@@ -444,6 +530,19 @@ CHECKS = [
     ("空位位置", chk_blank_not_in_math, "q"),
     ("渲染残留", chk_render_leak, "q"),
     ("解析非JSON", chk_solution_not_json, "q"),
+]
+
+# ── 风格项：列出来，但**不进 `CHECKS`、不影响退出码** ──────────────────
+# 为什么单开一张表：把风格问题报成错误，会让人对红灯脱敏，真错反而看不见。
+# （这条原则原来只写在 `style_double_dollar` 的注释里，代码里是 hardcode 的一句
+# 调用 —— 再加一条风格项就得再去改一次 `main()`，所以提成表。）
+#
+# 表里两项都是**编译拦不住**的：LaTeX 语法完全合法，KaTeX 也渲染成功，
+# 但卷面印出来是错的。所以只能靠这里曝光。
+STYLES = [
+    ("$$…$$",     style_double_dollar),     # 成对的 $$，规范 §2.3
+    ("平行号 //",  chk_slash_parallel),      # 210 道：印成两道斜杠
+    ("竖线开闭",   chk_bar_pair),            # 7 道：印成 ‖x|
 ]
 
 
@@ -471,7 +570,7 @@ def run(questions=None, *, image_resolver=None) -> list[dict]:
     return bad
 
 
-def main() -> int:
+def main(*, strict_style: bool = False) -> int:
     from collections import Counter
     from . import store
 
@@ -488,15 +587,28 @@ def main() -> int:
     style = []
     for q in qs:
         for f, t in _fields(q):
-            why = style_double_dollar(t)
-            if why:
-                style.append("%s [%s] %s" % (q.key, f, why))
+            for label, fn in STYLES:
+                why = fn(t)
+                if why:
+                    style.append("%s [%s] %s" % (q.key, f, why))
+        # 同一题两个选项文字完全一样：几乎必然是 OCR 串行/漏字（实测 25 道，
+        # 例如 `0, 1, -1, 1`）。**只在风格里曝光，不拦验收**——正确选项
+        # 得回原卷核对，自动猜一个只会把错题伪装成对题。
+        texts = [o.text.strip() for o in q.options if o.text.strip()]
+        if len(texts) > 1 and len(set(texts)) < len(texts):
+            dup = sorted({t for t in texts if texts.count(t) > 1})
+            style.append("%s [options] 有两个选项文字相同：%s"
+                         % (q.key, dup[0][:40]))
     if style:
         print("\n风格提示（%d 处，不拦验收）：" % len(style))
         for x in style[:10]:
             print("  %s" % x)
         if len(style) > 10:
             print("  … 其余 %d 处" % (len(style) - 10))
+
+    if style and strict_style:
+        print("\n✗ --strict-style：风格项 %d 处，本次按不通过处理" % len(style))
+        return 1
 
     if bad:
         print("\n明细（前 20 条）：")
@@ -577,6 +689,30 @@ _CONTROLS: list[tuple[str, object, object]] = [
     # （别拿 `\resizebox` 当坏样本：那个已经修好了，不再是坏样本）
     ("渲染残留", _qpt(r"前 \weirdcmd{后}"),
      _qpt("纯文字，没有命令")),
+
+    # ── 风格项 ────────────────────────────────────────────────
+    # 风格项也要自证：**漏报**等于这项白加，**误报**等于逼人去改对的题。
+    # 下面每条的干净样本都取自真实假阳性（我一开始就报错了的那几个）。
+    #
+    # ⚠️ `$$` 的坏样本必须是**成对**的（2 个 `$$`）。写成落单的会被
+    # `chk_double_dollar` 接走（那是"真错、拦验收"），而这条风格项
+    # 只管成对的那种 —— 我第一版就写成落单的，自检立刻报"漏了"。
+    ("$$…$$", _qs(r"所以 $$x=1$$ 结束"), _qs(r"写成 \[ x=1 \] 是对的")),
+
+    # 平行号：坏样本是真实存在的 210 道之一。
+    # 干净样本特意放 `\text{http://…}` 和正文里的 `//` ——
+    # 前后否定写松一点，这两处就会被误报。
+    ("平行号 //",
+     _qs(r"$DE // \text{平面} BCC_1B_1$"),
+     _qs(r"$DE \parallel BC$，链接 http://a.b // 注释")),
+
+    # 竖线开闭：坏样本 `\left\|x\right|`（银川一中第一次月考#8 的真实写法）。
+    # 干净样本是我差点误报的那两类：
+    #   · `\left\| |MF_2|-|NF_2| \right\|` —— 外层范数、内层绝对值，**是对的**；
+    #   · `\left[0,1\right)` —— 故意的半开区间，左右本来就不同类。
+    ("竖线开闭",
+     _qs(r"$g(x)=5-\left\|x\right|-1$"),
+     _qs(r"$\left\| |MF_2|-|NF_2| \right\|$ 与 $\left[0,1\right)$ 都对")),
 ]
 
 
@@ -584,6 +720,7 @@ def _selftest() -> int:
     print("conform 自检（**先证明检查器管用**）")
     fails = 0
     by_name = {n: (f, k) for n, f, k, *_ in CHECKS}
+    styles = {n: f for n, f in STYLES}
 
     # 文本类样本是字符串，题目类样本是 Question，**各自直接传**。
     # 早先按 kind 去取 `.stem`，结果题目类检查收到字符串就崩了。
@@ -591,7 +728,7 @@ def _selftest() -> int:
         return fn(sample)
 
     for name, bad, good in _CONTROLS:
-        hit = by_name.get(name)
+        hit = by_name.get(name) or ((styles[name], "text") if name in styles else None)
         if hit is None:
             print("  ✗ %-12s 检查项不存在" % name)
             fails += 1

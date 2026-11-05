@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, X } from 'lucide-react'
 import type { Flags as FlagMap } from '@/lib/types'
 
-export function Flags({ flags, size = 'sm' }: { flags: FlagMap; size?: 'sm' | 'md' }) {
+export function Flags({ flags, size = 'sm', type }: { flags: FlagMap; size?: 'sm' | 'md'; type?: string }) {
   /**
    * **只把"缺"的标出来，"有"的一律不显示。**
    *
@@ -16,7 +16,9 @@ export function Flags({ flags, size = 'sm' }: { flags: FlagMap; size?: 'sm' | 'm
    * 现在反过来了：什么都没有＝干净，**冒出一个红方块就说明这儿缺东西**。
    */
   const items: [string, string][] = [['答案', '缺答'], ['解析', '缺析'], ['图', '缺图'], ['标签', '缺签'], ['小问', '缺问']]
-  const missing = items.filter(([k]) => !flags[k])
+  // “小问”只对解答题有意义；单选题/填空题没有小问列表是正常的。
+  const applicable = items.filter(([k]) => k !== '小问' || type === 'detailed_answer')
+  const missing = applicable.filter(([k]) => !flags[k])
   if (!missing.length) {
     // 全都有 → 列表里**什么都不画**（干净）；详情页要显式说一句"齐全"，
     // 不然用户会以为这块坏了。
@@ -85,7 +87,18 @@ export function Report({ n, title, children }: any) {
   )
 }
 
-export const FLAG_KEYS = [['答案', '答'], ['解析', '析'], ['图', '图'], ['标签', '签']] as const
+/** 完整度那两排胶囊：`[缺的判定键, 显示字, 「只看有」用的键]`。
+ *
+ *  **「图」这格特殊**：`flags.图` 是完整度（有图，或者这题本来不需要图），
+ *  98% 的题都是 true；而用户点「只看有·图」要的是**真的有图**的题。
+ *  所以「看有」改用 `有图`（后端单独给的），「看缺」仍然用 `图`。
+ *  混用的话就是「条件看着对、结果两万八」——实测被这么报过。 */
+export const FLAG_KEYS = [
+  ['答案', '答', '答案'],
+  ['解析', '析', '解析'],
+  ['图', '图', '有图'],
+  ['标签', '签', '标签'],
+] as const
 
 export const INGEST_SAMPLE = `\\begin{question}
 设集合 $A=\\{x\\mid -1<x<3\\}$，$B=\\{0,1,2,3\\}$，则 $A\\cap B=$（\\quad）
@@ -260,6 +273,20 @@ export function Num({ value, className = '' }: { value: number; className?: stri
     return () => cancelAnimationFrame(raf.current)
   }, [value])
   return <span className={`tnum ${className}`}>{shown}</span>
+}
+
+/** 视口宽度（跟着 resize 走）。
+ *
+ *  布局预算要用它：导航 + 筛选 + 列表 + 详情四栏同时开的时候，
+ *  "每栏多宽"没法靠 CSS 断点猜——必须知道**还剩多少**给列表。 */
+export function useVw() {
+  const [w, setW] = useState(() => (typeof window === 'undefined' ? 1600 : window.innerWidth))
+  useEffect(() => {
+    const on = () => setW(window.innerWidth)
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
+  return w
 }
 
 /** 开关型记忆（折叠状态）。懒得每处再写一遍 localStorage。 */

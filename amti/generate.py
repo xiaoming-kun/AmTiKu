@@ -215,10 +215,11 @@ class PickReport:
     filled: list[str] = field(default_factory=list)
     unfilled: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {"filled": len(self.filled), "unfilled": self.unfilled,
-                "notes": self.notes}
+                "notes": self.notes, "suggestions": self.suggestions}
 
 
 def _blueprint_diff(slot: "Slot") -> str:
@@ -227,8 +228,68 @@ def _blueprint_diff(slot: "Slot") -> str:
     return _DIFF_CHAR.get(shape[slot.index] if slot.index < len(shape) else "中", "中档题")
 
 
+#: 一道题的经验用时（分钟）：易 / 中 / 难。只用于界面估“这套卷要多久”，
+#: 不参与选题——它不是实测数据，别拿它当难度。
+MINUTES = {
+    "single_choice": (3, 4, 5),
+    "multi_choice": (4, 5, 6),
+    "fill_in_blank": (4, 5, 6),
+    "detailed_answer": (10, 12, 15),
+}
+
+
+def minutes_of(q: Question) -> int:
+    lo, mid, hi = MINUTES.get(q.type, (4, 5, 6))
+    return {"简单题": lo, "中档题": mid, "难题": hi}.get(q.difficulty, mid)
+
+
+def variant_key(q: Question) -> str:
+    """同型题族的组号。`dup_of` 指向原题；没有就自立一组。"""
+    return str((q.meta or {}).get("dup_of") or q.key)
+
+
+def filter_pool(pool: list[Question], *, exclude_missing_figure: bool = True,
+                min_solution_len: int = 20, year_from: int = 0,
+                dedupe_variants: bool = True) -> list[Question]:
+    r"""组卷前的**硬约束**：印出来做不了的题，不上卷。
+
+    · `figure_ok=False`：题干说“如图”但库里没图；
+    · 解析缺失/短于 `min_solution_len`：答案册印不出一段能看的解析；
+    · `year_from > 0`：只要这一年及以后的题（无年份的也排除）；
+    · `duplicate_group`：逐字重复的题只留一道；
+    · `dedupe_variants`：同一 `dup_of` 族只留一道（同一模板换数字的题，
+      一套卷里不该出现两道）。
+    """
+    out: list[Question] = []
+    seen_variants: set[str] = set()
+    for q in pool:
+        if exclude_missing_figure and not q.figure_ok:
+            continue
+        if min_solution_len and (not q.has_solution
+                                 or len((q.solution or "").strip()) < min_solution_len):
+            continue
+        if q.meta.get("duplicate_group"):
+            continue
+        if year_from:
+            try:
+                y = int(q.meta.get("year") or 0)
+            except (TypeError, ValueError):
+                y = 0
+            if y < year_from:
+                continue
+        if dedupe_variants:
+            v = variant_key(q)
+            if v in seen_variants:
+                continue
+            seen_variants.add(v)
+        out.append(q)
+    return out
+
+
 def _pick(cands: list[Question], used: set[str], counter: dict[str, int],
           *, want_diff: str, quota: dict[str, int] | None,
+          point_counter: dict[str, int] | None = None,
+          point_quota: int = 0,
           rng: random.Random) -> tuple[Question | None, str]:
     r"""从候选里挑一道。返回 `(题目, 放宽到哪一级)`。
 
@@ -260,11 +321,14 @@ def _pick(cands: list[Question], used: set[str], counter: dict[str, int],
             tp = topic_of(q)
             ok_diff = (q.difficulty == want_diff)
             ok_topic = (quota is None) or (counter.get(tp, 0) < quota.get(tp, 0))
-            if level == 1 and not (ok_diff and ok_topic):
+            # 同一考点最多 point_quota 道；第 ④ 级才允许破例
+            ok_point = (level == 4 or point_quota <= 0 or not q.points
+                        or (point_counter or {}).get(q.points[0], 0) < point_quota)
+            if level == 1 and not (ok_diff and ok_topic and ok_point):
                 continue
-            if level == 2 and not ok_diff:
+            if level == 2 and not (ok_diff and ok_point):
                 continue
-            if level == 3 and not ok_topic:
+            if level == 3 and not (ok_topic and ok_point):
                 continue
             out.append(q)
         return out
@@ -277,20 +341,31 @@ def _pick(cands: list[Question], used: set[str], counter: dict[str, int],
 
 
 def generate(pool: list[Question], *, mode: str = "gaokao",
-             seed: int | None = None) -> dict:
-    r"""从 `pool` 里组一套卷。返回 `{keys, slots, report, score}`。
+             seed: int | None = None,
+             exclude_missing_figure: bool = True,
+             min_solution_len: int = 20,
+             year_from: int = 0,
+             point_quota: int = 2) -> dict:
+    r"""从 `pool` 里组一套卷。返回 `{keys, slots, report, score, minutes}`。
 
     `mode="gaokao"` 按高考结构；`mode="test"` 不做结构约束，按传入顺序直接用。
+    `mode="test"` **不过滤**：老师明确选进来的题，哪怕缺图也尊重选择；
+    gaokao 模式先过 `filter_pool`（缺图/短解析/年份/重复/同型题族）。
     """
     rng = random.Random(seed)
     if mode != "gaokao":
-        return {"keys": [q.key for q in pool],
-                "slots": [{"type": q.type, "score": 0, "section": "", "index": i,
-                           "total": len(pool)} for i, q in enumerate(pool)],
+        slots = [{"type": q.type, "score": 0, "section": "", "index": i,
+                  "total": len(pool), "minutes": minutes_of(q)}
+                 for i, q in enumerate(pool)]
+        return {"keys": [q.key for q in pool], "slots": slots,
                 "report": {"filled": len(pool), "unfilled": [],
-                           "notes": ["测试题不做结构约束，用传入的题目顺序"]},
-                "score": 0}
+                           "notes": ["测试题不做结构约束，用传入的题目顺序"],
+                           "minutes": sum(s["minutes"] for s in slots)},
+                "score": 0, "minutes": sum(s["minutes"] for s in slots)}
 
+    pool = filter_pool(pool, exclude_missing_figure=exclude_missing_figure,
+                       min_solution_len=min_solution_len,
+                       year_from=year_from)
     slots = build_slots("gaokao")
     by_type: dict[str, list[Question]] = {}
     for q in pool:
@@ -305,6 +380,7 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
     # 小题与解答题**分开计数**（见 _pick 的说明）
     minor_topics: dict[str, int] = {}
     answer_topics: dict[str, int] = {}
+    point_counts: dict[str, int] = {}
     rep = PickReport()
     relaxed: dict[str, int] = {}
     out: list[dict] = []
@@ -327,7 +403,8 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
             counter, sl_quota = minor_topics, quota
 
         q, level = _pick(cands, used, counter, want_diff=want_diff,
-                         quota=sl_quota, rng=rng)
+                         quota=sl_quota, point_counter=point_counts,
+                         point_quota=point_quota, rng=rng)
         if q is not None and level != "ok":
             relaxed[level] = relaxed.get(level, 0) + 1
         if q is None:
@@ -336,22 +413,33 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
                 + (f"（{slot.section}）" if slot.section else ""))
             out.append({"key": "", "type": slot.type, "score": slot.score,
                         "section": slot.section, "index": slot.index,
-                        "total": slot.total, "want_diff": want_diff, "got_diff": ""})
+                        "total": slot.total, "want_diff": want_diff,
+                        "got_diff": "", "minutes": 0})
             continue
         used.add(q.key)
         tp = topic_of(q)
         counter[tp] = counter.get(tp, 0) + 1
+        if q.points:
+            point_counts[q.points[0]] = point_counts.get(q.points[0], 0) + 1
         rep.filled.append(q.key)
         out.append({"key": q.key, "type": slot.type, "score": slot.score,
                     "section": slot.section, "index": slot.index,
                     "total": slot.total, "want_diff": want_diff,
-                    "got_diff": q.difficulty, "topic": tp})
+                    "got_diff": q.difficulty, "topic": tp,
+                    "minutes": minutes_of(q)})
 
     score = sum(s["score"] for s in out if s["key"])
     if rep.unfilled:
         rep.notes.append(
             f"题库不足，有 {len(rep.unfilled)} 个位置空着。"
             "把更多题加进筛选结果，或先导入更多题目。")
+        miss_types = sorted({x.split(" 第")[0] for x in rep.unfilled})
+        rep.suggestions.append(
+            "缺位置：%s。建议按顺序试：① 放宽年份/地区；② 取消同考点上限；"
+            "③ 把目标难度从「难题」降到「中档」；④ 补题。"
+            % ("、".join(rep.unfilled[:4]) + ("…" if len(rep.unfilled) > 4 else "")))
+        if miss_types:
+            rep.suggestions.append("缺的题型：%s" % "、".join(miss_types))
 
     # ── 细目表达成度：目标 vs 实际 ──
     # 这是这份卷子"难不难、知识面均不均"的唯一凭据，直接给老师看。
@@ -371,8 +459,9 @@ def generate(pool: list[Question], *, mode: str = "gaokao",
     d = rep.as_dict()
     d["blueprint"] = bp
     d["relaxed"] = relaxed
+    d["minutes"] = sum(s["minutes"] for s in out)
     return {"keys": [s["key"] for s in out if s["key"]],
-            "slots": out, "report": d, "score": score}
+            "slots": out, "report": d, "score": score, "minutes": d["minutes"]}
 
 
 def _blueprint_report(out: list[dict], quota: dict[str, int]) -> dict:
@@ -524,6 +613,7 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
     返回 keys（已按易→难排好）和一份说明覆盖了多少。
     """
     rng = random.Random(seed)
+    pool = filter_pool(pool)
     reachable = all_points_of(pool)
     if not reachable:
         return {"keys": [], "covered": [], "report": {"note": "这批题一个考点都没标"}}
@@ -546,6 +636,7 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
     for q in plan["picked"]:
         counts[q.type] = counts.get(q.type, 0) + 1
     score = total_score(counts)
+    minutes = sum(minutes_of(q) for q in plan["picked"])
 
     notes = ["目标覆盖 %.0f%%，实际覆盖 %.0f%%（%d/%d 个考点）"
              % (coverage * 100, ratio * 100, got, total)]
@@ -567,7 +658,9 @@ def generate_by_coverage(pool: list[Question], *, want: int = 19,
         notes.append("题型配额没满足：%s —— 这类题在筛选结果里不够" % plan["short"])
 
     return {"keys": plan["keys"], "covered": plan["covered"], "score": score,
+            "minutes": minutes,
             "report": {"covered": got, "reachable": total, "ratio": round(ratio, 3),
+                       "minutes": minutes,
                        "target": coverage, "notes": notes,
                        **({"mix": {t: type_mix.get(t, 0) for t, _ in GAOKAO_MIX}}
                           if type_mix else {}),
@@ -652,7 +745,10 @@ def _selftest() -> int:
 
     # 造一个够用的池子
     def mk(i, t, pid):
-        return Question(key="k/%d" % i, type=t, stem="题 %d" % i, points=[pid])
+        # 解析给够 20 字：组卷现在有「短解析不上卷」的硬约束，
+        # 自检池不能用空解析，否则测的就不是结构而是过滤器。
+        return Question(key="k/%d" % i, type=t, stem="题 %d" % i, points=[pid],
+                        solution="这是一段足够长的自检解析，用来通过短解析过滤。")
 
     pool: list[Question] = []
     n = 0
@@ -694,6 +790,17 @@ def _selftest() -> int:
     r2 = generate(pool[:10], seed=1)
     check("题不够时报未填位置", r2["report"]["unfilled"], str(r2["report"]))
     check("题不够时不编造题", all(k for k in r2["keys"]), "出现空 key")
+
+    # 硬约束：缺图 / 短解析 不进池
+    bad_fig = Question(key="bad/fig", type="single_choice", stem="如图，求 $x$。",
+                       points=["1.1.1"],
+                       solution="这是一段足够长的自检解析，用来通过短解析过滤。")
+    bad_short = Question(key="bad/short", type="single_choice", stem="题",
+                         points=["1.1.1"], solution="太短")
+    kept = {q.key for q in filter_pool([bad_fig, bad_short, mk(99, "single_choice", "1.1.1")])}
+    check("filter_pool 排除缺图题", "bad/fig" not in kept, str(kept))
+    check("filter_pool 排除短解析", "bad/short" not in kept, str(kept))
+    check("filter_pool 保留合格题", kept == {"k/99"}, str(kept))
 
     print("generate 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0

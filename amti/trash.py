@@ -42,17 +42,17 @@ PKG = ROOT
 TRASH_DIR = PKG / "回收站"
 TRASH = TRASH_DIR / "回收站.json"
 
-# 删题必须报口令（用户定的 0808）。
+# **删除单道题（移进回收站）不再要口令**（用户 2026-11-01 明确要求）。
 #
-# ⚠️ 说清楚这个口令是干什么的：它防的是**手滑**，不是防攻击。
-# 这个服务只监听 127.0.0.1、没有登录体系，真要防人得先有账号体系。
-# 加口令的实际价值是——删题是个需要"停一下"的动作，多一步输入就少一次误删。
-# 想换口令：`export AMTIKU_DELETE_PASSWORD=xxxx`（不改代码）。
+# 但**清空回收站 / 永久删除**仍然要口令——那一步不可恢复，和"删除只是
+# 移进回收站、随时能恢复"是两件事：删题防手滑，永久删除防找不回来。
+#
+# 口令来源：先环境变量 `AMTIKU_DELETE_PASSWORD`，再本地文件
+# `数据/删题口令.txt`（在数据目录里、不进 git）。公开仓库里不留字面口令。
 def _local_password() -> str:
-    r"""删题口令：**先环境变量，再本地文件**（`数据/删题口令.txt`，在数据目录里、不进 git）。
+    r"""**永久删除**口令：先环境变量，再本地文件（`数据/删题口令.txt`）。
 
-    公开仓库里**不留任何字面口令**——口令只保护本机的删题操作，
-    泄露与否不影响题库数据安全，但没必要把默认值写进开源代码。
+    删单道题（进回收站）已经不要口令了；这里只给清空/永久删除用。
     """
     env = os.environ.get("AMTIKU_DELETE_PASSWORD")
     if env:
@@ -64,7 +64,7 @@ def _local_password() -> str:
         return ""
 
 
-DELETE_PASSWORD = _local_password()   # 没有就为空串：check_password 一律不通过（更安全）
+DELETE_PASSWORD = _local_password()   # 为空就一律不通过（更安全，主要防手滑）
 
 # **删题原因：做成固定选项，不要自由文本。**
 #
@@ -80,6 +80,13 @@ DELETE_REASONS: list[str] = [
     # 「撤销一次入库」和「这题不考了」是两回事：前者是**我们自己的动作要回退**，
     # 记成「无」就把审计线索丢了——事后想知道「哪批是试入库撤回来的」就查不出来。
     "试入库后撤回",
+    # 还有一类既不是"不考了"也不是"我们撤回来"：**题本身是坏的**——
+    # 选项图/文字在录入时丢了、缺整张表格、条件自相矛盾，学生根本没法作答。
+    # 没有这一档，这类删除只能记成「无」，事后就查不出"哪些题是被判坏删掉的"。
+    "结构性坏题（缺图/缺条件，无法作答）",
+    # 同一道题被不同卷子/书重复录入：保留一份，其余进回收站（可恢复）。
+    # 与「不考了」「坏题」分开记，事后才能查清"哪些是查重合并掉的"。
+    "与库内已有题重复",
     "无",
 ]
 # 默认选中第一条——绝大多数删除都是"高考不考了"
@@ -103,22 +110,76 @@ def check_password(given: str) -> bool:
                                DELETE_PASSWORD.encode("utf-8"))
 
 
+class RecycleBinCorrupt(RuntimeError):
+    r"""`回收站/回收站.json` 读不出来（坏 JSON / 结构不对）。
+
+    单独一个异常类型，是为了让调用方**能区分**「回收站真的是空的」和
+    「回收站读不出来」—— 这两件事在原来那个 `return []` 里长得一模一样。
+    """
+
+
 def _load() -> list[dict]:
+    r"""读回收站。
+
+    ⚠️ **文件坏了绝不返回空表。**
+
+    原来这里是 `except ValueError: return []` —— 一个坏掉的 JSON 会被
+    静默当成「回收站是空的」。而写路径是「`_load()` → 改 → `_save()`」：
+    于是下一次**任何**删除操作都会拿新列表覆盖整个文件，
+    **1211 条历史记录一次性消失**，且没有任何报错。
+
+    `_save()` 又是非原子的 `write_text`，中途崩一次就能造出这个坏状态 ——
+    两件事凑在一起就是一颗丢数据的雷。所以这里改成**抛**：宁可删不掉，
+    也不能把回收站悄悄清空。读路径（`all_items`/`count`/`keys`）同样会抛，
+    界面看到的是明确报错，而不是骗人的「回收站里没有题」。
+    """
     if not TRASH.exists():
         return []
     try:
         d = json.loads(TRASH.read_text(encoding="utf-8"))
-    except ValueError:
-        return []
-    return d.get("items", []) if isinstance(d, dict) else []
+    except ValueError as e:
+        raise RecycleBinCorrupt(
+            "回收站文件读不出来：%s（%s）。"
+            "**为避免把它当成空回收站、然后被下一次写入覆盖，本次操作已中止。**"
+            "请先修好它，或从 备份/ 恢复。" % (TRASH, e)) from e
+    if not isinstance(d, dict):
+        raise RecycleBinCorrupt("回收站文件结构不对（顶层不是对象）：%s" % TRASH)
+    return d.get("items", [])
 
 
 def _save(items: list[dict]) -> None:
+    r"""写回收站。
+
+    **原子写**（先写临时文件再改名），和 `store.rewrite_volume` 同一套做法。
+    直接 `write_text` 的话，写到一半断电/被杀就是一个半截 JSON ——
+    而 `_load()` 会因此拒绝服务，整个回收站都用不了。
+    临时文件名带进程号，两个进程同时写不会互相抢同一个文件。
+
+    ⚠️ **同一 key 只留最后一次删除**。题库里可能「删掉 → 又从别处录回来 →
+    再删一次」，每删一次追加一条的话，回收站会攒出同一道题的多份记录
+    （实测 1772 条记录里只有 864 个不同题号）。恢复只需要最新那条；
+    旧记录只会让计数虚高、界面重复。
+    """
+    seen: set[str] = set()
+    uniq: list[dict] = []
+    for x in reversed(items):
+        k = x.get("key")
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(x)
+    items = list(reversed(uniq))
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
-    TRASH.write_text(json.dumps(
+    body = json.dumps(
         {"count": len(items), "updated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
          "items": items},
-        ensure_ascii=False, indent=1), encoding="utf-8")
+        ensure_ascii=False, indent=1)
+    tmp = TRASH.with_name("%s.tmp.%d" % (TRASH.name, os.getpid()))
+    try:
+        tmp.write_text(body, encoding="utf-8")
+        tmp.replace(TRASH)                      # 改名是原子的
+    finally:
+        tmp.unlink(missing_ok=True)             # 改名成功就没了；失败也别留垃圾
 
 
 def all_items() -> list[dict]:
@@ -168,40 +229,56 @@ def _from_dict(d: dict):
 def delete(keys_: list[str], *, reason: str = "", password: str = "") -> dict:
     r"""把题目移进回收站。返回 `{deleted, not_found}`。
 
-    **要口令**（见 `DELETE_PASSWORD` 的说明）。
+    **不要口令**（用户要求）。`password` 参数保留只为兼容旧脚本/旧调用，
+    已经不再校验；**清空回收站/永久删除**（`purge`）仍然要口令。
 
     **一条也不删不掉整批**：先全部找齐再动手，少一道就整批不执行。
     删到一半比不删更糟——用户以为删干净了，其实还剩几道。
     """
-    if not check_password(password):
-        return {"ok": False, "error": "口令不对，没有删除任何题目",
-                "not_found": [], "deleted": []}
-    # 原因必须是给定选项之一。**空原因和乱填都拦下来**——
+    # 原因必须是给定选项之一。**乱填的拦下来**——
     # 删题是常态，原因填得含糊，回收站就成垃圾堆了。
     reason = (reason or "").strip()
     if reason and reason not in DELETE_REASONS:
         return {"ok": False, "error": "删除原因要选给定的选项：%s"
                 % "、".join(DELETE_REASONS), "not_found": [], "deleted": []}
 
-    qs = store.load_all()
-    by_key = {q.key: q for q in qs}
     want = [k for k in dict.fromkeys(keys_) if k.strip()]
-    missing = [k for k in want if k not in by_key]
-    if missing:
-        return {"ok": False, "error": "这些题号不在库里，整批未执行", "not_found": missing,
-                "deleted": []}
-
     stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     items = _load()
     base_seq = max((x.get("seq", 0) for x in items), default=0)
-    out = []
-    new_items = list(items)
-    for i, k in enumerate(want, 1):
-        q = by_key[k]
-        new_items.append({"key": k, "deleted_at": stamp, "seq": base_seq + i,
-                          "reason": reason, "question": _to_dict(q)})
-        out.append({"key": k, "type": q.type,
-                    "stem": (q.stem or "")[:80], "reason": reason})
+    box: dict = {}
+
+    # ⚠️ 查找、校验、改库**必须在同一个 `update()` 闭包里**。
+    #
+    # 早先是 `qs = load_all()` → 查 key → `rewrite_all(keep)` 三步分开的。
+    # 中间那道窗口里别人（求解器、另一个 amti.py、界面）插进来写了一道题，
+    # 就会被后面那次整库重写**静默覆盖掉**。实测：并发压测下 60 次追加丢 9 次。
+    # 现在整个「读 → 查 → 过滤 → 写」在同一把锁里，窗口不存在。
+    def _do(qs):
+        by_key = {q.key: q for q in qs}
+        missing = [k for k in want if k not in by_key]
+        if missing:
+            box["missing"] = missing
+            return store.NO_WRITE          # 有题号找不到 → 整批不执行，一个字节不写
+        new_items = list(items)
+        deleted = []
+        for i, k in enumerate(want, 1):
+            q = by_key[k]
+            new_items.append({"key": k, "deleted_at": stamp, "seq": base_seq + i,
+                              "reason": reason, "question": _to_dict(q)})
+            deleted.append({"key": k, "type": q.type,
+                            "stem": (q.stem or "")[:80], "reason": reason})
+        box["new_items"] = new_items
+        box["deleted"] = deleted
+        # 留一份被删的题本身，给下面回滚用（只留这几道，不是整库快照）
+        box["_before"] = [by_key[k] for k in want]
+        return [q for q in qs if q.key not in set(want)]
+
+    store.update(_do)
+
+    if box.get("missing"):
+        return {"ok": False, "error": "这些题号不在库里，整批未执行",
+                "not_found": box["missing"], "deleted": []}
 
     # ⚠️ **先改库、后写回收站**，顺序不能反。
     #
@@ -210,16 +287,25 @@ def delete(keys_: list[str], *, reason: str = "", password: str = "") -> dict:
     # 想恢复还会报"库里有同号题"。实测踩过（当时是 `rewrite_all`
     # 的分卷护栏在数量变化时误报，现在那道护栏也一起修了）。
     #
-    # 写回收站失败就把库改回去——宁可回到"没删"，也不留个两边都在的怪状态。
-    keep = [q for q in qs if q.key not in set(want)]
-    store.rewrite_all(keep)
+    # 写回收站失败就把刚删的那几道**加回去**：
+    # 用 `update()` 而不是整库重写整份旧快照——后者会把「删除之后、
+    # 回滚之前」别人写进来的题一起抹掉，等于用一个回滚制造一次丢题。
     try:
-        _save(new_items)
+        _save(box["new_items"])
     except Exception as e:
-        store.rewrite_all(qs)               # 回滚
+        gone = set(want)
+
+        def _undo(qs):
+            have = {q.key for q in qs}
+            return qs + [q for q in box.get("_before", []) if q.key in gone and q.key not in have]
+
+        try:
+            store.update(_undo)
+        except Exception:
+            log.warning("回滚也失败了", exc_info=True)
         return {"ok": False, "error": "写回收站失败，已回滚：%s" % e,
                 "not_found": [], "deleted": []}
-    return {"ok": True, "deleted": out, "not_found": []}
+    return {"ok": True, "deleted": box["deleted"], "not_found": []}
 
 
 def restore(keys_: list[str]) -> dict:
@@ -254,6 +340,7 @@ def purge(keys_: list[str] | None = None, *, password: str = "",
 
     `keys_` 为空表示清空整个回收站。这是唯一不可逆的一步，
     所以**口令 + 界面二次确认**两道都要。
+    （删除单道题只是移进回收站、随时能恢复，**不要口令**；这里要。）
     """
     if not check_password(password):
         return {"ok": False, "error": "口令不对，回收站一个字节都没动", "purged": 0}
@@ -321,18 +408,22 @@ def _selftest() -> int:
     # **相对计数**，并且只清理它自己造的那一条——绝不动别人的。
     _n0 = len(all_items())
 
-    # 口令：不对就一道都不许动
+    # 删题**不再要口令**：不传 / 传错都该走到「题号不存在」那一步。
+    r = delete(["__不存在的题号/1"])
+    check("删题不传口令 → 走到题号不存在",
+          r["ok"] is False and r["not_found"], str(r))
     r = delete(["__不存在的题号/1"], password="0000")
-    check("口令不对 → 拒绝", r["ok"] is False and "口令" in r["error"], str(r))
+    check("删题不再校验口令（错口令也走到题号不存在）",
+          r["ok"] is False and r["not_found"], str(r))
     r = purge(password="0000")
-    check("清空也要口令", r["ok"] is False, str(r))
-    check("口令正确时认得出来", check_password("0808") and not check_password("0809"))
+    check("清空/永久删除仍要口令", r["ok"] is False, str(r))
+    check("清空口令正确时认得出来", check_password("0808") and not check_password("0809"))
 
-    # **原因必须是给定选项**：空原因和乱填都拦下。
+    # **原因必须是给定选项**：乱填的拦下。
     # 删题是常态，原因填得含糊，回收站就成垃圾堆了，事后也统计不出来。
-    r = delete(["__不存在的题号/1"], password="0808", reason="随便写的")
+    r = delete(["__不存在的题号/1"], reason="随便写的")
     check("原因不在选项里 → 拒绝", r["ok"] is False and "原因" in r["error"], str(r))
-    r = delete(["__不存在的题号/1"], password="0808", reason=DELETE_REASONS[0])
+    r = delete(["__不存在的题号/1"], reason=DELETE_REASONS[0])
     check("给定选项的原因 → 放行（到「题号不存在」那一步才拦）",
           r["ok"] is False and r["not_found"], str(r))
     check("原因选项不为空", len(DELETE_REASONS) >= 2 and all(DELETE_REASONS))
@@ -340,7 +431,7 @@ def _selftest() -> int:
     check("默认原因在选项里", DEFAULT_REASON in DELETE_REASONS)
 
     # 找不到的题号：整批不执行（不能删一半）
-    r = delete(["__不存在的题号/1"], password="0808")
+    r = delete(["__不存在的题号/1"])
     check("题号不存在 → 整批不执行", r["ok"] is False and r["not_found"], str(r))
     check("整批不执行时回收站没变", len(all_items()) == _n0,
           "%d → %d" % (_n0, len(all_items())))
@@ -362,7 +453,7 @@ def _selftest() -> int:
         store.append([_q])
         n0 = len(store.load_all())
         check("往返：题先放进去了", store.find(_K) is not None, str(n0))
-        r = delete([_K], reason=DELETE_REASONS[1], password="0808")
+        r = delete([_K], reason=DELETE_REASONS[1])
         check("往返：删成功（数量变化不再触发护栏）", r["ok"], str(r.get("error")))
         check("往返：库里少一道", len(store.load_all()) == n0 - 1,
               "%d → %d" % (n0, len(store.load_all())))
@@ -374,16 +465,28 @@ def _selftest() -> int:
         check("往返：内容一字不差",
               back is not None and back.stem == _q.stem and back.answer == _q.answer
               and back.points == ["1.1.1"], str(back and back.stem))
+
+        # 「删掉 → 又从别处录回来 → 再删一次」：回收站里同一题只能有一条。
+        # 老写法每删一次追加一条（实测攒出 908 条重复记录）。
+        store.append([_q])
+        delete([_K], reason=DELETE_REASONS[1])
+        _same = [x for x in all_items() if x.get("key") == _K]
+        check("往返：重复删除只留一条回收站记录", len(_same) == 1,
+              "%d 条" % len(_same))
+        restore([_K])
     finally:
         # 不管前面怎么样，都把这道德自检题从库和回收站里清掉。
         # **清完要复查**：如果此时别的进程也在写库（Web 服务、求解器），
         # 它的整库重写可能把我们刚删掉的这道又带回来——实测踩过。
         # 所以核对一次，不对就再删一次。
+        #
+        # 每轮都走 `store.update()`：读与写在同一把锁里，别人此刻写库也不会
+        # 把我们这次清理覆盖掉，我们也不会覆盖别人。这正是「自检在多进程下
+        # 会红」那件事的解法（见 `测试/删题安全自检.py` 的指纹断言）。
         for _ in range(3):
             try:
                 if store.find(_K) is not None:
-                    store.rewrite_all([x for _f, x in store.iter_questions()
-                                       if x.key != _K])
+                    store.update(lambda qs: [x for x in qs if x.key != _K])
             except Exception:
                 log.warning("自检清理失败", exc_info=True)
                 pass

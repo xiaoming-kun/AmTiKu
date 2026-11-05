@@ -77,21 +77,46 @@ def risky(q) -> bool:
 def _compile(questions: list, workdir: Path, *, timeout: int = 240) -> tuple[bool, str]:
     r"""编译一批。返回 (成功?, 日志尾部)。"""
     tex = render_paper(questions, mode="test", title="编译体检", show_answers=False,
-                       problem_blank_cm=0, graphicspath=str(IMG_DIR))
+                       problem_blank_cm=0, graphicspath=str(IMG_DIR), qid_marks=True)
     src = workdir / "t.tex"
     src.write_text(tex, encoding="utf-8")
     try:
         p = subprocess.run(
-            ["xelatex", "-interaction=nonstopmode", "-halt-on-error", "t.tex"],
+            ["xelatex", "-interaction=nonstopmode", "-halt-on-error",
+             "-file-line-error", "t.tex"],
             cwd=workdir, capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, "编译超时（%d 秒）" % timeout
     log = (p.stdout or b"").decode("utf-8", "ignore")
     if p.returncode == 0 and (workdir / "t.pdf").exists():
         return True, ""
-    # 只留真正的那条错误，别把几百行日志全甩出来
-    errs = [l for l in log.split("\n") if l.startswith("!")]
-    return False, (errs[0][:200] if errs else log[-200:])
+    # 只留真正的那条错误，别把几百行日志全甩出来。
+    # `-file-line-error` 让日志里有稳定的 `t.tex:行号:`，配合每题前面那行
+    # `% AMTIKU-Q:` 标记就能直接说清是**哪道题**（这一批里是哪一道），
+    # 不用等二分完才知道。
+    from . import texdiag as _td
+    loc = _td.locate(log, tex)
+    d = _td.diagnose(log)
+    # ⚠️ 原始报错行**不能**用 `log[-160:]`。开了 `-file-line-error` 之后
+    # 日志里根本没有 `!` 开头的行（格式是 `./t.tex:71: ...`），
+    # 于是那句 fallback 会把日志尾巴上被折行的上下文抓进来 —— 我第一版就是
+    # 这样，用户看到的"原始报错"是一段从中间断开的乱码。
+    # `texdiag.diagnose()` 已经按优先级挑好了那条干净的行，直接用它。
+    bits = []
+    if loc["key"]:
+        bits.append("[%s]" % loc["key"])
+    if loc["line"]:
+        bits.append("第 %d 行" % loc["line"])
+    bits.append(d["summary"])
+    out = " ".join(bits) + " —— " + d["cause"]
+    if d["command"]:
+        out += "｜涉及命令：`%s`" % d["command"]
+    if d["package"]:
+        out += "｜可能缺包：`%s`" % d["package"]
+    out += "｜修法：" + d["fix"]
+    if d["raw"]:
+        out += "｜原始：`%s`" % d["raw"][:160]
+    return False, out
 
 
 def check(keys: list[str] | None = None, *, batch: int = BATCH,
