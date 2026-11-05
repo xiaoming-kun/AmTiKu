@@ -1615,29 +1615,14 @@ def test_generate_has_constraints_and_minutes():
     assert all(x["flags"].get("解析") for x in d["items"]), [x["key"] for x in d["items"]]
 
 
-def test_answer_sheet_renders():
-    from amti import paper, store
-    qs = store.load_all()
-    two = [q for q in qs if q.type == "single_choice"][:2]
-    tex = paper.render_paper(two, mode="test", title="答题卡", answer_sheet=True)
-    assert "答题卡" in tex and "\\square" in tex
-    det = next(q for q in qs if q.type == "detailed_answer")
-    tex2 = paper.render_paper([det], mode="test", title="答题卡", answer_sheet=True)
-    # 解答题不再进答题卡；卷面上“一页一题 + 填满空白”
-    assert "framebox" not in tex2
-    assert "\\vspace*{\\fill}" in tex2
-
-
-def test_detailed_one_page_layout():
+def test_detailed_layout_continuous():
     from amti import paper, store
     dets = [q for q in store.load_all() if q.type == "detailed_answer"][:2]
-    tex = paper.render_paper(dets, mode="test", title="一页一题",
-                             detail_one_page=True)
-    assert tex.count("\\vspace*{\\fill}") == 2
-    assert tex.count("\\newpage") >= 2
-    tex2 = paper.render_paper(dets, mode="test", title="固定留白",
-                              detail_one_page=False, problem_blank_cm=5)
-    assert "\\vspace*{5.00cm}" in tex2
+    tex = paper.render_paper(dets, mode="test", title="连续排", problem_blank_cm=5)
+    # 已删除“一页一题”选项：解答题连续排，按 problem_blank_cm 固定留白
+    assert "\\vspace*{\\fill}" not in tex
+    assert "\\vspace*{5.00cm}" in tex
+    assert "\\filbreak" in tex
 
 
 # ── 无 pytest 时的运行器 ──────────────────────────────────────

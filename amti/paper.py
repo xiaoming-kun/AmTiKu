@@ -864,8 +864,7 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
                  columns: int = 0, graphicspath: str = "",
                  handout_font: str = HANDOUT_FONT_DEFAULT,
-                 qid_marks: bool = False, answer_sheet: bool = False,
-                 detail_one_page: bool = True,
+                 qid_marks: bool = False,
                  score_box: bool = True, seal_line: bool = True) -> str:
     r"""渲染成完整的 exam-zh 文档。`mode` 取 `gaokao` / `test` / `handout`。
 
@@ -914,8 +913,7 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                        columns=columns, graphicspath=_texpath(graphicspath),
                        bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
                        total_score=total_score, show_source=show_source,
-                       qid_marks=qid_marks, answer_sheet=answer_sheet,
-                       detail_one_page=detail_one_page,
+                       qid_marks=qid_marks,
                        score_box=score_box, seal_line=seal_line)
 
 
@@ -1066,8 +1064,7 @@ def _paper_body(doc: list[str], questions: list[Question], *,
                 answers_at_end: bool, columns: int, graphicspath: str,
                 bottom_sep: str, problem_blank_cm: float,
                 total_score: int, show_source: bool = False,
-                qid_marks: bool = False, answer_sheet: bool = False,
-                detail_one_page: bool = True,
+                qid_marks: bool = False,
                 score_box: bool = True, seal_line: bool = True) -> str:
     r"""卷子正文（分节、出题、卷末答案册）。导言区由 `_preamble` 出。"""
     numbering: list[tuple[int, Question]] = []      # (卷面题号, 题)
@@ -1098,13 +1095,6 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             continue
         # `\section{}` 由 exam-zh 自动编号成「一、选择题：…」并加粗——
         # 早先手写 `\noindent{\bfseries 一、选择题…}`，编号要自己维护
-        # 解答题一页一题时，**分节标题也要跟第一题同页**：
-        # 先把新页开了，再写标题；否则标题在页底、题目被 `\newpage` 推到下一页，
-        # 就出现“二、解答题”孤零零挂在上一页底部（实测踩过）。
-        one_page_section = (t == "detailed_answer" and not show_answers
-                            and detail_one_page)
-        if one_page_section:
-            doc.append(r"\newpage")
         # 小节标题不要孤零零掉在页底：下面至少留 12 行（标题 + 首题开头）
         doc.append(r"\needspace{12\baselineskip}")
         if mode == "gaokao":
@@ -1134,16 +1124,11 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             # `\filbreak` 是 LaTeX 里"这一块放不下就整块挪走"的老办法：
             # 从它到**下一个 `\filbreak`** 之间的内容视为一块。
             # 上面刚说过留白跟在题目后头，所以这一块正好是"题 + 留白"。
-            # 解答题“一页一题”：每道解答题从新页开始，题目后把余下版面填满，
-            # 学生直接在题目下面作答。老师版（带解析）不分页，否则解析也会被拆散。
-            one_page = (t == "detailed_answer" and not show_answers
-                        and detail_one_page)
-            if one_page and i:
-                doc.append(r"\newpage")
-            elif not one_page and i:
+            # 同一节内，从第二题起用 `\filbreak` 把「题 + 留白」绑成一块，
+            # 避免留白被单独甩到下一页顶部。
+            if i:
                 doc.append(r"\filbreak")
-            # 起始 label 必须在**分页之后**：解答题第二题起先 `\newpage`，
-            # 若 label 写在 newpage 前，会被记在上一页，误报“跨页”。
+            # 起始 label 要记在题目所在页；`\filbreak` 之后不再有强制分页。
             if qid_marks:
                 doc.append(f"\\label{{amtiq{idx}}}")
                 if t == "detailed_answer":
@@ -1165,21 +1150,15 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             # 解答题留白：**必须 `\vspace*`**（带星号）——
             # 不带星号的 `\vspace` 在分页处会被丢弃，题目落在页底时留白凭空消失
             if t == "detailed_answer" and not show_answers:
-                if one_page:
-                    # 填满本页剩余高度：题短就多留白，题长就自然少留
-                    doc.append(r"\vspace*{\fill}")
-                else:
-                    cm = blank_for(diff, problem_blank_cm)
-                    if cm > 0:
-                        doc.append(f"\\vspace*{{{cm:.2f}cm}}")
+                cm = blank_for(diff, problem_blank_cm)
+                if cm > 0:
+                    doc.append(f"\\vspace*{{{cm:.2f}cm}}")
             if qid_marks:
                 doc.append(f"\\label{{amtiqend{idx}}}")
             doc.append("")
 
     if answers_at_end and numbering:
         doc += _answers_section(numbering)
-    if answer_sheet:
-        doc += _answer_sheet(numbering)
 
     doc.append(r"\end{document}")
     return "\n".join(doc)
@@ -1215,46 +1194,6 @@ def _seal_line() -> list[str]:
         r"\end{tikzpicture}",
         "",
     ]
-
-
-def _answer_sheet(numbering: list[tuple[int, Question]]) -> list[str]:
-    r"""卷末附一页**答题卡**：选择题填涂 + 填空题横线。
-
-    **不含解答题**：解答题已经“一页一题、题目下面填满空白”，
-    学生直接在卷面上作答；再给解答题留框纯属重复，还浪费纸。
-    """
-    if not numbering:
-        return []
-    out = [r"\newpage", r"\section*{答题卡}", ""]
-    out.append(r"\begin{center}")
-    out.append(r"姓名：\underline{\hspace{3.6cm}}\quad "
-               r"班级：\underline{\hspace{3.2cm}}\quad "
-               r"考号：\underline{\hspace{3.6cm}}")
-    out.append(r"\end{center}")
-    out.append("")
-
-    for title, types in (
-        ("一、选择题（在对应选项上打勾或涂黑）", ("single_choice", "multi_choice")),
-        ("二、填空题（把答案写在横线上）", ("fill_in_blank",)),
-    ):
-        items = [(i, q) for i, (_no, q) in enumerate(numbering, start=1)
-                 if q.type in types]
-        if not items:
-            continue
-        out.append(r"\noindent{\bfseries " + title + "}")
-        out.append("")
-        for i, q in items:
-            if q.type in ("single_choice", "multi_choice"):
-                opts = r"\quad ".join(r"$\square$ " + c for c in "ABCD"[:max(2, len(q.options))])
-                out.append(r"\noindent %d.\quad %s" % (i, opts))
-            elif q.type == "fill_in_blank":
-                out.append(r"\noindent %d.\quad "
-                           r"\underline{\hspace{0.82\linewidth}}" % i)
-            else:
-                continue
-            out.append(r"\vspace{0.35em}")
-        out.append("")
-    return out
 
 
 def _render_handout(questions: list[Question], *, title: str = "",

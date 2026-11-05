@@ -4,7 +4,7 @@ r"""PDF 排版体检：页数、每页空白、解答题跨页。
 
   · 一共几页？
   · 每页内容占到哪儿、底部还剩多少空白（缩略条用）？
-  · 有没有解答题“一页一题”没放下、跨到了下一页？
+  · 有没有解答题跨到了下一页？
 
 依赖 PyMuPDF（`fitz`）。没装就只返回空结果，不影响导出——这是体检，
 不是导出的前置条件。
@@ -114,7 +114,7 @@ def inspect(pdf_path: str | Path, *, tex_path: str | Path | None = None,
             a, b = spans[idx]
             if a != b:
                 out["warnings"].append(
-                    "第 %d 个解答题跨页（第 %s–%s 页），一页一题没放下" % (idx, a, b))
+                    "第 %d 个解答题跨页（第 %s–%s 页）" % (idx, a, b))
     finally:
         doc.close()
     return out

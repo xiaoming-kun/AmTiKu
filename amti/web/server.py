@@ -2672,11 +2672,6 @@ class ExportBody(BaseModel):
     # 以前预览和导出是同一个请求，点一次预览就在资料夹里留一份 PDF、
     # 还把题目的「用过 N 次」+1（默认排序都跟着变）。
     preview: bool = False
-    # 卷末附一页答题卡（姓名/考号 + 选择填涂 + 填空横线；解答题在卷面留白）
-    answer_sheet: bool = False
-    # 解答题“一页一题”：每道解答题新起一页，题目下面填满空白；老师版不分页。
-    # 界面已删除这个选项；API 仍保留，调用方显式传 true 才启用。
-    detail_one_page: bool = False
     # 卷头总分框 + 第一页密封线
     score_box: bool = True
     seal_line: bool = True
@@ -2706,8 +2701,7 @@ def export(body: ExportBody) -> dict:
                    problem_blank_cm=(body.problem_blank_cm
                                      if body.problem_blank_cm is not None else 4.0),
                    do_compile=body.compile, mode=body.mode, kind=body.kind,
-                   preview=body.preview, answer_sheet=body.answer_sheet,
-                   detail_one_page=body.detail_one_page,
+                   preview=body.preview,
                    score_box=body.score_box, seal_line=body.seal_line)
     if not r.get("ok") and r.get("error"):
         raise HTTPException(400, r["error"])
