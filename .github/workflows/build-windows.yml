@@ -204,7 +204,11 @@ jobs:
                   -ArgumentList "--port",$port -PassThru `
                   -RedirectStandardOutput $o -RedirectStandardError $e
             try {
-              python packaging/win_smoke_api.py --port $port
+              # ⚠️ **必须 `| Out-Host`**：PowerShell 函数会把管道输出（这里是
+              #     python 的每一行 stdout）**一并当成返回值**，于是 $c1 变成
+              #     @("✓ 服务已就绪…", …, 0)，`$c1 -ne 0` 恒为真 —— 两项其实
+              #     全过，脚本却报"接口冒烟失败"。第一次让两遍都跑到终点才暴露。
+              python packaging/win_smoke_api.py --port $port | Out-Host
               $code = $LASTEXITCODE
             } finally {
               # 先停进程再读日志：stdout 重定向到文件是**块缓冲**的，
