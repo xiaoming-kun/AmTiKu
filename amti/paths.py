@@ -20,7 +20,12 @@ def resolve_root() -> Path:
         return Path(env).expanduser().resolve()
     if getattr(sys, "frozen", False):          # PyInstaller 等打包运行时
         if sys.platform == "darwin":
-            # macOS 的 `.app` 是**只读包体**：把题库写进去会破坏代码签名
+            # **便携模式**：`.app` 同级如果放了 `题目/`，就把它当数据目录。
+            # 用于"含题库的私人包"——整个文件夹拷走就搬家，不碰系统目录。
+            beside = Path(sys.executable).resolve().parent.parent.parent.parent
+            if (beside / "题目").is_dir():
+                return beside
+            # 默认：macOS 的 `.app` 是**只读包体**，把题库写进去会破坏代码签名
             # （签名一破，Gatekeeper 下次就说"已损坏"），用户也找不到自己的数据。
             # 放到系统约定位置，卸载 = 删这个目录。
             return Path.home() / "Library" / "Application Support" / "AmTiKu"
