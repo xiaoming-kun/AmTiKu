@@ -160,7 +160,20 @@ jobs:
           # （仓库里没有题库，指向仓库根会让自检"跳过导出"，等于没验 —— 上一轮就是这样）
           # TeX 直接**解压**到 exe 旁边；不要用 Copy-Item：TeX 树里有符号链接，
           # PowerShell 的递归拷贝对符号链接处理不可靠。
-          Expand-Archive AmTiKu-Windows-tex.zip -DestinationPath dist\AmTiKu\tex -Force
+          #
+          # ⚠️ **这里以前只认「下载下来的预装 zip」，是三次 tag 构建全部失败的根因**：
+          #    那个资产在 v0.1.0 里并不存在（URL 404），而下载步骤 continue-on-error，
+          #    于是静默没有 zip、到这里 Expand-Archive 直接退 1 —— 冒烟没跑、Release 没出，
+          #    看上去像"打包坏了"。现在没有 zip 就用 CI 自己装好的 tex/ 现打一份。
+          $zip = "AmTiKu-Windows-tex.zip"
+          if (!(Test-Path $zip)) {
+            if (!(Test-Path "tex\bin\windows\xelatex.exe")) {
+              throw "既没有预装 zip，也没有 CI 装好的 tex\ —— 无法冒烟"
+            }
+            Write-Host "没有预装 zip：用 CI 装的 tex/ 现打一份（要 2~4 分钟）"
+            Compress-Archive -Path "tex\*" -DestinationPath $zip -CompressionLevel Optimal
+          }
+          Expand-Archive $zip -DestinationPath dist\AmTiKu\tex -Force
           cd dist\AmTiKu
           .\AmTiKu.exe --selftest
 
