@@ -5,13 +5,23 @@ name: build-windows
 on:
   workflow_dispatch:          # 手动触发（网页按钮或 gh workflow run）
   push:
-    tags: ['v*']              # 打标签时自动出包
+    tags: ['v*']              # 打标签时自动出包 + 发 Releases
+
+permissions:
+  contents: write             # 建 Release、传资产要用
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      # 版本号只有一个来源：仓库根的 `VERSION`。产物名、Release 标题都用它，
+      # 避免"tag 是 v2.0.0、文件名里写 1.9.3"这种对不上。
+      - name: 读版本号
+        id: ver
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v5
         with:
@@ -204,6 +214,27 @@ jobs:
           Write-Host "结果：原位 exit=$c1 ｜ 中文空格 exit=$c2"
           if ($c1 -ne 0 -or $c2 -ne 0) { throw "接口冒烟失败（上面有具体哪一项）" }
 
+      # 用户拿到手的应该是**一个**文件，不是一个文件夹。
+      # 打包前先断言关键部件都在——上一版把 tex 漏在包外的后果是
+      # 「双击能打开、一导出就说找不到 xelatex」，比直接报错更难查。
+      - name: 打成 zip
+        id: pack
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $name = "AmTiKu-$v-Windows-x64"
+          if (!(Test-Path "dist\AmTiKu\tex\bin\windows\xelatex.exe")) {
+            throw "包里没有 tex\bin\windows\xelatex.exe —— 内置 LaTeX 没打进去"
+          }
+          if (!(Test-Path "dist\AmTiKu\_internal\web\dist\index.html")) {
+            throw "包里没有前端 index.html —— 打出来的会是「接口能用、界面 404」"
+          }
+          Compress-Archive -Path "dist\AmTiKu\*" -DestinationPath "$name.zip" -CompressionLevel Optimal
+          $mb = [math]::Round((Get-Item "$name.zip").Length / 1MB)
+          Write-Host "产物：$name.zip（$mb MB）"
+          "zip=$name.zip" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
+
       # if: always() 很关键：以前任何一步失败就什么都取不回来（白等一轮）。
       # 现在无论成败都上传，至少能拿到 exe 与已装好的 TeX。
       - name: 上传产物（exe）
@@ -221,3 +252,21 @@ jobs:
           name: AmTiKu-Windows-tex
           path: tex/**
           if-no-files-found: warn
+
+      # 打 tag 时直接发到 Releases：用户点链接就能下，不用登 GitHub 取 artifact
+      # （artifact 要登录、还有 90 天过期，不适合当交付物）。
+      - name: 发布到 Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pack.outputs.zip }}
+          name: AmTiKu v${{ steps.ver.outputs.version }}
+          body: |
+            **AmTiKu v${{ steps.ver.outputs.version }}** · 双平台免安装版
+
+            * `AmTiKu-${{ steps.ver.outputs.version }}-Windows-x64.zip` — 解压到**纯英文路径**，
+              双击 `AmTiKu.exe`。自带 Python、LaTeX、前端，**不需要额外安装任何东西**。
+            * macOS 版见同一 Release 的 `.dmg` 资产。
+
+            不含题库，只有 4 道自编示例题；要接自己的题库，见 README。
+            首次启动 Windows 可能弹「Windows 保护了你的电脑」——点「更多信息 → 仍要运行」。

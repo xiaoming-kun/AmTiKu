@@ -1,4 +1,4 @@
-/** 导出页：组卷（LaTeX 试卷）与讲义（Slidev）的设置面板。
+/** 导出页：组卷（LaTeX 试卷 / A4 讲义）的设置面板。
  *
  *  从 App.tsx 搬出来的（审查报告 CPLX-1：App 曾是全文件最大的组件）。
  */
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
-import { CloseBtn } from '@/app/ui'
+import { CloseBtn, useFlag } from '@/app/ui'
 import { SECTION_LABEL, SHORT_NAME, questionScore, paperScore as totalScore } from '@/lib/paper'
 import CompileOverlay, { LATEX_STAGES, COVER_STAGES } from '@/app/CompileOverlay'
 
@@ -163,14 +163,19 @@ function safeName(out: string) {
   return out.replace(/[^\w\u4e00-\u9fff-]+/g, '_').replace(/^_+|_+$/g, '') || '试卷'
 }
 
-export default function ExportPage({ init, pool, from, filters, onClose, closing }: {
-  init: Q[]; pool: Q[]; from: string
+export default function ExportPage({ init, pageItems, poolTotal, from, filters, onClose, closing }: {
+  init: Q[]; from: string
+  /** **当前这一页**的题——就是列表里看得见的这一百道。只用来做「加本页」。 */
+  pageItems: Q[]
+  /** **筛选集**的总数：后端按同一套筛选条件算出来的真实条数。
+   *  组卷/覆盖率用的都是它，不是上面那一页。 */
+  poolTotal: number
   filters: Record<string, string>; onClose: () => void
   /** 正在播退场动画（父组件用 `useUnmount` 控制，播完才真卸载）。 */
   closing?: boolean
 }) {
   const [list, setList] = useState<Q[]>(init)
-  const poolN = pool.length
+  const pageN = pageItems.length
   /** 卷面标题：**默认就填好**（和下面的文件名同一套规矩）。
    *
    *  以前这里是空的 + 一句 placeholder「留空用…」，而文件名却有默认值——
@@ -193,12 +198,19 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
   // **答案与解析放不放卷末**。真高考卷是"卷面只有题，答案另附"，
   // 所以留空版（学生做）时默认勾上，讲义版（要看解析）时自动取消。
   const [ansAtEnd, setAnsAtEnd] = useState(true)
-  // 讲义是否印答案（A4 讲义用；上一轮我用正则删 Slidev 参数时误删过它）
+  /** 卷头总分框 + 第一页密封线。 */
+  const [scoreSeal, setScoreSeal] = useState(true)
+  // 讲义是否印答案（A4 讲义用）
   const [showAns, setShowAns] = useState(false)
+  /** 题干第一行是否印出处（年份/卷别）。**不印原卷题号**——用户明确说
+   *  「第几题」没必要；有时要出处、有时不要，所以做成可记忆的开关。 */
+  const [showSource, setShowSource] = useFlag('amtiku.export.source', true)
   // 讲义字号。exam-zh 题干默认五号 10.5pt，iPad 上偏小，默认给小四 12pt。
   const [handoutFont, setHandoutFont] = useState('-4')
-  const [sep, setSep] = useState('0.6em')
-  const [blank, setBlank] = useState('4')
+  // 版式默认值必须**和「留空版」一致**：以前 layout 高亮留空版，
+  // 但 sep/blank 是 0.6em/4cm，用户看到的预设和实际导出的不是一回事。
+  const [sep, setSep] = useState('8em')
+  const [blank, setBlank] = useState('0')
   const [layout, setLayoutRaw] = useState<'compact' | 'roomy'>('roomy')
   /** 忙什么。**必须分开**：组卷是"挑题"（几秒，没有 LaTeX 阶段），
    *  编译是"跑两遍 xelatex"（几十秒，有阶段）。早先共用一个 `busy`，
@@ -211,16 +223,33 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
   const [genMsg, setGenMsg] = useState('')
   /** 组卷后的**细目表达成度**（目标 vs 实际）。只有 gaokao 模式会给。 */
   const [bp, setBp] = useState<any>(null)
-  /** 导出位置（后端说了算，别再写死「试卷/」）。 */
-  const [outDir, setOutDir] = useState({ name: '试卷', abs: '' })
+  /** 整份组卷结果：导出细目表要用 slots/items，光有 bp 不够。 */
+  const [gen, setGen] = useState<any>(null)
+  /** 导出位置 + 分类子目录（后端说了算，别再写死「试卷/」）。
+   *  `kinds` 是卷型 → 子目录（试卷 / 测试卷 / 讲义），由 `/api/settings`
+   *  从后端 `paths.kind_of` 取——界面上显示的落盘路径与真实落盘用同一份映射，
+   *  不再各写一套（v1.6.19 那次前端写死「试卷/」就骗过人）。 */
+  const [outDir, setOutDir] = useState<{ name: string; kinds: Record<string, string> }>(
+    { name: '', kinds: {} })
   useEffect(() => {
     api.settings()
-      .then((d: any) => setOutDir({ name: d.out_name || '试卷', abs: d.out_dir || '' }))
+      .then((d: any) => setOutDir({ name: d.out_name || '', kinds: d.kinds || {} }))
       .catch(() => {})     // 取不到就退回默认文案，不打断导出
   }, [])
+  /** 当前卷型落哪个分类子目录（后端没给就按试卷算）。 */
+  const outKind = outDir.kinds[mode] || '试卷'
+  /** 界面上显示、也是真实落盘的相对路径：`阿明的辅导讲义/试卷/名字.pdf`。 */
+  const outPath = `${outDir.name ? `${outDir.name}/` : ''}${outKind}/${safeName(out)}.pdf`
   // 组卷方案（`coverage`）：**要几道题、想覆盖多少考点**。
   // 目标是「尽量用最少的题把考点铺满」，所以先定题量再谈覆盖率。
   const [want, setWant] = useState('46')
+  /** 目标时长（分钟）。只用来提示，不自动换题。 */
+  const [targetMin, setTargetMin] = useState('120')
+  /** 地区/卷别：只从该地区选题（空 = 不限）。 */
+  const [regionStyle, setRegionStyle] = useState('')
+  const [regions, setRegions] = useState<{ value: string; n: number }[]>([])
+  /** 最近一次组卷的 seed：复制方案时带上，同 seed 可复现。 */
+  const [lastSeed, setLastSeed] = useState<number | null>(null)
   const [cov, setCov] = useState('0.9')
   /** 覆盖卷要不要保住高考卷面的题型比例。
    *
@@ -253,28 +282,52 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
     if (!outEdited) setOut(defaultOut(title, mode))
   }, [title, mode, outEdited])
 
+  // **参数或卷子内容一变，旧预览立刻作废。**
+  //
+  // 不这样做的时候，iframe 还指着上一份 PDF：
+  //   · 轻的时候，预览和当前设置不是一回事（改了版式，画面还是旧版式）；
+  //   · 重的时候，那份旧预览可能已经被 `_prune_previews` 清掉，或者
+  //     对应的旧文件根本不存在——iframe 404 就是一块纯白，用户以为白屏了。
+  // 所以这里只留一个「当前设置 + 当前题目」的指纹；指纹一变就回到
+  // 「点左边编译预览」的空态。文件名 `out` 不影响卷面内容，故意不进指纹。
+  const previewKey = JSON.stringify([
+    mode, title, showAns, showSource, ansAtEnd,
+    scoreSeal, handoutFont, sep, blank, list.map((q) => q.key),
+  ])
+  useEffect(() => {
+    setRes(null)
+    setCompiled(false)
+    setErr('')
+  }, [previewKey])
+
   /**
    * 版式预设。两个数是**起点**，选完还能在上面单独调。
    *
-   * 紧凑版：题目紧排、解答题不留白——适合「题目与答题卡分开」的考法，省纸。
-   * 留空版：每题间距 **8em** 起、解答题留 5cm——**直接在卷面上写**。
-   *         `question/bottom-sep` 管的是每题之后的空白，所以选择填空
-   *         也会跟着松，正好够在旁边写过程。
+   * 紧凑版：题目紧排、解答题**不留白**（blank = −1）——适合「题目与答题卡分开」
+   *         的考法，省纸。
+   * 留空版：每题间距 **8em** 起、解答题按难度留 3/5/8cm（blank = 0）——
+   *         **直接在卷面上写**。`question/bottom-sep` 管的是每题之后的空白，
+   *         所以选择填空也会跟着松，正好够在旁边写过程。
    */
   const setLayout = (v: 'compact' | 'roomy') => {
     setLayoutRaw(v)
-    if (v === 'compact') { setSep('0.3em'); setBlank('0') }
+    // ⚠️ 紧凑版以前写 blank='0'，而后端 0 = 按难度自动（3/5/8cm）——
+    // 看着选的是「省纸」，导出来解答题后面还是留一大片。−1 才是不留白。
+    if (v === 'compact') { setSep('0.3em'); setBlank('-1') }
     else { setSep('8em'); setBlank('0') }      // 0 = 按难度自动（3/5/8cm）
   }
 
-  const run = () => {
+  const run = (preview = false) => {
     if (!list.length) { setRes(null); return }
+    // **先撤掉旧预览**：编译失败时不能把上一份（可能已被清掉的）PDF
+    // 留在 iframe 里——那会变成一块 404 白屏，而不是一条明确的报错。
+    setRes(null)
     setBusyKind('compile'); setBusySince(Date.now()); setErr('')
-    const keys = list.map((q) => q.key)
 
     // 没手改过文件名 → 把时间戳刷成「此刻」再导出。面板开着十几分钟才点导出，
     // 不该落一个十几分钟前的名字。刷新的同时更新输入框，
     // 保证**屏幕上显示的就是将要落盘的**。
+    // 预览也用同一个名字（它不进资料夹，只是预览目录里的一份文件）。
     const outNow = outEdited ? out : defaultOut(title, mode)
     if (!outEdited) setOut(outNow)
 
@@ -284,32 +337,97 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
     // 考点覆盖卷挑完题之后，卷面就该按**测试卷**排（小字列考点、每题标出处）——
     // 它本来就是"考点专练"。早先直接把 `coverage` 透传给导出接口，
     // 结果一点「导出」就 HTTP 400「未知卷型 'coverage'」，压根导不出来。
-    const renderMode = mode === 'coverage' ? 'test' : mode
-    const call = api.export({
-          title, out: outNow, mode: renderMode, show_answers: showAns, bottom_sep: sep,
-          problem_blank_cm: Number(blank) || 0, compile: true,
-          keys, answers_at_end: ansAtEnd, handout_font: handoutFont,
-        })
-
+    const call = api.export(makeBody(outNow, preview))
     call.then((d) => {
       if (d.detail) { setErr(String(d.detail)); setRes(null) }
       else setRes(d)
     }).catch((e) => setErr(String(e))).finally(() => setBusyKind('none'))
   }
 
+  /** 一次导出的完整请求体。`over` 用来给学生版/教师版/答案册换参数。 */
+  const makeBody = (outNow: string, preview: boolean,
+                    over: Record<string, unknown> = {}) => {
+    const renderMode = mode === 'coverage' ? 'test' : mode
+    return {
+      title, out: outNow, mode: renderMode, show_answers: showAns,
+      show_source: showSource, bottom_sep: sep,
+      // 分类子目录由**界面的卷型**决定（考点覆盖卷算试卷，虽然按 test 排版），
+      // 后端拿它当落盘目录；与上面「存为 …/」显示的那行是同一个值。
+      kind: outKind, preview,
+      problem_blank_cm: Number(blank) || 0, compile: true,
+      keys: list.map((q) => q.key), answers_at_end: ansAtEnd,
+      score_box: scoreSeal, seal_line: scoreSeal, handout_font: handoutFont,
+      ...over,
+    }
+  }
+
+  /** C5：学生版（空白）/ 教师版（答案解析在题目下）/ 答案册（卷末）。
+   *  三次编译，串行跑；中途失败就停在那一步，已经生成的 PDF 保留。 */
+  const runTriple = async () => {
+    if (!list.length) return
+    // 同 `run()`：三连导出会换三份 PDF，旧 iframe 不能再留着
+    setRes(null)
+    setBusyKind('compile'); setBusySince(Date.now()); setErr(''); setGenMsg('')
+    const base = outEdited ? out : defaultOut(title, mode)
+    const variants: [string, Record<string, unknown>][] = [
+      ['学生版', { show_answers: false, answers_at_end: false }],
+      ['教师版', { show_answers: true, answers_at_end: false }],
+      ['答案册', { show_answers: false, answers_at_end: true }],
+    ]
+    try {
+      for (const [suffix, over] of variants) {
+        const d: any = await api.export(makeBody(`${base}_${suffix}`, false, over))
+        if (d?.detail) throw new Error(String(d.detail))
+        setRes(d)
+      }
+      setGenMsg('三连导出完成：学生版 / 教师版 / 答案册')
+    } catch (e) {
+      setErr(String((e as any)?.message || e))
+    } finally {
+      setBusyKind('none')
+    }
+  }
+
   // 这里以前挂着一个 800ms 防抖的自动重编 effect：只要 `compiled` 为真，
   // 改标题/版式/换题/排序都会在背后自动跑一遍 xelatex。已按要求删除——
   // 现在**只有**点「编译预览」或「导出并保存」才编译，不再有隐式触发。
 
+  /** 细目表 CSV：题号 / 题型 / 板块 / 目标-实际难度 / 分值 / 用时 / 考点 / key。
+   *  老师可以在 Excel 里改目标，再拿回来对照；比只在小窗里看“达成度”实用。 */
+  const downloadBlueprint = () => {
+    if (!gen?.slots?.length) return
+    const byKey = new Map<string, Q>((gen.items || []).map((q: Q) => [q.key, q]))
+    const head = ['序号', '题型', '板块', '目标难度', '实际难度', '分值', '用时(分钟)', '考点', '题目 key']
+    const body = gen.slots.map((s: any, i: number) => {
+      const q = byKey.get(s.key)
+      return [i + 1, SHORT_NAME[s.type] || s.type, s.section || '',
+        s.want_diff || '', s.got_diff || '', s.score ?? 0, s.minutes ?? 0,
+        q?.point_titles?.join('；') || '', s.key || '（未填）']
+    })
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = '\ufeff' + [head, ...body].map((r) => r.map(esc).join(',')).join('\r\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `细目表_${(title || '试卷').replace(/[\\/:*?"<>|]/g, '_')}.csv`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   /** 随机组卷：`gaokao` 按卷面结构填位置；`coverage` 按考点覆盖率挑题。 */
   const roll = () => {
     setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg(''); setBp(null)
-    api.generate({ ...filters, mode, seed: Math.floor(Math.random() * 1e9),
+    const seed = Math.floor(Math.random() * 1e9)
+    setLastSeed(seed)
+    api.generate({ ...filters, mode, seed,
                    want: Number(want) || 19, coverage: Number(cov) || 0.9,
-                   keep_structure: keepStruct })
+                   keep_structure: keepStruct,
+                   target_minutes: Number(targetMin) || 0,
+                   region: regionStyle })
       .then((d) => {
         if (d.detail) { setErr(String(d.detail)); return }
         setList(d.items || [])
+        setGen(d)
         const rep = d.report || {}
         setBp(rep.blueprint || null)
         const mixTxt = rep.mix
@@ -333,9 +451,26 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
   /* ── 存档 / 合集 ──────────────────────────────────
      存档只记题号，所以**随时能原样还原**（题目改了也还原成最新版）。
      加载走 `/api/questions?keys=…`，顺序按存档里的顺序。 */
+  /** C4：把“这一套卷怎么来的”复制成 JSON（筛选/模式/seed/参数/题号），
+   *  可以贴给同事，或存进自己的笔记；同 seed + 同筛选可复现同一套。 */
+  const copyScheme = () => {
+    const payload = {
+      title, mode, seed: lastSeed, keys: list.map((q) => q.key),
+      filters, target_minutes: Number(targetMin) || 0, region: regionStyle,
+      layout: { score_box: scoreSeal, seal_line: scoreSeal,
+                answers_at_end: ansAtEnd, show_answers: showAns },
+    }
+    navigator.clipboard?.writeText(JSON.stringify(payload, null, 2))
+      .then(() => setGenMsg('组卷方案 JSON 已复制'))
+      .catch(() => setErr('剪贴板不可用，复制失败'))
+  }
+
   const refreshSaved = () =>
     api.papers().then((d) => setSaved(d.items || [])).catch(() => {})
   useEffect(() => { refreshSaved() }, [])
+  useEffect(() => {
+    api.facets().then((d: any) => setRegions(d.regions || [])).catch(() => {})
+  }, [])
 
   const loadSaved = (name: string) => {
     setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg(''); setBp(null)
@@ -343,8 +478,17 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
       .then((d) => {
         if (!d || !d.keys) { setErr('没有这份存档'); return }
         const p = d.params || {}
+        // 存档里的标题是用户起的：先标成「已手改」，否则下面 setMode 触发的
+        // 「换卷型就改默认标题」effect 会把它改回「数学试卷 / 讲义」。
+        setTitleEdited(true)
         if (p.mode) setMode(p.mode)
         if (p.show_answers != null) setShowAns(!!p.show_answers)
+        if (p.show_source != null) setShowSource(!!p.show_source)
+        if (p.answers_at_end != null) setAnsAtEnd(!!p.answers_at_end)
+        if (p.score_box != null) setScoreSeal(!!p.score_box)
+        if (p.seal_line != null) setScoreSeal(!!p.seal_line)
+        if (p.region != null) setRegionStyle(String(p.region))
+        if (p.target_minutes != null) setTargetMin(String(p.target_minutes))
         if (p.bottom_sep) setSep(String(p.bottom_sep))
         if (p.problem_blank_cm != null) setBlank(String(p.problem_blank_cm))
         if (d.title) setTitle(d.title)
@@ -365,8 +509,10 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
     api.paperSave({
       name: saveName.trim(), keys: list.map((q) => q.key), title: title || saveName.trim(),
       mode, kind: saveKind, note: `${list.length} 题`,
-      params: { mode, show_answers: showAns, bottom_sep: sep,
-                problem_blank_cm: Number(blank) || 0 },
+      params: { mode, show_answers: showAns, answers_at_end: ansAtEnd,
+                score_box: scoreSeal, seal_line: scoreSeal,
+                region: regionStyle, target_minutes: Number(targetMin) || 0,
+                bottom_sep: sep, problem_blank_cm: Number(blank) || 0 },
     }).then(() => { setSaveName(''); setGenMsg('已存档'); refreshSaved() })
       .catch((e) => setErr(String(e)))
   }
@@ -378,6 +524,15 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
     const n = [...l]; const j = i + d
     if (j < 0 || j >= n.length) return l
     ;[n[i], n[j]] = [n[j], n[i]]; return n
+  })
+
+  /** 「把本页 N 道加进来」：**追加去重**，不动卷子里已有的题。
+   *
+   *  以前是 `setList(pageItems)` —— 卷子里已经有 50 道时点它会**整卷替换**，
+   *  与按钮上的「加进来」正好相反，而这个弹层里没有撤销，替换掉就找不回来了。 */
+  const addPageItems = () => setList((l) => {
+    const have = new Set(l.map((x) => x.key))
+    return [...l, ...pageItems.filter((x) => !have.has(x.key))]
   })
 
   return (
@@ -394,6 +549,9 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
           <span className="tnum text-[11.5px] text-ink-faint">
             {list.length} 题 · {score} 分 · 有解析 {answered}/{list.length}
           </span>
+          {gen?.minutes ? (
+            <span className="tnum shrink-0 text-[11.5px] text-ink-soft">约 {gen.minutes} 分钟</span>
+          ) : null}
           {genMsg && <span className="min-w-0 truncate text-[11.5px] text-brand-ink">{genMsg}</span>}
           <CloseBtn onClick={onClose} className="ml-auto" />
         </header>
@@ -415,13 +573,34 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                   （用户要求：跟讲义一样，每题题干前并上原卷出处）。 */}
               <div className="text-[11px] leading-relaxed text-ink-faint">
                 {mode === 'gaokao'
-                  ? '与高考真题一致：信息行 + 注意事项 + 四大题分节；每题前标原卷出处'
+                  ? '与高考真题一致：信息行 + 注意事项 + 四大题分节；默认标原卷出处（可关）'
                   : mode === 'test'
-                  ? '考点专练：小字列出考点；每题前标原卷出处'
+                  ? '考点专练：小字列出考点；默认标原卷出处（可关）'
                   : mode === 'coverage'
                   ? '按考点覆盖率挑题：用尽量少的题把考点铺满，挑完易→难排好'
-                  : '讲义：一题一页 · A4 横版 · 不印答案；每题前标原卷出处'}
+                  : '讲义：一题一页 · A4 横版 · 不印答案；默认标原卷出处（可关）'}
               </div>
+            </Group>
+
+            <Group title="时间预算">
+              <label className="block space-y-1">
+                <span className="block text-[11.5px] text-ink-soft">目标时长（分钟）</span>
+                <input value={targetMin} onChange={(e) => setTargetMin(e.target.value)}
+                  className={`${INPUT} tnum`} />
+              </label>
+              <div className="text-[11px] leading-relaxed text-ink-faint">
+                组完后提示“预计 N 分钟、比目标多/少多少”，不会自动换题。
+              </div>
+              <label className="mt-2 block space-y-1">
+                <span className="block text-[11.5px] text-ink-soft">地区 / 卷别</span>
+                <select value={regionStyle} onChange={(e) => setRegionStyle(e.target.value)}
+                  className={INPUT}>
+                  <option value="">不限</option>
+                  {regions.slice(0, 40).map((x) => (
+                    <option key={x.value} value={x.value}>{x.value}（{x.n}）</option>
+                  ))}
+                </select>
+              </label>
             </Group>
 
             {mode === 'coverage' && (
@@ -450,7 +629,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                 </label>
                 <div className="text-[11px] leading-relaxed text-ink-faint">
                   参考：19 题 ≈ 38%，46 题 ≈ 84%，60 题 ≈ 97%，80 题铺满。
-                  覆盖率按当前筛选出的 {poolN} 道里能覆盖到的考点算。
+                  覆盖率按当前筛选的 {poolTotal.toLocaleString()} 道里能覆盖到的考点算。
                 </div>
                 <div className="text-[11px] leading-relaxed text-ink-faint">
                   {keepStruct
@@ -471,13 +650,13 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                 {mode === 'gaokao' ? '随机组卷（按高考结构）'
                   : mode === 'coverage' ? '按覆盖率组卷' : '取筛选结果'}
               </button>
-              {poolN > 0 && (
-                <button onClick={() => setList(pool)} disabled={busy}
+              {pageN > 0 && (
+                <button onClick={addPageItems} disabled={busy}
                   className="press flex w-full items-center justify-center gap-1.5 rounded-lg border
                              border-border bg-surface px-3 py-2 text-[11.5px] text-ink-soft
                              transition-colors hover:border-brand-line hover:text-brand-ink
                              disabled:opacity-50">
-                  <Plus size={12} />把筛选到的 {poolN} 道全加进来
+                  <Plus size={12} />把本页 {pageN} 道加进来
                 </button>
               )}
               <div className="text-[11px] leading-relaxed text-ink-faint">
@@ -488,6 +667,62 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
             </div>
 
             <Blueprint bp={bp} />
+            {gen?.slots?.length ? (
+              <details className="rounded-[var(--radius-card)] border border-border bg-bg p-3">
+                <summary className="cursor-pointer text-[11px] font-semibold tracking-[0.08em]
+                                    text-ink-faint">组卷明细与说明</summary>
+                <div className="mt-2 space-y-1.5 text-[10.5px] leading-relaxed text-ink-soft">
+                  {(gen.report?.suggestions || []).map((x: string, i: number) => (
+                    <div key={'s' + i} className="flex items-start gap-1 text-warn">
+                      <AlertTriangle size={10} className="mt-[2px] shrink-0" /><span>{x}</span>
+                    </div>
+                  ))}
+                  {(gen.report?.notes || []).map((x: string, i: number) => (
+                    <div key={'n' + i}>· {x}</div>
+                  ))}
+                  {gen.report?.relaxed && Object.keys(gen.report.relaxed).length > 0 && (
+                    <div>放宽：{Object.entries(gen.report.relaxed)
+                      .map(([k, v]) => `${k} ${v}`).join(' · ')}</div>
+                  )}
+                </div>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-left text-[10px]">
+                    <thead className="text-ink-faint">
+                      <tr><th className="py-1 pr-2">#</th><th className="pr-2">题型</th>
+                        <th className="pr-2">板块</th><th className="pr-2">难度</th>
+                        <th className="pr-2">考点</th><th className="pr-2">分钟</th></tr>
+                    </thead>
+                    <tbody>
+                      {gen.slots.map((s: any, i: number) => {
+                        const q = (gen.items || []).find((x: any) => x.key === s.key)
+                        return (
+                          <tr key={i} className="border-t border-border/60">
+                            <td className="py-[3px] pr-2 tnum">{i + 1}</td>
+                            <td className="pr-2">{SHORT_NAME[s.type] || s.type}</td>
+                            <td className="max-w-[7em] truncate pr-2">{s.section || '—'}</td>
+                            <td className={`pr-2 ${s.key && s.want_diff !== s.got_diff ? 'text-warn' : ''}`}>
+                              {s.want_diff || '—'}{s.key && s.got_diff ? ` → ${s.got_diff}` : ''}
+                            </td>
+                            <td className="max-w-[12em] truncate pr-2">
+                              {q?.point_titles?.slice(0, 2).join('、') || '—'}
+                            </td>
+                            <td className="tnum pr-2">{s.minutes || 0}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            ) : null}
+            {gen?.slots?.length ? (
+              <button onClick={downloadBlueprint}
+                className="press flex w-full items-center justify-center gap-1.5 rounded-lg
+                           border border-border bg-surface px-2.5 py-[6px] text-[11.5px]
+                           text-ink-soft hover:border-brand-line hover:text-brand-ink">
+                <Download size={12} />导出细目表（CSV）
+              </button>
+            ) : null}
 
             <Group title="卷面标题">
               <div className="flex items-center gap-1.5">
@@ -532,8 +767,8 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
               <div className="flex items-baseline gap-1.5 text-[10.5px] text-ink-faint">
                 <span className="shrink-0">存为</span>
                 <code className="min-w-0 flex-1 truncate font-mono text-ink-soft"
-                  title={`${outDir.abs || outDir.name}/${safeName(out)}.pdf`}>
-                  {outDir.name}/{safeName(out)}.pdf
+                  title={outPath}>
+                  {outPath}
                 </code>
                 {outEdited && <span className="shrink-0 text-brand-ink">已手改</span>}
               </div>
@@ -560,6 +795,26 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                 </div>
               </div>
             )}
+
+            {/* ── 题目信息：出处可关，且**不印原卷题号** ──
+                   用户原话：「比如这个第几题，完全没必要」；出处则有时要、
+                   有时不要，所以做成可记忆的开关。 */}
+            <Group title="题目信息">
+              <label className={`press inline-flex cursor-pointer items-center gap-1.5 rounded-full
+                                 border px-2.5 py-[5px] text-[12.5px] font-medium transition-colors
+                                 focus-within:ring-2 focus-within:ring-brand/25 ${
+                showSource ? 'border-brand bg-brand text-white'
+                           : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                <input type="checkbox" checked={showSource}
+                  onChange={(e) => setShowSource(e.target.checked)} className="sr-only" />
+                <Check size={12} strokeWidth={2.8} className={showSource ? 'shrink-0' : 'shrink-0 opacity-30'} />
+                印出处（年份 / 卷别）
+              </label>
+              <div className="text-[11px] leading-relaxed text-ink-faint">
+                出处只写「（2024 新高考 I 卷）」，不再带原卷的「第 N 题」；
+                不勾就只留题干。
+              </div>
+            </Group>
 
             {/* ── 答案：两个开关是**互斥**的（勾一个就撤另一个），
                    但语义上是两件独立的事，所以不做成单选组。 ── */}
@@ -596,6 +851,16 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                     </span></span>
                 </label>
               </div>
+              {mode !== 'handout' && (
+                <label className="press inline-flex cursor-pointer items-center gap-1.5 rounded-full
+                                  border border-border bg-surface px-2.5 py-[5px] text-[12.5px]
+                                  text-ink-soft hover:border-brand-line hover:bg-brand-soft/50">
+                  <input type="checkbox" checked={scoreSeal}
+                    onChange={(e) => setScoreSeal(e.target.checked)} className="sr-only" />
+                  <Check size={12} strokeWidth={2.8} className={scoreSeal ? 'shrink-0' : 'shrink-0 opacity-30'} />
+                  总分框 + 密封线
+                </label>
+              )}
               <div className="text-[11px] leading-relaxed text-ink-faint">
                 两个都不勾＝学生卷：卷面干净、解答题留白，没有答案
               </div>
@@ -634,7 +899,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                 </div>
                 <div className="space-y-1">
                   <div className="text-[11px] text-ink-soft">
-                    解答留白 cm <span className="text-ink-faint">（0 = 按难度）</span>
+                    解答留白 cm <span className="text-ink-faint">（0 = 按难度 · −1 = 不留）</span>
                   </div>
                   <input value={blank} onChange={(e) => setBlank(e.target.value)}
                     placeholder="0" className={`${INPUT} tnum font-mono`} />
@@ -642,7 +907,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
               </div>
               <div className="text-[11px] leading-relaxed text-ink-faint">
                 填 <b>0</b>：按难度自动留 —— 简单 3 · 中档 5 · 难题 8 cm。
-                填正数则一律用它。
+                填正数则一律用它；填 <b>−1</b> 不留白（紧凑版）。
               </div>
             </Group>
 
@@ -667,6 +932,14 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                                transition-colors hover:border-brand-line hover:text-brand-ink
                                disabled:opacity-40">
                     <Save size={12} />存下
+                  </button>
+                  <button onClick={copyScheme} disabled={!list.length}
+                    title="复制组卷方案 JSON（筛选/seed/版式/题号）"
+                    className="press inline-flex shrink-0 items-center gap-1 rounded-lg border
+                               border-border bg-surface px-2.5 text-[11.5px] text-ink-soft
+                               transition-colors hover:border-brand-line hover:text-brand-ink
+                               disabled:opacity-40">
+                    <Copy size={12} />方案
                   </button>
                 </div>
                 {saved.length > 0 && (
@@ -696,7 +969,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
             {/* ── 编译 / 导出 ── */}
             <div className="space-y-2 border-t border-border pt-4">
               <div className="flex gap-2">
-                <button onClick={() => { setCompiled(true); run() }}
+                <button onClick={() => { setCompiled(true); run(true) }}
                   disabled={busy || !list.length}
                   className="press flex flex-1 items-center justify-center gap-1.5 rounded-lg border
                              border-brand-line bg-brand-soft px-3 py-2 text-[12.5px] font-medium
@@ -706,7 +979,7 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                     : compiled ? <RefreshCw size={13} /> : <Eye size={13} />}
                   {busy ? '编译中…' : compiled ? '重新编译' : '编译预览'}
                 </button>
-                <button onClick={() => { setCompiled(true); run() }}
+                <button onClick={() => { setCompiled(true); run(false) }}
                   disabled={busy || !list.length}
                   className="press flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand
                              px-3 py-2 text-[12.5px] font-semibold text-white
@@ -716,6 +989,15 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                   导出并保存
                 </button>
               </div>
+              {mode !== 'handout' && (
+                <button onClick={runTriple} disabled={busy || !list.length}
+                  className="press flex w-full items-center justify-center gap-1.5 rounded-lg
+                             border border-brand-line bg-brand-soft px-3 py-2 text-[12px]
+                             font-medium text-brand-ink hover:bg-brand-soft/70
+                             disabled:opacity-40">
+                  <FileText size={13} />三连导出（学生版 / 教师版 / 答案册）
+                </button>
+              )}
 
               {err && (
                 <div className="flex items-start gap-1.5 rounded-lg border border-warn-line
@@ -752,6 +1034,44 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
                 </div>
               )}
 
+              {res?.ok && res.pages ? (
+                <div className="rounded-[var(--radius-card)] border border-border bg-bg p-2.5">
+                  <div className="mb-1.5 flex items-baseline gap-2">
+                    <span className="text-[11px] font-semibold tracking-[0.08em] text-ink-faint">
+                      排版检查
+                    </span>
+                    <span className="tnum text-[11px] text-ink-soft">共 {res.pages} 页</span>
+                    <span className="ml-auto text-[10.5px] text-ink-faint">
+                      每根柱子 = 一页的正文占比
+                    </span>
+                  </div>
+                  <div className="flex h-[36px] items-end gap-[3px]">
+                    {(res.page_stats || []).map((p) => (
+                      <div key={p.page} className="group relative min-w-0 flex-1"
+                        title={`第 ${p.page} 页：正文 ${p.fill_pct}%，底部空白 ${p.blank_cm}cm`}>
+                        <div className={`w-full rounded-t-[2px] ${
+                          p.empty ? 'bg-danger'
+                            : p.blank_cm < 1 ? 'bg-warn'
+                            : p.blank_cm > 16 ? 'bg-brand/35' : 'bg-brand'}`}
+                          style={{ height: `${Math.max(4, Math.min(100, p.fill_pct))}%` }} />
+                        <span className="tnum absolute -bottom-[13px] left-0 right-0 text-center
+                                         text-[8.5px] text-ink-faint">{p.page}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 space-y-1">
+                    {(res.warnings || []).length === 0 ? (
+                      <div className="text-[10.5px] text-has">✓ 没有跨页/空白页/贴底警告</div>
+                    ) : (res.warnings || []).map((w, i) => (
+                      <div key={i} className="flex items-start gap-1 text-[10.5px] text-warn">
+                        <AlertTriangle size={10} className="mt-[2px] shrink-0" />
+                        <span>{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               {res && !res.ok && res.log && (
                 <div className="whitespace-pre-wrap rounded-lg border border-warn-line bg-warn-soft
                                 p-2.5 font-mono text-[10.5px] leading-relaxed text-warn">
@@ -766,7 +1086,8 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
             <div className="flex shrink-0 items-center gap-2 border-b border-border px-3.5 py-2.5
                             text-[11.5px] text-ink-faint">
               <span>卷子内容</span>
-              <span className="ml-auto min-w-0 truncate" title={from}>{from}</span>
+              <span className="ml-auto min-w-0 truncate"
+                title={`${from}（${list.length} 题）`}>{from}（{list.length} 题）</span>
               {list.length > 0 && (
                 <button onClick={() => setList([])}
                   className="press shrink-0 rounded-md border border-border px-1.5 py-[2px]
@@ -863,7 +1184,10 @@ export default function ExportPage({ init, pool, from, filters, onClose, closing
               )}
               {res?.pdf_abs ? (
                 <iframe key={res.pdf_abs}
-                  src={'/api/pdf?path=' + encodeURIComponent(res.name + '.pdf')}
+                  // 后端直接给完整地址：普通导出在导出位置，预览在数据/预览。
+                  // 别自己拿 name 拼——拼法一变就和真实文件对不上。
+                  src={res.pdf_url
+                       || ('/api/pdf?path=' + encodeURIComponent(res.pdf_rel || res.name + '.pdf'))}
                   className="h-full w-full" title="预览" />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6

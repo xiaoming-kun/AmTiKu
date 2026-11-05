@@ -1,7 +1,9 @@
 r"""免安装版入口（PyInstaller 打包用）。
 
 双击 exe → 起服务 → 自动打开浏览器；关掉页面 25 秒后自动退出。
-数据放在 **exe 同目录**（题目/ 图片/ 知识点.json）；没有就先用随包的 demo 题库。
+数据目录由 `amti.paths.resolve_root()` 决定：Windows 放在 exe 同目录（便携，
+整个文件夹拷走就搬家）；macOS 放在 `~/Library/Application Support/AmTiKu`
+（`.app` 是只读包体，往里写会破坏签名）。没有题库时先用随包的 demo 题库。
 """
 import os
 import shutil
@@ -10,9 +12,15 @@ from pathlib import Path
 
 
 def _root() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent.parent
+    r"""数据目录：**必须走 `amti.paths.resolve_root()`**，别在这儿再实现一遍。
+
+    曾经这里是 `Path(sys.executable).parent` 的副本，于是 macOS 上把题库写进了
+    `AmTiKu.app/Contents/MacOS/`——签名被破坏、用户也找不到自己的数据。
+    平台差异（Windows 放 exe 旁、macOS 放 Application Support）只该有一个地方决定。
+    """
+    from amti import paths
+
+    return paths.resolve_root()
 
 
 def _ensure_data(root: Path) -> None:
@@ -29,9 +37,6 @@ def _ensure_data(root: Path) -> None:
         shutil.copytree(demo / "图片", root / "图片")
     if (demo / "知识点.json").exists():
         shutil.copy2(demo / "知识点.json", root / "知识点.json")
-    # 知识链路是可选的：没有它「知识链路」页是空图，但程序照常跑
-    if (demo / "知识链路.json").exists():
-        shutil.copy2(demo / "知识链路.json", root / "知识链路.json")
 
 
 def _safe_console() -> None:
@@ -74,9 +79,15 @@ def _setup_tex(root: Path) -> None:
     TeX Live 自己会用 $SELFAUTOPARENT 定位这些树，所以理论上只需把 bin 放进 PATH；
     这里把 TEXMF* 也显式设上，避免用户机器上装了别的 TeX 时被抢走。
     """
-    binroot = root / "tex" / "bin"
-    if not binroot.is_dir():
+    # 两处都找：随包**只读资源**（.app 里在 Contents/Frameworks，Windows onedir 在 _internal），
+    # 以及数据目录旁边（用户自己拷一棵 TeX 进来也能生效）。
+    from amti import paths
+
+    tex = next((p for p in (paths.resolve_resources() / "tex", root / "tex")
+                if (p / "bin").is_dir()), None)
+    if tex is None:
         return
+    binroot = tex / "bin"
     exe = "xelatex.exe" if os.name == "nt" else "xelatex"
     for d in sorted(binroot.iterdir()):
         if (d / exe).exists():
@@ -86,8 +97,8 @@ def _setup_tex(root: Path) -> None:
             # ——30 毫秒退出、日志里连 `!` 都没有（CI 上定位了好几轮）。
             # 但中文 Windows 的 ANSI 代码页是 GBK，同样路径反而能跑，
             # 所以**不猜，花 200 毫秒真跑一次 `--version`**。
-            if any(ord(c) > 127 for c in str(root)) and not _tex_runs(d / exe):
-                print("⚠ 内置 LaTeX 在这个路径下起不来：", root)
+            if any(ord(c) > 127 for c in str(tex)) and not _tex_runs(d / exe):
+                print("⚠ 内置 LaTeX 在这个路径下起不来：", tex)
                 print("  原因：路径含中文/非 ASCII 字符，kpathsea 无法启动"
                       "（报 Can't get long name）。")
                 sys_xe = shutil.which(exe)
@@ -98,7 +109,6 @@ def _setup_tex(root: Path) -> None:
                 print("    1) 把整个文件夹移到纯英文路径，例如 D:\\AmTiKu；")
                 print("    2) 自行安装 TeX Live（见《TeXLive安装.md》），它会装在英文路径下。")
             os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
-            tex = root / "tex"
             os.environ.setdefault("TEXMFCNF", str(tex / "texmf-dist" / "web2c"))
             os.environ.setdefault("TEXMFROOT", str(tex))
             os.environ.setdefault("TEXMFDIST", str(tex / "texmf-dist"))
@@ -190,21 +200,6 @@ def _export_smoke() -> bool | None:
         return False
 
 
-def _setup_node(root: Path) -> None:
-    r"""把随包的 Node 与 Chromium 接上（幻灯片式讲义导出要用 npx slidev export）。
-
-    slidev 会 fork node + 自带 chromium 出 PDF，所以三样都得随包：
-    node/bin（便携 Node）、slidev/（工程 + node_modules）、playwright/（浏览器缓存）。
-    """
-    nb = root / "node" / "bin"
-    if nb.is_dir():
-        os.environ["PATH"] = str(nb) + os.pathsep + os.environ.get("PATH", "")
-        print("已加载内置 Node:", nb.parent.name)
-    pw = root / "playwright"
-    if pw.is_dir():
-        os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(pw))
-
-
 def main() -> int:
     _safe_console()
     root = _root()
@@ -216,7 +211,6 @@ def main() -> int:
         pass
     _ensure_data(root)
     _setup_tex(root)
-    _setup_node(root)
 
     if "--selftest" in sys.argv:            # CI 冒烟测试用：不启服务
         from amti import conform, knowledge, store

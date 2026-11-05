@@ -188,6 +188,15 @@ def _clean(s: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", s).strip()
 
 
+def tikz_id(src: str) -> str:
+    r"""TikZ 源码的稳定身份：`tikz-` + 源码 sha256 前 12 位。
+
+    读（`parse_question`）和写（`migrate.to_question`）都走这里——
+    改了源码就是换了 id，图的缓存文件名（`tikzfig._key`）另算，别混用。
+    """
+    return "tikz-" + hashlib.sha256((src or "").encode("utf-8")).hexdigest()[:12]
+
+
 def derive_figures(*chunks: str) -> list[Figure]:
     r"""从正文片段推导配图。**正文是唯一真相。**
 
@@ -215,7 +224,7 @@ def derive_figures(*chunks: str) -> list[Figure]:
     # 给它一个由源码算出的稳定 id，好当身份用（去重、指纹）。
     for chunk in chunks:
         for src in TIKZ_RE.findall(chunk or ""):
-            tid = "tikz-" + hashlib.sha256(src.encode("utf-8")).hexdigest()[:12]
+            tid = tikz_id(src)
             if tid in seen:
                 continue
             seen.add(tid)

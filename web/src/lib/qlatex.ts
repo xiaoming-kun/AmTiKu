@@ -1,18 +1,9 @@
 // ══════════════════════════════════════════════════════════════
-//  题目 LaTeX 转换（**必须与后端 amti/slidev_handout.py 保持一致**）
+//  题目 LaTeX 转换（界面渲染）
 //
 //  为什么需要：题库是 LaTeX + newtxmath，有些东西 KaTeX 不认，
-//  直接渲染会显示成源码。而且「预览」与「导出 PDF」必须一致 ——
-//  否则老师看到的和生成的不一样（这个 bug 我犯过一次）。
-//
-//  ⚠️ 改这里时必须同步改后端，反之亦然。对应关系：
-//      MACRO_FIXES      ↔ MACRO_FIXES
-//      normalizeDelims  ↔ normalize_delims
-//      stripAnswers     ↔ strip_answers
-//      showAnswers      ↔ show_answers
-//      convertTabular   ↔ convert_tabular  (+ _extract_tabular / _match_brace)
-//      convertEnumerate ↔ convert_enumerate（栈式，支持嵌套）
-//      tightenMath      ↔ tighten_math
+//  直接渲染会显示成源码。界面预览与 A4 导出（exam-zh）是两条渲染路径，
+//  题干写法必须两边都认。
 // ══════════════════════════════════════════════════════════════
 
 /** KaTeX 不认识的宏 → 等价写法（顺序：先长后短） */
@@ -30,7 +21,7 @@ const MACRO_FIXES: [RegExp, string][] = [
   [/\\C\b/g, '\\mathbb{C}'], [/\\up\b/g, ''],
 ]
 
-/** LaTeX 传统定界符 → Slidev 定界符 */
+/** LaTeX 传统定界符 → KaTeX 认的 `$…$` / `$$…$$` */
 function normalizeDelims(t: string): string {
   return t
     .replace(/\\\[([\s\S]+?)\\\]/g, (_, x) => `$$${String(x).trim()}$$`)
@@ -42,7 +33,7 @@ function normalizeDelims(t: string): string {
 // ⚠️ **不许用 `\\fillin\s*\[[^\]]*\]` 这种正则取槽内容**：`\sqrt[3]{\frac{3}{2}}`
 // 的 `[3]`、区间 `$[0,1]$` 的第一个 `]` 都会让它提前收尾，残尾（`$]`、
 // `{\frac{3}{2}}$]`）就漏在预览里变成乱码。收尾统一走配对扫描。
-// 后端对应实现：`amti/slidev_handout.py::_slot_args` → `amti/latex_ir.py::bracket_arg`。
+// 后端对应实现：`amti/latex_ir.py::bracket_arg`。
 
 /** `\left`/`\right` 家族：紧跟其后的那个字符是「画出来的」定界符，不参与配对 */
 const DELIM_CMD_RE =
@@ -134,8 +125,7 @@ function redSeg(s: string): string {
  *
  * ⚠️ 只能走数学模式（`\textcolor`），**不能塞 HTML**：编辑器预览的
  * `RichText` 只把 `$…$` 交给 KaTeX、不解析 HTML，塞 `<span>` 会显示成字面量。
- * 后端 `slidev_handout.red_answer` 是**同一条规则**，改一处必须改两处
- * （`测试/讲义测试.py` 会逐字比对）。
+ * 出卷的 `paper.py::red_answer_macros` 是**同一条规则**，改一处必须改两处。
  */
 export function redAnswer(ans: string): string {
   const a = String(ans || '').trim()
@@ -405,8 +395,8 @@ export function figureUrl(name: string): string {
 /** 图形环境处理。
  *
  *  ⚠️ \includegraphics 不能直接删掉 —— 题目写着「如图」却没图就没法看。
- *  编辑器用题库的图片接口 /api/figure 显示（后端导出时换成 /img/，因为
- *  Slidev 只认自己 public 下的文件）。两边路径不同，但都要有图。
+ *  编辑器用题库的图片接口 /api/figure 显示；A4 导出直接用原图路径。
+ *  两边路径不同，但都要有图。
  */
 function stripGraphics(t: string): string {
   return t
@@ -417,9 +407,24 @@ function stripGraphics(t: string): string {
     .replace(/\\begin\{scope\}(\[[^\]]*\])?[\s\S]*?\\end\{scope\}/g, '')
 }
 
+/** 行内的小问编号：句末标点后紧跟 `（1）`/`(i)`，且后面是汉字。
+ *
+ *  这类题不是 enumerate，渲染时会和上一句挤成一段。这里**只补空行**
+ *  （不改编号/文字），和后端 `latex_blocks.break_inline_parts` 同一条规则。
+ *  `$…$` 里的 `(1)`（如 `$S_n(1)$`）不动；已在行首的不动；幂等。
+ */
+const INLINE_PART = /([。；;.．])[ \t]*([（(])[ \t]*([1-9]|i{1,3}|I{1,3}|iv|IV)[ \t]*([)）])(?=[\u4e00-\u9fff])/g
+
+function breakInlineParts(text: string): string {
+  return String(text || '').split('$').map((seg, i) =>
+    // 奇数段是数学；只在正文段里断
+    i % 2 ? seg : seg.replace(INLINE_PART, '$1\n\n$2$3$4'),
+  ).join('$')
+}
+
 /** 一道题的题干 → 可渲染的 markdown（与后端 transform 一致） */
 export function transformStem(stem: string, withAnswers = false): string {
-  let t = stripGraphics(stem || '')
+  let t = stripGraphics(breakInlineParts(stem || ''))
   for (const [pat, rep] of MACRO_FIXES) t = t.replace(pat, rep)
   t = withAnswers ? showAnswers(t) : stripAnswers(t)
   t = normalizeDelims(t)
@@ -436,7 +441,6 @@ export function transformStem(stem: string, withAnswers = false): string {
  *  ⚠️ 用户报的 bug：选项写成 `$\includegraphics[width=0.15\paperwidth]{x.png}$`，
  *  不脱定界符的话数学渲染器拿到的是 `\includegraphics` 命令 →
  *  卷面上直接显示 `(A)\includegraphics[...]{...}` 源码。
- *  （后端 `slidev_handout.strip_image_math()` 是同一套规则。）
  */
 export function stripImageMath(t: string): string {
   const re = /\$\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$\$|\$\s*(\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]+\})\s*\$/g

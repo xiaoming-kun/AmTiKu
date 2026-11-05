@@ -24,8 +24,9 @@ const GROUPS: { title: string; rows: [string, string][] }[] = [
       ['⌘ K', '命令面板：什么都能干（推荐先记这个）'],
       ['/', '聚焦顶栏搜索框'],
       ['↑ ↓', '在题目列表里上下移动'],
-      ['Enter', '把当前这道题加进卷子'],
-      ['⌘ ↵', '打开组卷导出'],
+      ['Enter', '打开当前这道题的详情'],
+      ['空格', '勾选 / 取消勾选当前这道（Shift 连选）'],
+      ['⌘ ↵', '把当前这道题加进卷子'],
     ],
   },
   {
@@ -104,6 +105,7 @@ export default function HelpButton() {
           </div>
           <div className="mt-3.5 border-t border-border pt-2.5 text-[10.5px] leading-relaxed text-ink-faint">
             单键只在<b className="font-medium text-ink-soft">没有停在输入框里</b>时生效（打中文时不会误触）。
+            <div className="mt-1.5 font-mono">AmTiKu v{__APP_VERSION__}</div>
           </div>
         </div>
       )}

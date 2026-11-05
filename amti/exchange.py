@@ -139,10 +139,10 @@ def pending(*, kind: str = "", difficulty: str = "", book: str = "",
     for _f, q in store.iter_questions():
         if stage == "solution":
             # 只补解析：必须有答案、且确实没解析
-            if not q.answer.strip() or q.solution.strip():
+            if not q.answer.strip() or q.has_solution:
                 continue
         else:
-            if q.solution.strip() or q.answer.strip():
+            if q.has_solution or q.answer.strip():
                 continue
         if kind and q.kind != kind:
             continue

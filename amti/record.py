@@ -1461,6 +1461,7 @@ def fixup(tex: str) -> str:
     裸 `i`（该写 `\mathrm{i}`）**不碰**——它可能是虚数单位，也可能是求和
     下标、普通字母，改了就是引入错误。宁可留着给人看。
     """
+    orig = tex
     tex = _TEXT_MATH.sub(r"\\mathrm{\1}", _BB.sub(r"\\mathbb{\1}", tex))
     # `\(…\)` → `$…$`：规范要求行内公式一律 `$…$`。
     # PaddleOCR-VL 默认就吐 `\(…\)`，而 normalize 的"行内公式统一"规则
@@ -1469,6 +1470,7 @@ def fixup(tex: str) -> str:
     # **`%` 必须转义。** LaTeX 里它是注释符：题干「…的80%分位数为\paren[D]」
     # 会把 `%` 后面整段注释掉，连答案括号一起没了
     # （实测青岛第 1 题，conform 报「选择题答案没写进 \paren[…]」）。
+    before = tex.count("$")
     tex = re.sub(r"(?<!\\)%", r"\\%", tex)
     # ⚠️ **必须在 `\(…\)` 归一成 `$…$` 之后再包中文**——先包的话，
     # 那些还是 `\(…\)` 形态的公式根本没被当成数学模式，中文照样漏
@@ -1478,7 +1480,14 @@ def fixup(tex: str) -> str:
     # `$$…$$` → `$…$`：规范里行间公式是 `\[…\]`，`$$` 块解析器不认
     # （实测华师联盟第 19 题的解析里混了 `$$`，KaTeX 渲染直接失败、四层验收挂掉）。
     # 直接换成单 `$` 最稳：定界符个数不变，永远配平。
-    return tex.replace("$$", "$")
+    out = tex.replace("$$", "$")
+    # **配平优先**：上面每条替换单看都有理，叠在一起却可能改变 `$` 的奇偶。
+    # 实测（26届拼好卷第六套第 18 题）：OCR 原样漏了一个 `\)`，原文 `\(` 有 1 个、
+    # `\)` 有 0 个；`\(`→`$` 之后整题变成奇数个 `$`，闸门按"`$` 不成对"整题拒掉。
+    # 一旦奇偶变了就整段回退——宁可保留 `\(` 原样，也不造一个配不平的式子。
+    if (out.count("$") - before) % 2:
+        return orig
+    return out
 
 
 def strip_marker(sol: str) -> str:
@@ -1556,15 +1565,20 @@ def unbalanced(tex: str) -> bool:
     if tex.count("$") % 2:
         return True
     depth = 0
-    for i, ch in enumerate(tex):
-        if ch == "\\":
-            continue
+    i, n = 0, len(tex)
+    while i < n:
+        ch = tex[i]
+        if ch == "\\":            # **转义序列整段跳过**：`\{`/`\}` 是字面大括号，
+            i += 2               # 不参与配对计数。以前只跳过反斜杠、下一个字符
+            continue             # 照样当分组括号数，于是 `\left\{ … \right.` 这种
+                                 # 合法写法被误判成"不配平"，整题被拒（实测保定 4 题）。
         if ch == "{":
             depth += 1
         elif ch == "}":
             depth -= 1
             if depth < 0:
                 return True
+        i += 1
     return depth != 0
 
 

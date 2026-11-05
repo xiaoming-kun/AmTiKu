@@ -79,15 +79,26 @@ _NON_REGION = re.compile(r"满分|考试时间|分钟|答题|注意事项|姓名
 
 def question_to_tex(q: Question, *, with_solution: bool = True,
                     with_source: bool = False,
-                    choices_columns: int = 0) -> str:
+                    choices_columns: int = 0,
+                    skip_no_solution: bool = False,
+                    skip_empty_choices: bool = False) -> str:
     r"""渲染成 exam-zh 标准形态（对齐高考模板）。
 
-    `choices_columns > 0` 时给这道题**单独**设选项列数（`\begin{choices}[columns=N]`）——
-    短选项一行四个、长选项一行两个，见 `paper.choices_columns`。
+    `choices_columns > 0` 时给这道题**钉死**选项列数（`\begin{choices}[columns=N]`）；
+    **不写（0）＝自动**——exam-zh 自己量每个选项的宽度再定列数，别在 Python 里
+    另估一遍（估不准，见 `paper._q_tex` 上面那段注释）。
 
     `with_solution=False` 时省略 `\begin{solution}` 块——
     即"只出题目不出解答"。注意**答案本身不受它影响**：
     答案写在 `\paren[…]`/`\fillin[…]` 里，用 `\examsetup` 的开关控制显示。
+
+    `skip_no_solution=True` 只给**导出**用：解析栏是占位符「解析无」时不印。
+    ⚠️ 存储序列化（`store.render_question`）**必须用默认 False**——少写字段
+    会在下次读盘时把占位符清空（实测丢过 1205 道）。
+
+    `skip_empty_choices=True` 只给**导出**用：图片选项题的选项文字全空、
+    图在题干里，不要再印四个空 `\item`。存储序列化必须用默认 False，
+    否则这 4 个空选项会在读盘时消失。
     """
     env = ENV_OF.get(q.type, "question")
     out: list[str] = []
@@ -129,7 +140,10 @@ def question_to_tex(q: Question, *, with_solution: bool = True,
         if tag:
             out.append(r"{\small\color{gray} " + tag + "}")
 
-    if q.options:
+    # 图片选项题：选项文字全空，图在题干里。不要输出空的 choices 环境，
+    # 否则 PDF 会印出四个空 \item；答案仍由 \paren[...] 标在题干上。
+    if q.options and not (skip_empty_choices and all(not (o.text or "").strip()
+                                                     for o in q.options)):
         # 选项列数：**这道题单独设**，不走全局。一道卷子里既有
         # 「A. 1  B. 2」这种短选项，也有整句话的长选项，一刀切必然有一头难看。
         out.append("\\begin{choices}" + (
@@ -143,7 +157,12 @@ def question_to_tex(q: Question, *, with_solution: bool = True,
     if q.answer.strip() and not placed:
         # 答案没地方内联（题干没有作答括号／空位数对不上），退回解析里写
         body.append("\\textbf{答案：}" + q.answer.strip())
-    if q.solution.strip():
+    # ⚠️ 这里**必须原样写出 `solution`，包括占位符「解析无」**。
+    # 本函数同时是**存储序列化器**（`store.render_question` 用它生成主文件），
+    # 写回后会再解析一遍核对；少写一个字段 = 下一次 load 就丢内容
+    # （实测：把占位符跳过不印，1205 道题的 `solution` 被悄悄清成了空串）。
+    # "导出时别印占位符"是**导出层**的事，见 `paper._answers_section`。
+    if q.solution.strip() and (not skip_no_solution or q.has_solution):
         body.append(q.solution.strip())
     if with_solution and body:
         out.append("\\begin{solution}")

@@ -76,7 +76,8 @@ export function Trash({ onChanged }: { onChanged: () => void }) {
                 <input type="password" value={pw} autoFocus
                   onChange={(e) => setPw(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') purge([]) }}
-                  placeholder="口令"
+                  placeholder="清空口令"
+                  title="永久删除不可恢复，需要口令；普通删题已不需要"
                   className="h-[32px] w-[86px] rounded-lg border border-warn-line bg-bg px-2.5
                              text-[12px] outline-none transition-[border-color,box-shadow] duration-150
                              placeholder:text-ink-faint focus:bg-surface
@@ -174,12 +175,10 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
   qs: Q[]
   keys?: string[]              // 批量删时给题号（列表里可能没有完整对象）
   onCancel: () => void
-  onConfirm: (reason: string, note: string, password: string) => Promise<void>
+  onConfirm: (reason: string) => Promise<void>
 }) {
   const [reasons, setReasons] = useState<string[]>([])
   const [reason, setReason] = useState('')
-  const [note] = useState('')
-  const [pw, setPw] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const n = keys?.length || qs.length
@@ -198,9 +197,9 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
 
   const ok = () => {
     if (!reason) { setErr('先选一个删除原因'); return }
-    if (!pw.trim()) { setErr('要填口令'); return }
     setBusy(true); setErr('')
-    onConfirm(reason + (note.trim() ? '：' + note.trim() : ''), '', pw)
+    // **删除不要口令**（可恢复）；永久删除回收站才要。
+    onConfirm(reason)
       .catch((e: any) => setErr(String(e.message || e)))
       .finally(() => setBusy(false))
   }
@@ -269,19 +268,6 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="shrink-0 text-[11.5px] text-ink-faint">口令</span>
-            <input type="password" value={pw} autoFocus
-              onChange={(e) => { setPw(e.target.value); setErr('') }}
-              onKeyDown={(e) => { if (e.key === 'Enter') ok() }}
-              placeholder="删除口令"
-              className="h-[32px] w-[132px] rounded-lg border border-border bg-bg px-2.5 text-[12.5px]
-                         outline-none transition-[border-color,box-shadow] duration-150
-                         placeholder:text-ink-faint focus:border-warn-line focus:bg-surface
-                         focus:shadow-[0_0_0_3px_var(--color-warn-soft)]" />
-            <span className="text-[11px] text-ink-faint">防误点，不是防人</span>
-          </div>
-
           {err && (
             <div className="mt-2.5 flex items-start gap-1.5 rounded-lg border border-warn-line
                             bg-warn-soft px-2.5 py-2 text-[11.5px] text-warn">
@@ -296,7 +282,7 @@ export function DeleteModal({ qs, keys, onCancel, onConfirm }: {
                        text-ink-soft transition-colors hover:border-border-strong hover:text-ink">
             取消
           </button>
-          <button onClick={ok} disabled={busy || !reason || !pw.trim()}
+          <button onClick={ok} disabled={busy || !reason}
             className="press inline-flex items-center gap-1.5 rounded-lg bg-warn px-3.5 py-2 text-[12.5px]
                        font-medium text-white hover:brightness-105 disabled:opacity-40">
             <Trash2 size={13} className="shrink-0" />

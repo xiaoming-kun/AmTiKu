@@ -325,7 +325,7 @@ def pending(difficulty: str = "") -> list[Question]:
     `difficulty` 给了就只要这一档（比如先只做「简单题」，难题留后面）。
     """
     qs = [q for q in store.load_all()
-          if q.kind == "模拟" and not q.solution.strip()
+          if q.kind == "模拟" and not q.has_solution
           and int(q.meta.get("solve_attempts") or 0) < MAX_ATTEMPTS]
     if difficulty:
         want = {x.strip() for x in difficulty.split(",") if x.strip()}
@@ -389,6 +389,7 @@ def solve_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str]:
     tgt = next((x for x in qs if x.key == q.key), None)
     if tgt is None:
         return False, "题不在库里了"
+    base_hash = tgt.content_hash()          # 写回时做同题并发校验
     # 失败会留痕。**同一道题连续失败 3 次就不再试**——
     # 否则每次重启都从它开始，永远卡在第一道。
     tgt.meta["solve_attempts"] = int(tgt.meta.get("solve_attempts") or 0) + 1
@@ -411,9 +412,14 @@ def solve_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str]:
     # 求解这条路径绕过了 `ingest`，规则不会自动跑——实测漏了 4 道。
     norm.normalize(tgt, norm.ENTRY)
 
-    # **只重写它所在的那一卷**：一道一写，但不为一道题重写整库
-    vol = vmap.get(q.key, 1)
-    store.rewrite_volume(vol, [x for x in qs if vmap.get(x.key, 1) == vol])
+    # **原子替换**：读、改、写在同一个锁里，不会覆盖别人这期间写进来的题。
+    # `expect_hash` 再挡一层「同一道题被别人改过」——模型结果可以重跑，
+    # 别人的改动丢了找不回来。
+    rep = store.replace_question(tgt, expect_hash=base_hash)
+    if rep.get("conflict"):
+        return False, "这道题在求解期间被别的进程改过，本次结果**没有写入**"
+    if not rep.get("found"):
+        return False, "这道题在求解期间已被删除，本次结果**没有写入**"
     return True, "答案=%s  解析 %d 字%s%s" % (
         ans or "（空）", len(sol),
         "  ⚠ " + warn if warn else "",
@@ -548,7 +554,7 @@ def build_audit_prompt(q: Question) -> str:
             parts.append("  %s. %s" % (o.label, o.text or "（图片选项）"))
     parts.append("现在的状态：答案%s；解析%s" % (
         ("已有：%s（不要改写）" % q.answer) if q.answer.strip() else "缺失（请补）",
-        "已有（不要重写）" if q.solution.strip() else "缺失（请补）"))
+        "已有（不要重写）" if q.has_solution else "缺失（请补）"))
     return "\n".join(parts)
 
 
@@ -627,6 +633,7 @@ def audit_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str, dict]:
     tgt = next((x for x in qs if x.key == q.key), None)
     if tgt is None:
         return False, "题不在库里了", {}
+    base_hash = tgt.content_hash()          # 写回时做同题并发校验
 
     actions: list[str] = []
     conflict = ""
@@ -635,7 +642,7 @@ def audit_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str, dict]:
         actions.append("补答案=%s" % ans)
     elif ans and tgt.answer.strip() and ans != tgt.answer.strip():
         conflict = "库里答案 %s / 模型答案 %s" % (tgt.answer.strip(), ans)
-    if sol and not tgt.solution.strip():
+    if sol and not tgt.has_solution:
         tgt.solution = sol
         actions.append("补解析(%d字)" % len(sol))
 
@@ -662,7 +669,7 @@ def audit_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str, dict]:
             tgt.meta["audit_conflict"] = conflict          # 界面标黄，人工复核
         if stem_note:
             tgt.meta["audit_warn"] = stem_note
-        if not (tgt.answer or "").strip() or not (tgt.solution or "").strip():
+        if not (tgt.answer or "").strip() or not tgt.has_solution:
             tgt.meta["audit_incomplete"] = True            # 还是缺东西，下次再说
         else:
             tgt.meta.pop("audit_incomplete", None)
@@ -675,8 +682,11 @@ def audit_one(q: Question, vmap: dict[str, int]) -> tuple[bool, str, dict]:
         tgt.meta.pop("audit_incomplete", None)
 
     norm.normalize(tgt, norm.ENTRY)
-    vol = vmap.get(q.key, 1)
-    store.rewrite_volume(vol, [x for x in qs if vmap.get(x.key, 1) == vol])
+    rep = store.replace_question(tgt, expect_hash=base_hash)
+    if rep.get("conflict"):
+        return False, "这道题在审题期间被别的进程改过，本次结果**没有写入**", {}
+    if not rep.get("found"):
+        return False, "这道题在审题期间已被删除，本次结果**没有写入**", {}
 
     rec = {"key": q.key, "用时秒": round(time.time() - t0),
            "动作": actions, "备注": note, "冲突": conflict, "题干提醒": stem_note,
@@ -723,7 +733,7 @@ def audit_queue(cursor: dict, *, only_missing: bool = False) -> list[Question]:
     qs = list(reversed(store.load_all()))
     if only_missing:
         qs = [q for q in qs if not (q.answer or "").strip()
-              or not (q.solution or "").strip()]
+              or not q.has_solution]
     start = (cursor or {}).get("下一个key") or ""
     if start:
         idx = next((i for i, q in enumerate(qs) if q.key == start), None)
@@ -844,7 +854,7 @@ def fill_todo(kind: str) -> list[Question]:
         if int(q.meta.get("fill_attempts") or 0) >= MAX_ATTEMPTS:
             continue
         have_a = bool((q.answer or "").strip())
-        have_s = bool((q.solution or "").strip())
+        have_s = q.has_solution
         if kind == "ans":
             if have_s and not have_a and q.type in ("single_choice", "multi_choice",
                                                     "fill_in_blank"):
@@ -920,6 +930,7 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     tgt = next((x for x in qs if x.key == q.key), None)
     if tgt is None:
         return False, "题不在库里了"
+    base_hash = tgt.content_hash()          # 写回时做同题并发校验
 
     if kind == "ans":
         ans = clean_answer(tgt, _block(raw, "答案"))
@@ -939,7 +950,7 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
             _bump_fill(tgt, raw=raw)
             return False, "没取到解析（正文 %d 字，finish=%s）" % (
                 len(raw), LAST_CALL.get("finish_reason") or "?")
-        if (tgt.solution or "").strip():
+        if tgt.has_solution:
             return False, "库里有解析了，不动"
         tgt.solution = sol
         tgt.meta["filled_solution_by"] = MODEL
@@ -949,8 +960,11 @@ def fill_one(q: Question, vmap: dict[str, int], kind: str) -> tuple[bool, str]:
     tgt.meta["fill_attempts"] = int(tgt.meta.get("fill_attempts") or 0) + 1
     # 答案要写进 `\paren[…]` / `\fillin[…]`（与求解路径同一道规范）
     norm.normalize(tgt, norm.ENTRY)
-    vol = vmap.get(q.key, 1)
-    store.rewrite_volume(vol, [x for x in qs if vmap.get(x.key, 1) == vol])
+    rep = store.replace_question(tgt, expect_hash=base_hash)
+    if rep.get("conflict"):
+        return False, "这道题在补内容期间被别的进程改过，本次结果**没有写入**"
+    if not rep.get("found"):
+        return False, "这道题在补内容期间已被删除，本次结果**没有写入**"
     return True, msg
 
 
@@ -1116,12 +1130,12 @@ def _selftest() -> int:
     check("补答案只取客观题",
           all(q.type in ("single_choice", "multi_choice", "fill_in_blank") for q in a_todo))
     check("补答案的题都有解析、没答案",
-          all((q.solution or "").strip() and not (q.answer or "").strip() for q in a_todo),
+          all(q.has_solution and not (q.answer or "").strip() for q in a_todo),
           "%d 道" % len(a_todo))
     # ① 补解析：有答案、没解析
     s_todo = fill_todo("sol")
     check("补解析的题都有答案、没解析",
-          all((q.answer or "").strip() and not (q.solution or "").strip() for q in s_todo),
+          all((q.answer or "").strip() and not q.has_solution for q in s_todo),
           "%d 道" % len(s_todo))
     check("两条任务不重叠", not ({q.key for q in a_todo} & {q.key for q in s_todo}))
 

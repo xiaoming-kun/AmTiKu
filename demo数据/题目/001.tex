@@ -1,59 +1,522 @@
-%% @q {"answer": "B", "figures": [], "hash": "4c85d49244168613", "key": "demo/示例卷#1", "meta": {"book": "demo", "source_label": "示例卷", "source_no": 1}, "options": [{"label": "A", "text": "$\\{1\\}$"}, {"label": "B", "text": "$\\{2\\}$"}, {"label": "C", "text": "$\\{3\\}$"}, {"label": "D", "text": "$\\{1,2,3\\}$"}], "points": [], "solution": "两个集合的公共元素只有 $2$，故 $A\\cap B=\\{2\\}$。故选 B。", "stem": "已知集合 $A=\\{1,2\\}$，$B=\\{2,3\\}$，则 $A\\cap B=$\\paren[B]", "type": "single_choice"}
+%% @q {"answer": "B", "figures": [], "hash": "43299b6d9cbe595e", "key": "demo/示例卷#1", "meta": {"answer_source": "legacy", "book": "示例卷", "demo": true, "difficulty": "简单题", "difficulty_conf": 0.934, "difficulty_source": "model", "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_scope": "book", "renamed_from": "2026精选模拟题/004#1", "solution_source": "legacy", "solved_at": "2026-09-13 08:49", "solved_by": "qwen/qwen3.8-27b", "source_label": "示例卷"}, "options": [{"label": "A", "text": "第一象限"}, {"label": "B", "text": "第二象限"}, {"label": "C", "text": "第三象限"}, {"label": "D", "text": "第四象限"}], "points": ["8.5.2", "8.5.1"], "solution": "复数 $-1+\\mathrm{i}$ 在复平面内对应点 $(-1,1)$。因为横坐标 $-1<0$，纵坐标 $1>0$，所以该点位于第二象限。", "stem": "在复平面内，$-1+\\mathrm{i}$ 位于 \\paren[B]", "type": "single_choice"}
 \begin{question}
-已知集合 $A=\{1,2\}$，$B=\{2,3\}$，则 $A\cap B=$\paren[B]
+在复平面内，$-1+\mathrm{i}$ 位于 \paren[B]
 \begin{choices}
-  \item $\{1\}$
-  \item $\{2\}$
-  \item $\{3\}$
-  \item $\{1,2,3\}$
+  \item 第一象限
+  \item 第二象限
+  \item 第三象限
+  \item 第四象限
 \end{choices}
 \begin{solution}
-两个集合的公共元素只有 $2$，故 $A\cap B=\{2\}$。故选 B。
+复数 $-1+\mathrm{i}$ 在复平面内对应点 $(-1,1)$。因为横坐标 $-1<0$，纵坐标 $1>0$，所以该点位于第二象限。
 \end{solution}
 \end{question}
 
-
-%% @q {"answer": "ABC", "figures": [], "hash": "7c34cb334fdfec24", "key": "demo/示例卷#9", "meta": {"book": "demo", "source_label": "示例卷", "source_no": 9}, "options": [{"label": "A", "text": "$ab\\leqslant 1$"}, {"label": "B", "text": "$a^{2}+b^{2}\\geqslant 2$"}, {"label": "C", "text": "$\\dfrac{1}{a}+\\dfrac{1}{b}\\geqslant 2$"}, {"label": "D", "text": "$a^{3}+b^{3}\\leqslant 2$"}], "points": [], "solution": "由 $a+b=2$ 与均值不等式：$ab\\leqslant\\left(\\dfrac{a+b}{2}\\right)^{2}=1$，A 正确；$a^{2}+b^{2}\\geqslant\\dfrac{(a+b)^{2}}{2}=2$，B 正确；$\\dfrac{1}{a}+\\dfrac{1}{b}=\\dfrac{a+b}{ab}=\\dfrac{2}{ab}\\geqslant 2$，C 正确；取 $a=2$、$b\\to 0^{+}$ 时 $a^{3}+b^{3}\\to 8>2$，D 错误。故选 ABC。", "stem": "已知 $a>0$，$b>0$，且 $a+b=2$，则下列结论正确的是\\paren[ABC]", "type": "multi_choice"}
+%% @q {"answer": "D", "figures": [], "hash": "927f846ce7d97f38", "key": "demo/示例卷#2", "meta": {"answer_source": "legacy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_source": "human", "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "high", "region_scope": "book", "region_source": "same_paper", "renamed_from": "2026精选模拟题/004#4", "solution_source": "legacy", "solved_at": "2026-09-13 08:50", "solved_by": "qwen/qwen3.8-27b", "source_label": "示例卷", "stars": 2}, "options": [{"label": "A", "text": "$\\frac{\\sqrt{2}}{2}$"}, {"label": "B", "text": "$\\sqrt{2}$"}, {"label": "C", "text": "$2$"}, {"label": "D", "text": "$2\\sqrt{2}$"}], "points": ["5.2.1", "2.4.1"], "solution": "设椭圆方程为\n\\[\n\\frac{x^2}{a^2}+\\frac{y^2}{b^2}=1\\quad (a>b>0)\n\\]\n两焦点为 $F_1(-c,0),F_2(c,0)$，其中\n\\[\nc^2=a^2-b^2.\n\\]\n\n椭圆上一点 $P(x,y)$ 与两焦点构成三角形，底边为\n\\[\n|F_1F_2|=2c,\n\\]\n高为 $|y|$，所以面积为\n\\[\nS=\\frac12\\cdot 2c\\cdot |y|=c|y|.\n\\]\n\n椭圆上 $|y|$ 的最大值为 $b$，因此三角形面积最大值为\n\\[\nS_{\\max}=cb.\n\\]\n题设 $S_{\\max}=1$，即\n\\[\ncb=1.\n\\]\n\n又\n\\[\na^2=b^2+c^2\\ge 2bc=2,\n\\]\n所以\n\\[\na\\ge \\sqrt2.\n\\]\n椭圆长轴长为 $2a$，故其最小值为\n\\[\n2\\sqrt2.\n\\]\n\n当 $b=c=1$ 时取等号，因此选 D。", "stem": "若以椭圆上一点和椭圆两焦点为顶点的三角形面积的最大值为 1，则椭圆长轴长的最小值为 \\paren[D]", "type": "single_choice"}
 \begin{question}
-已知 $a>0$，$b>0$，且 $a+b=2$，则下列结论正确的是\paren[ABC]
+若以椭圆上一点和椭圆两焦点为顶点的三角形面积的最大值为 1，则椭圆长轴长的最小值为 \paren[D]
 \begin{choices}
-  \item $ab\leqslant 1$
-  \item $a^{2}+b^{2}\geqslant 2$
-  \item $\dfrac{1}{a}+\dfrac{1}{b}\geqslant 2$
-  \item $a^{3}+b^{3}\leqslant 2$
+  \item $\frac{\sqrt{2}}{2}$
+  \item $\sqrt{2}$
+  \item $2$
+  \item $2\sqrt{2}$
 \end{choices}
 \begin{solution}
-由 $a+b=2$ 与均值不等式：$ab\leqslant\left(\dfrac{a+b}{2}\right)^{2}=1$，A 正确；$a^{2}+b^{2}\geqslant\dfrac{(a+b)^{2}}{2}=2$，B 正确；$\dfrac{1}{a}+\dfrac{1}{b}=\dfrac{a+b}{ab}=\dfrac{2}{ab}\geqslant 2$，C 正确；取 $a=2$、$b\to 0^{+}$ 时 $a^{3}+b^{3}\to 8>2$，D 错误。故选 ABC。
+设椭圆方程为
+\[
+\frac{x^2}{a^2}+\frac{y^2}{b^2}=1\quad (a>b>0)
+\]
+两焦点为 $F_1(-c,0),F_2(c,0)$，其中
+\[
+c^2=a^2-b^2.
+\]
+
+椭圆上一点 $P(x,y)$ 与两焦点构成三角形，底边为
+\[
+|F_1F_2|=2c,
+\]
+高为 $|y|$，所以面积为
+\[
+S=\frac12\cdot 2c\cdot |y|=c|y|.
+\]
+
+椭圆上 $|y|$ 的最大值为 $b$，因此三角形面积最大值为
+\[
+S_{\max}=cb.
+\]
+题设 $S_{\max}=1$，即
+\[
+cb=1.
+\]
+
+又
+\[
+a^2=b^2+c^2\ge 2bc=2,
+\]
+所以
+\[
+a\ge \sqrt2.
+\]
+椭圆长轴长为 $2a$，故其最小值为
+\[
+2\sqrt2.
+\]
+
+当 $b=c=1$ 时取等号，因此选 D。
 \end{solution}
 \end{question}
 
-
-%% @q {"answer": "-1", "figures": [], "hash": "29ccdcf0925da8a6", "key": "demo/示例卷#12", "meta": {"book": "demo", "source_label": "示例卷", "source_no": 12}, "options": [], "points": [], "solution": "$f(x)=(x-1)^{2}-1$，其图象开口向上、对称轴为 $x=1$，而 $1\\in[0,3]$，故最小值为 $f(1)=-1$。", "stem": "已知函数 $f(x)=x^{2}-2x$，则 $f(x)$ 在 $[0,3]$ 上的最小值为\\fillin[-1]", "type": "fill_in_blank"}
+%% @q {"answer": "C", "figures": [], "hash": "eb56ec150880a73c", "key": "demo/示例卷#3", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "难题", "difficulty_conf": 0.605, "difficulty_source": "model", "fixed_at": "2026-10-31 22:20", "paper_complete": true, "paper_group": "2026精选模拟题/第9卷", "paper_group_index": 9, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/047", "2027 高考数学考前模拟十二套卷_images/048", "2027 高考数学考前模拟十二套卷_images/049", "2027 高考数学考前模拟十二套卷_images/050", "2027 高考数学考前模拟十二套卷_images/051", "2027 高考数学考前模拟十二套卷_images/052"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/048#8", "solution_reviewed_by": "W2_2027高考数学考前模拟_02", "solution_source": "workbuddy+复核", "source_label": "示例卷"}, "options": [{"label": "A", "text": "$-175$"}, {"label": "B", "text": "$-180$"}, {"label": "C", "text": "$-185$"}, {"label": "D", "text": "$-190$"}], "points": ["7.4.1", "7.5.1"], "solution": "由 $a_{n+1}=T_n-1$ 得\n\\[T_n=a_{n+1}+1\\quad (n\\ge 1),\\qquad T_{n-1}=a_n+1\\quad (n\\ge 2),\\]\n且 $a_2=T_1-1=a_1-1=-\\frac{1}{2}$。\n当 $n\\ge 2$ 时 $T_n=T_{n-1}a_n$，把上面两式代入得 $a_{n+1}+1=(a_n+1)a_n=a_n^2+a_n$，即\n\\[a_n^2=a_{n+1}-a_n+1\\qquad (n\\ge 2).\\]\n对 $i$ 从 $2$ 到 $n$ 求和，右端裂项相消：\n\\[\\sum_{i=2}^{n}a_i^2=\\sum_{i=2}^{n}(a_{i+1}-a_i)+\\sum_{i=2}^{n}1=a_{n+1}-a_2+(n-1)=a_{n+1}+n-\\frac{1}{2},\\]\n于是\n\\[\\sum_{i=1}^{n}a_i^2=a_1^2+a_{n+1}+n-\\frac{1}{2}=a_{n+1}+n-\\frac{1}{4}\\qquad (n\\ge 2).\\]\n当 $n=1$ 时右端为 $a_2+1-\\frac{1}{4}=-\\frac{1}{2}+\\frac{3}{4}=\\frac{1}{4}=a_1^2$，故该式对一切 $n\\in\\mathbb{N}^*$ 成立。\n由 $\\sum_{i=1}^{n}a_i^2+b_n=T_n$ 得\n\\[b_n=T_n-\\sum_{i=1}^{n}a_i^2=(a_{n+1}+1)-\\left(a_{n+1}+n-\\frac{1}{4}\\right)=\\frac{5}{4}-n\\qquad (n\\in\\mathbb{N}^*),\\]\n即 $\\{b_n\\}$ 是首项为 $\\frac{1}{4}$、公差为 $-1$ 的等差数列。\n验算前两项：$T_1=\\frac{1}{2}$，$b_1=\\frac{1}{2}-\\frac{1}{4}=\\frac{1}{4}$；$T_2=a_1a_2=-\\frac{1}{4}$，$a_1^2+a_2^2=\\frac{1}{4}+\\frac{1}{4}=\\frac{1}{2}$，$b_2=-\\frac{1}{4}-\\frac{1}{2}=-\\frac{3}{4}=\\frac{5}{4}-2$，与通项一致。\n因此\n\\[\\sum_{n=1}^{20}b_n=\\sum_{n=1}^{20}\\left(\\frac{5}{4}-n\\right)=20\\times\\frac{5}{4}-\\frac{20\\times 21}{2}=25-210=-185.\\]\n故选 C。", "stem": "记数列 $\\{a_n\\}$ 的前 $n$ 项积为 $T_n$，且 $a_1 = \\frac{1}{2}$，$a_{n+1} = T_n - 1$，数列 $\\{b_n\\}$ 满足 $\\sum_{i=1}^{n} a_i^2 + b_n = T_n$，则数列 $\\{b_n\\}$ 的前 20 项和为 \\paren[C]", "type": "single_choice"}
 \begin{question}
-已知函数 $f(x)=x^{2}-2x$，则 $f(x)$ 在 $[0,3]$ 上的最小值为\fillin[-1]
+记数列 $\{a_n\}$ 的前 $n$ 项积为 $T_n$，且 $a_1 = \frac{1}{2}$，$a_{n+1} = T_n - 1$，数列 $\{b_n\}$ 满足 $\sum_{i=1}^{n} a_i^2 + b_n = T_n$，则数列 $\{b_n\}$ 的前 20 项和为 \paren[C]
+\begin{choices}
+  \item $-175$
+  \item $-180$
+  \item $-185$
+  \item $-190$
+\end{choices}
 \begin{solution}
-$f(x)=(x-1)^{2}-1$，其图象开口向上、对称轴为 $x=1$，而 $1\in[0,3]$，故最小值为 $f(1)=-1$。
+由 $a_{n+1}=T_n-1$ 得
+\[T_n=a_{n+1}+1\quad (n\ge 1),\qquad T_{n-1}=a_n+1\quad (n\ge 2),\]
+且 $a_2=T_1-1=a_1-1=-\frac{1}{2}$。
+当 $n\ge 2$ 时 $T_n=T_{n-1}a_n$，把上面两式代入得 $a_{n+1}+1=(a_n+1)a_n=a_n^2+a_n$，即
+\[a_n^2=a_{n+1}-a_n+1\qquad (n\ge 2).\]
+对 $i$ 从 $2$ 到 $n$ 求和，右端裂项相消：
+\[\sum_{i=2}^{n}a_i^2=\sum_{i=2}^{n}(a_{i+1}-a_i)+\sum_{i=2}^{n}1=a_{n+1}-a_2+(n-1)=a_{n+1}+n-\frac{1}{2},\]
+于是
+\[\sum_{i=1}^{n}a_i^2=a_1^2+a_{n+1}+n-\frac{1}{2}=a_{n+1}+n-\frac{1}{4}\qquad (n\ge 2).\]
+当 $n=1$ 时右端为 $a_2+1-\frac{1}{4}=-\frac{1}{2}+\frac{3}{4}=\frac{1}{4}=a_1^2$，故该式对一切 $n\in\mathbb{N}^*$ 成立。
+由 $\sum_{i=1}^{n}a_i^2+b_n=T_n$ 得
+\[b_n=T_n-\sum_{i=1}^{n}a_i^2=(a_{n+1}+1)-\left(a_{n+1}+n-\frac{1}{4}\right)=\frac{5}{4}-n\qquad (n\in\mathbb{N}^*),\]
+即 $\{b_n\}$ 是首项为 $\frac{1}{4}$、公差为 $-1$ 的等差数列。
+验算前两项：$T_1=\frac{1}{2}$，$b_1=\frac{1}{2}-\frac{1}{4}=\frac{1}{4}$；$T_2=a_1a_2=-\frac{1}{4}$，$a_1^2+a_2^2=\frac{1}{4}+\frac{1}{4}=\frac{1}{2}$，$b_2=-\frac{1}{4}-\frac{1}{2}=-\frac{3}{4}=\frac{5}{4}-2$，与通项一致。
+因此
+\[\sum_{n=1}^{20}b_n=\sum_{n=1}^{20}\left(\frac{5}{4}-n\right)=20\times\frac{5}{4}-\frac{20\times 21}{2}=25-210=-185.\]
+故选 C。
 \end{solution}
 \end{question}
 
+%% @q {"answer": "B", "figures": [{"id": "74b8b5be0374fa54.png", "kind": "bitmap", "source": "inline", "tikz": "", "width": "0.42\\linewidth"}], "hash": "eaf503447ef7c2cd", "key": "demo/示例卷#4", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_conf": 0.994, "difficulty_source": "model", "paper_complete": true, "paper_group": "2026精选模拟题/第3卷", "paper_group_index": 3, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/014", "2027 高考数学考前模拟十二套卷_images/015", "2027 高考数学考前模拟十二套卷_images/016", "2027 高考数学考前模拟十二套卷_images/017", "2027 高考数学考前模拟十二套卷_images/018"], "paper_group_size": 18, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "high", "region_scope": "book", "region_source": "same_paper", "renamed_from": "2026精选模拟题/014#5", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [{"label": "A", "text": "一个球"}, {"label": "B", "text": "一个球挖去一个圆柱"}, {"label": "C", "text": "一个圆柱"}, {"label": "D", "text": "一个球挖去一个正方体"}], "points": ["10.1.1"], "solution": "铜钱可看作一个圆盘（圆）中心挖去一个正方形孔。绕其对称轴（过圆心且过正方形中心的虚线）旋转一周，圆盘旋转形成球体，正方形孔区域绕该轴旋转形成一个圆柱（正方形绕其对称轴旋转成圆柱），故所得几何体为“一个球挖去一个圆柱”。选 B。", "stem": "铜钱又称方孔钱，是古代钱币最常见的一种。如图所示为清朝时的一枚“嘉庆通宝”，由一个圆和一个正方形组成，若绕旋转轴（虚线）旋转一周，形成的几何体是\\paren[B]\n\n\\includegraphics[width=0.42\\linewidth]{74b8b5be0374fa54.png}", "type": "single_choice"}
+\begin{question}
+铜钱又称方孔钱，是古代钱币最常见的一种。如图所示为清朝时的一枚“嘉庆通宝”，由一个圆和一个正方形组成，若绕旋转轴（虚线）旋转一周，形成的几何体是\paren[B]
 
-%% @q {"answer": "见解析", "figures": [], "hash": "38122914acf41c36", "key": "demo/示例卷#15", "meta": {"book": "demo", "figures": ["7e044a2c74964f15.png"], "source_label": "示例卷", "source_no": 15}, "options": [], "points": [], "solution": "(1) 令 $y=0$，得 $x^{2}-2x-3=0$，解得 $x=-1$ 或 $x=3$，故 $A(-1,0)$、$B(3,0)$。\n\n(2) 令 $x=0$，得 $y=-3$，故 $C(0,-3)$。于是\n\\[\nS_{\\triangle ABC}=\\dfrac{1}{2}|AB|\\cdot|OC|=\\dfrac{1}{2}\\times 4\\times 3=6 .\n\\]", "stem": "如图，抛物线 $y=x^{2}-2x-3$ 与 $x$ 轴交于 $A$、$B$ 两点（$A$ 在 $B$ 的左侧），与 $y$ 轴交于点 $C$。\n\n(1) 求 $A$、$B$ 两点的坐标；\n\n(2) 求 $\\triangle ABC$ 的面积。\n\n\\includegraphics[width=0.5\\linewidth]{7e044a2c74964f15.png}", "type": "detailed_answer"}
+\includegraphics[width=0.42\linewidth]{74b8b5be0374fa54.png}
+\begin{choices}
+  \item 一个球
+  \item 一个球挖去一个圆柱
+  \item 一个圆柱
+  \item 一个球挖去一个正方体
+\end{choices}
+\begin{solution}
+铜钱可看作一个圆盘（圆）中心挖去一个正方形孔。绕其对称轴（过圆心且过正方形中心的虚线）旋转一周，圆盘旋转形成球体，正方形孔区域绕该轴旋转形成一个圆柱（正方形绕其对称轴旋转成圆柱），故所得几何体为“一个球挖去一个圆柱”。选 B。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "D", "figures": [{"id": "c19ade73fa7e98e3.png", "kind": "bitmap", "source": "inline", "tikz": "", "width": "0.42\\linewidth"}], "hash": "bc52ee05bed500e8", "key": "demo/示例卷#5", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_conf": 0.996, "difficulty_source": "model", "dup_of": "2026精选模拟题/P0001#16", "dup_score": 0.878, "point_source": "llm", "region_confidence": "high", "region_scope": "single", "region_source": "source_label", "renamed_from": "2026精选模拟题/P0001#16", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [{"label": "A", "text": "$f(x)=3^{\\sin x}$"}, {"label": "B", "text": "$f(x)=3^{\\cos x}$"}, {"label": "C", "text": "$f(x)=\\left(\\frac{1}{3}\\right)^{\\sin x}$"}, {"label": "D", "text": "$f(x)=\\left(\\frac{1}{3}\\right)^{\\cos x}$"}], "points": ["3.4.1", "3.3.2"], "solution": "由图知 $f(x)$ 的图象关于 $y$ 轴对称，是偶函数，且在 $x=0$ 处取到最小值，函数值恒正。$3^{\\sin x}$ 与 $(\\frac13)^{\\sin x}$ 都不是偶函数，排除 A、C；$3^{\\cos x}$ 是偶函数但在 $x=0$ 处取最大值，排除 B；$(\\frac13)^{\\cos x}$ 是偶函数，且 $0<(\\frac13)^{\\cos x}\\le 1$，在 $x=0$ 处取最小值，与图象吻合。", "stem": "华罗庚是享誉世界的数学大师，国际上以华氏命名的数学科研成果有``华氏定理''``华氏不等式''``华氏算子''``华---王方法''等，其斐然成绩早为世人所推崇。他曾说：``数缺形时少直观，形缺数时难入微''，告知我们把``数''与``形''，``式''与``图''结合起来是解决数学问题的有效途径。在数学的学习和研究中，常用函数的图象来研究函数的性质，也常用函数的解析式来分析函数图象的特征。已知函数 $y=f(x)$ 的图象如图所示，则 $f(x)$ 的解析式可能是\\paren[D]\n\n\\includegraphics[width=0.42\\linewidth]{c19ade73fa7e98e3.png}", "type": "single_choice"}
+\begin{question}
+华罗庚是享誉世界的数学大师，国际上以华氏命名的数学科研成果有``华氏定理''``华氏不等式''``华氏算子''``华---王方法''等，其斐然成绩早为世人所推崇。他曾说：``数缺形时少直观，形缺数时难入微''，告知我们把``数''与``形''，``式''与``图''结合起来是解决数学问题的有效途径。在数学的学习和研究中，常用函数的图象来研究函数的性质，也常用函数的解析式来分析函数图象的特征。已知函数 $y=f(x)$ 的图象如图所示，则 $f(x)$ 的解析式可能是\paren[D]
+
+\includegraphics[width=0.42\linewidth]{c19ade73fa7e98e3.png}
+\begin{choices}
+  \item $f(x)=3^{\sin x}$
+  \item $f(x)=3^{\cos x}$
+  \item $f(x)=\left(\frac{1}{3}\right)^{\sin x}$
+  \item $f(x)=\left(\frac{1}{3}\right)^{\cos x}$
+\end{choices}
+\begin{solution}
+由图知 $f(x)$ 的图象关于 $y$ 轴对称，是偶函数，且在 $x=0$ 处取到最小值，函数值恒正。$3^{\sin x}$ 与 $(\frac13)^{\sin x}$ 都不是偶函数，排除 A、C；$3^{\cos x}$ 是偶函数但在 $x=0$ 处取最大值，排除 B；$(\frac13)^{\cos x}$ 是偶函数，且 $0<(\frac13)^{\cos x}\le 1$，在 $x=0$ 处取最小值，与图象吻合。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "A", "figures": [{"id": "0065869512dea32f.png", "kind": "bitmap", "source": "inline", "tikz": "", "width": "0.42\\linewidth"}], "hash": "1f8d54ba05f26025", "key": "demo/示例卷#6", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_conf": 0.998, "difficulty_source": "model", "dup_of": "2026精选模拟题/P0002#2", "dup_score": 0.893, "point_source": "llm", "region_confidence": "medium", "region_scope": "single", "region_source": "source_label", "renamed_from": "2026精选模拟题/P0002#2", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [{"label": "A", "text": "$2.1R$"}, {"label": "B", "text": "$2.2R$"}, {"label": "C", "text": "$2.3R$"}, {"label": "D", "text": "$2.4R$"}], "points": ["6.4.1", "6.4.2"], "solution": "设太阳 $S$ 为原点，$SE_0$ 沿 $x$ 轴，$E_0(R,0)$，$E_1(R\\cos60^\\circ,R\\sin60^\\circ)=(R/2,R\\sqrt3/2)$。由坐标算得 $\\angle SE_0E_1=60^\\circ$，$\\angle SE_1E_0=60^\\circ$。结合 $\\angle SE_0M=120^\\circ$、$\\angle SE_1M=135^\\circ$ 可知在 $\\triangle E_0E_1M$ 中 $\\angle ME_0E_1=60^\\circ$、$\\angle ME_1E_0=75^\\circ$，故 $\\angle E_0ME_1=45^\\circ$。由正弦定理 $\\frac{E_0M}{\\sin75^\\circ}=\\frac{E_1M}{\\sin60^\\circ}=\\frac{R}{\\sin45^\\circ}$，得 $E_0M=R\\sqrt2\\sin75^\\circ=R\\frac{\\sqrt3+1}{2}$，$E_1M=R\\frac{\\sqrt6}{2}$。在 $\\triangle SE_0M$ 中用余弦定理：$SM^2=R^2+E_0M^2+R\\cdot E_0M=R^2\\left[1+\\frac{(\\sqrt3+1)^2}{4}+\\frac{\\sqrt3+1}{2}\\right]=R^2(2.5+\\sqrt3)$。代入 $\\sqrt3\\approx1.7$ 得 $SM^2/R^2\\approx4.2$，$SM/R\\approx2.05$，最接近 $2.1R$，选 A。", "stem": "早期天文学家常采用``三角法''测量行星的轨道半径。假设一种理想状态：地球 E 和某小行星 M 绕太阳 S 在同一平面上的运动轨道均为圆，三个星体的位置如图所示。地球在 $E_0$ 位置时，测出 $\\angle SE_0M=\\frac{2\\pi}{3}$；行星 M 绕太阳运动一周回到原来位置，地球运动到了 $E_1$ 位置，测出 $\\angle SE_1M=\\frac{3\\pi}{4}$，$\\angle E_1SE_0=\\frac{\\pi}{3}$。若地球的轨道半径为 R，则下列选项中与行星 M 的轨道半径最接近的是\\paren[A]（参考数据：$\\sqrt{3}\\approx 1.7$）\n\n\\includegraphics[width=0.42\\linewidth]{0065869512dea32f.png}", "type": "single_choice"}
+\begin{question}
+早期天文学家常采用``三角法''测量行星的轨道半径。假设一种理想状态：地球 E 和某小行星 M 绕太阳 S 在同一平面上的运动轨道均为圆，三个星体的位置如图所示。地球在 $E_0$ 位置时，测出 $\angle SE_0M=\frac{2\pi}{3}$；行星 M 绕太阳运动一周回到原来位置，地球运动到了 $E_1$ 位置，测出 $\angle SE_1M=\frac{3\pi}{4}$，$\angle E_1SE_0=\frac{\pi}{3}$。若地球的轨道半径为 R，则下列选项中与行星 M 的轨道半径最接近的是\paren[A]（参考数据：$\sqrt{3}\approx 1.7$）
+
+\includegraphics[width=0.42\linewidth]{0065869512dea32f.png}
+\begin{choices}
+  \item $2.1R$
+  \item $2.2R$
+  \item $2.3R$
+  \item $2.4R$
+\end{choices}
+\begin{solution}
+设太阳 $S$ 为原点，$SE_0$ 沿 $x$ 轴，$E_0(R,0)$，$E_1(R\cos60^\circ,R\sin60^\circ)=(R/2,R\sqrt3/2)$。由坐标算得 $\angle SE_0E_1=60^\circ$，$\angle SE_1E_0=60^\circ$。结合 $\angle SE_0M=120^\circ$、$\angle SE_1M=135^\circ$ 可知在 $\triangle E_0E_1M$ 中 $\angle ME_0E_1=60^\circ$、$\angle ME_1E_0=75^\circ$，故 $\angle E_0ME_1=45^\circ$。由正弦定理 $\frac{E_0M}{\sin75^\circ}=\frac{E_1M}{\sin60^\circ}=\frac{R}{\sin45^\circ}$，得 $E_0M=R\sqrt2\sin75^\circ=R\frac{\sqrt3+1}{2}$，$E_1M=R\frac{\sqrt6}{2}$。在 $\triangle SE_0M$ 中用余弦定理：$SM^2=R^2+E_0M^2+R\cdot E_0M=R^2\left[1+\frac{(\sqrt3+1)^2}{4}+\frac{\sqrt3+1}{2}\right]=R^2(2.5+\sqrt3)$。代入 $\sqrt3\approx1.7$ 得 $SM^2/R^2\approx4.2$，$SM/R\approx2.05$，最接近 $2.1R$，选 A。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "D", "figures": [{"id": "7b2c54aa9275c1c9.png", "kind": "bitmap", "source": "inline", "tikz": "", "width": "0.42\\linewidth"}], "hash": "cc3e8939f8c5276b", "key": "demo/示例卷#7", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_conf": 0.997, "difficulty_source": "model", "point_source": "llm", "region_confidence": "medium", "region_scope": "single", "region_source": "source_label", "renamed_from": "2026精选模拟题/P0002#21", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [{"label": "A", "text": "$1$"}, {"label": "B", "text": "$2$"}, {"label": "C", "text": "$3$"}, {"label": "D", "text": "$4$"}], "points": ["4.3.2", "3.4.1"], "solution": "函数 $f(x)=(ax+1)e^x$。① $a=0$ 为 $e^x$；② $a>0$ 时先减后增有极小值；③ $a<-1$ 时有极大值在 $x<0$；④ $-1<a<0$ 时有极大值在 $x>0$。四种图像均可由适当 $a$ 得到，故可作图个数为 $4$，选 D。", "stem": "已知函数 $f(x)=\\left(ax+1\\right)e^{x}$，给出下列 4 个图像：\n\n其中，可以作为函数 $f(x)$ 的大致图像的个数为\\paren[D]\n\n\\includegraphics[width=0.42\\linewidth]{7b2c54aa9275c1c9.png}", "type": "single_choice"}
+\begin{question}
+已知函数 $f(x)=\left(ax+1\right)e^{x}$，给出下列 4 个图像：
+
+其中，可以作为函数 $f(x)$ 的大致图像的个数为\paren[D]
+
+\includegraphics[width=0.42\linewidth]{7b2c54aa9275c1c9.png}
+\begin{choices}
+  \item $1$
+  \item $2$
+  \item $3$
+  \item $4$
+\end{choices}
+\begin{solution}
+函数 $f(x)=(ax+1)e^x$。① $a=0$ 为 $e^x$；② $a>0$ 时先减后增有极小值；③ $a<-1$ 时有极大值在 $x<0$；④ $-1<a<0$ 时有极大值在 $x>0$。四种图像均可由适当 $a$ 得到，故可作图个数为 $4$，选 D。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "D", "figures": [], "hash": "396be37804128f4d", "key": "demo/示例卷#8", "meta": {"answer_source": "legacy", "book": "示例卷", "demo": true, "difficulty": "简单题", "difficulty_conf": 0.833, "difficulty_source": "model", "dup_of": "高考真题汇编/2021/浙江卷#1", "dup_score": 0.916, "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_scope": "book", "renamed_from": "2026精选模拟题/004#2", "solution_source": "legacy", "solved_at": "2026-09-13 08:49", "solved_by": "qwen/qwen3.8-27b", "source_label": "示例卷"}, "options": [{"label": "A", "text": "$\\left\\{x \\mid x \\leq -1\\right\\}$"}, {"label": "B", "text": "$\\left\\{x \\mid x \\geq 1\\right\\}$"}, {"label": "C", "text": "$\\left\\{x \\mid 1 \\leq x<2\\right\\}$"}, {"label": "D", "text": "$\\left\\{x \\mid x \\leq -1 \\text{ 或 } 1 \\leq x<2\\right\\}$"}], "points": ["1.1.3", "1.1.1"], "solution": "由 $|x|\\ge 1$ 得 $x\\le -1$ 或 $x\\ge 1$，所以  \n\\[\nA=(-\\infty,-1]\\cup[1,+\\infty).\n\\]\n又 $B=\\{x\\mid x<2\\}=(-\\infty,2)$。\n\n取交集：\n\\[\nA\\cap B=\\big((-\\infty,-1]\\cup[1,+\\infty)\\big)\\cap(-\\infty,2)\n=(-\\infty,-1]\\cup[1,2).\n\\]\n即\n\\[\nA\\cap B=\\{x\\mid x\\le -1 \\text{ 或 } 1\\le x<2\\}.\n\\]\n故选 D。", "stem": "设集合 $A=\\left\\{x \\mid |x| \\geq 1\\right\\}$，$B=\\left\\{x \\mid x<2\\right\\}$，则 $A \\cap B=$ \\paren[D]", "type": "single_choice"}
+\begin{question}
+设集合 $A=\left\{x \mid |x| \geq 1\right\}$，$B=\left\{x \mid x<2\right\}$，则 $A \cap B=$ \paren[D]
+\begin{choices}
+  \item $\left\{x \mid x \leq -1\right\}$
+  \item $\left\{x \mid x \geq 1\right\}$
+  \item $\left\{x \mid 1 \leq x<2\right\}$
+  \item $\left\{x \mid x \leq -1 \text{ 或 } 1 \leq x<2\right\}$
+\end{choices}
+\begin{solution}
+由 $|x|\ge 1$ 得 $x\le -1$ 或 $x\ge 1$，所以  
+\[
+A=(-\infty,-1]\cup[1,+\infty).
+\]
+又 $B=\{x\mid x<2\}=(-\infty,2)$。
+
+取交集：
+\[
+A\cap B=\big((-\infty,-1]\cup[1,+\infty)\big)\cap(-\infty,2)
+=(-\infty,-1]\cup[1,2).
+\]
+即
+\[
+A\cap B=\{x\mid x\le -1 \text{ 或 } 1\le x<2\}.
+\]
+故选 D。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "C", "figures": [], "hash": "462021e721eb2ea4", "key": "demo/示例卷#9", "meta": {"answer_source": "legacy", "book": "示例卷", "demo": true, "difficulty": "简单题", "difficulty_source": "human", "dup_of": "高考真题汇编/2014/湖北卷（文）#3", "dup_score": 0.899, "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "high", "region_scope": "book", "region_source": "same_paper", "renamed_from": "2026精选模拟题/004#3", "solution_source": "legacy", "solved_at": "2026-09-13 08:50", "solved_by": "qwen/qwen3.8-27b", "source_label": "示例卷", "stars": 1}, "options": [{"label": "A", "text": "$\\exists x \\in \\mathbb{R}, x^{2} \\geq 0$"}, {"label": "B", "text": "$\\forall x \\in \\mathbb{R}, x^{2}<0$"}, {"label": "C", "text": "$\\exists x \\in \\mathbb{R}, x^{2}<0$"}, {"label": "D", "text": "$\\forall x \\in \\mathbb{R}, x^{2} \\leq 0$"}], "points": ["1.2.1"], "solution": "全称命题的否定是存在命题，并且结论要取反。\n\n原命题为：\n\\[\n\\forall x \\in \\mathbb{R},\\ x^2 \\ge 0\n\\]\n\n其否定为：\n\\[\n\\exists x \\in \\mathbb{R},\\ x^2 < 0\n\\]\n\n因此选 C。", "stem": "命题“$\\forall x \\in \\mathbb{R}, x^{2} \\geq 0$”的否定为 \\paren[C]", "type": "single_choice"}
+\begin{question}
+命题“$\forall x \in \mathbb{R}, x^{2} \geq 0$”的否定为 \paren[C]
+\begin{choices}
+  \item $\exists x \in \mathbb{R}, x^{2} \geq 0$
+  \item $\forall x \in \mathbb{R}, x^{2}<0$
+  \item $\exists x \in \mathbb{R}, x^{2}<0$
+  \item $\forall x \in \mathbb{R}, x^{2} \leq 0$
+\end{choices}
+\begin{solution}
+全称命题的否定是存在命题，并且结论要取反。
+
+原命题为：
+\[
+\forall x \in \mathbb{R},\ x^2 \ge 0
+\]
+
+其否定为：
+\[
+\exists x \in \mathbb{R},\ x^2 < 0
+\]
+
+因此选 C。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "ACD", "figures": [], "hash": "6753456984078357", "key": "demo/示例卷#10", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "简单题", "difficulty_conf": 0.664, "difficulty_source": "model", "fixed_at": "2026-10-31 01:18", "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/005#11", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [{"label": "A", "text": "$f(x)$ 的最小正周期为 $2\\pi$"}, {"label": "B", "text": "$x=-\\frac{\\pi}{6}$ 是 $f(x)$ 的一条对称轴"}, {"label": "C", "text": "$f(x)$ 的值域为 $\\left[-\\frac{3\\sqrt{3}}{2}, \\frac{3\\sqrt{3}}{2}\\right]$"}, {"label": "D", "text": "$f(x)$ 在区间 $\\left(-\\frac{\\pi}{6}, \\frac{7\\pi}{6}\\right)$ 上单调递增"}], "points": ["3.2.2", "6.2.5", "3.2.4"], "solution": "由 $f(x)-\\sin2x$ 为偶函数得 $f(-x)=f(x)-2\\sin2x$；由 $f(x)+2\\cos x$ 为奇函数得 $f(-x)=-f(x)-4\\cos x$。联立得 $f(x)=\\sin2x-2\\cos x$。周期：含 $\\sin2x$（周期 $\\pi$）与 $\\cos x$（周期 $2\\pi$），且 $f(x+\\pi)=\\sin2x+2\\cos x\\neq f(x)$，故最小正周期为 $2\\pi$，A 成立。$f(x)=2\\cos x(\\sin x-1)$，令 $s=\\sin x$，$f'(x)=2\\cos2x+2\\sin x=-2(2s+1)(s-1)$，极值在 $s=1$ 与 $s=-\\frac12$；当 $s=-\\frac12$ 时 $f=\\pm\\frac{3\\sqrt3}{2}$，故值域为 $[-\\frac{3\\sqrt3}{2},\\frac{3\\sqrt3}{2}]$，C 成立。在 $(-\\frac\\pi6,\\frac{7\\pi}6)$ 内 $f'(x)\\ge0$ 且仅在 $x=\\frac\\pi2$ 处为 $0$，故单调递增，D 成立。$x=-\\frac\\pi6$ 非对称轴（因 $f(0)=-2\\neq f(-\\frac\\pi3)$），B 错误。\n故选 ACD。", "stem": "已知函数 $f(x)$ 的定义域为 $\\mathbb{R}$，$y=f(x)-\\sin 2x$ 为偶函数，$y=f(x)+2 \\cos x$ 为奇函数，则\\paren[ACD]", "type": "multi_choice"}
+\begin{question}
+已知函数 $f(x)$ 的定义域为 $\mathbb{R}$，$y=f(x)-\sin 2x$ 为偶函数，$y=f(x)+2 \cos x$ 为奇函数，则\paren[ACD]
+\begin{choices}
+  \item $f(x)$ 的最小正周期为 $2\pi$
+  \item $x=-\frac{\pi}{6}$ 是 $f(x)$ 的一条对称轴
+  \item $f(x)$ 的值域为 $\left[-\frac{3\sqrt{3}}{2}, \frac{3\sqrt{3}}{2}\right]$
+  \item $f(x)$ 在区间 $\left(-\frac{\pi}{6}, \frac{7\pi}{6}\right)$ 上单调递增
+\end{choices}
+\begin{solution}
+由 $f(x)-\sin2x$ 为偶函数得 $f(-x)=f(x)-2\sin2x$；由 $f(x)+2\cos x$ 为奇函数得 $f(-x)=-f(x)-4\cos x$。联立得 $f(x)=\sin2x-2\cos x$。周期：含 $\sin2x$（周期 $\pi$）与 $\cos x$（周期 $2\pi$），且 $f(x+\pi)=\sin2x+2\cos x\neq f(x)$，故最小正周期为 $2\pi$，A 成立。$f(x)=2\cos x(\sin x-1)$，令 $s=\sin x$，$f'(x)=2\cos2x+2\sin x=-2(2s+1)(s-1)$，极值在 $s=1$ 与 $s=-\frac12$；当 $s=-\frac12$ 时 $f=\pm\frac{3\sqrt3}{2}$，故值域为 $[-\frac{3\sqrt3}{2},\frac{3\sqrt3}{2}]$，C 成立。在 $(-\frac\pi6,\frac{7\pi}6)$ 内 $f'(x)\ge0$ 且仅在 $x=\frac\pi2$ 处为 $0$，故单调递增，D 成立。$x=-\frac\pi6$ 非对称轴（因 $f(0)=-2\neq f(-\frac\pi3)$），B 错误。
+故选 ACD。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "ABC", "figures": [], "hash": "1903a407b4566142", "key": "demo/示例卷#11", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_source": "human", "fixed_at": "2026-10-31 01:18", "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/005#10", "solution_source": "workbuddy", "source_label": "示例卷", "stars": 2}, "options": [{"label": "A", "text": "$|AF|=\\frac{b^{2}}{a}$"}, {"label": "B", "text": "$C$ 的离心率为 $\\sqrt{3}$"}, {"label": "C", "text": "直线 $l$ 的斜率为 $\\frac{2\\sqrt{3}}{3}$"}, {"label": "D", "text": "$C$ 的渐近线方程为 $y=\\pm \\frac{\\sqrt{2}}{2}x$"}], "points": ["5.2.2", "5.3.4"], "solution": "左焦点 $F=(-c,0)$，$c=\\sqrt{a^2+b^2}$。由 $AF\\perp x$ 轴且 $A$ 在过原点、斜率 $>0$ 的直线 $l$ 上，得 $A=(-c,-\\frac{b^2}{a})$，故 $|AF|=\\frac{b^2}{a}$，A 成立。由对称性 $B=(c,\\frac{b^2}{a})$。$\\overrightarrow{FA}=(0,-\\frac{b^2}{a})$，$\\overrightarrow{FB}=(2c,\\frac{b^2}{a})$，由 $\\angle AFB=\\frac{2\\pi}3$ 得 $\\cos\\angle AFB=-\\frac12$，即 $\\frac{-b^2/a}{\\sqrt{4c^2+b^4/a^2}}=-\\frac12$，化简得 $3b^4=4a^2c^2$，结合 $c^2=a^2+b^2$ 得 $b^2=2a^2$，$c^2=3a^2$，故 $e=\\frac ca=\\sqrt3$，B 成立。直线 $l$ 斜率 $k=\\frac{-b^2/a}{-c}=\\frac{b^2}{ac}=\\frac{2a^2}{a\\cdot\\sqrt3a}=\\frac{2}{\\sqrt3}=\\frac{2\\sqrt3}{3}$，C 也成立。渐近线为 $y=\\pm\\frac ba x=\\pm\\sqrt2x$，D 错误。\n故选 ABC。", "stem": "设 $F$ 为双曲线 $C: \\frac{x^{2}}{a^{2}}-\\frac{y^{2}}{b^{2}}=1 \\quad (a>0, \\ b>0)$ 的左焦点，经过原点且斜率大于 0 的直线 $l$ 交 $C$ 于 $A, B$ 两点，$AF$ 与 $x$ 轴垂直，$\\angle AFB=\\frac{2\\pi}{3}$，则\\paren[ABC]", "type": "multi_choice"}
+\begin{question}
+设 $F$ 为双曲线 $C: \frac{x^{2}}{a^{2}}-\frac{y^{2}}{b^{2}}=1 \quad (a>0, \ b>0)$ 的左焦点，经过原点且斜率大于 0 的直线 $l$ 交 $C$ 于 $A, B$ 两点，$AF$ 与 $x$ 轴垂直，$\angle AFB=\frac{2\pi}{3}$，则\paren[ABC]
+\begin{choices}
+  \item $|AF|=\frac{b^{2}}{a}$
+  \item $C$ 的离心率为 $\sqrt{3}$
+  \item 直线 $l$ 的斜率为 $\frac{2\sqrt{3}}{3}$
+  \item $C$ 的渐近线方程为 $y=\pm \frac{\sqrt{2}}{2}x$
+\end{choices}
+\begin{solution}
+左焦点 $F=(-c,0)$，$c=\sqrt{a^2+b^2}$。由 $AF\perp x$ 轴且 $A$ 在过原点、斜率 $>0$ 的直线 $l$ 上，得 $A=(-c,-\frac{b^2}{a})$，故 $|AF|=\frac{b^2}{a}$，A 成立。由对称性 $B=(c,\frac{b^2}{a})$。$\overrightarrow{FA}=(0,-\frac{b^2}{a})$，$\overrightarrow{FB}=(2c,\frac{b^2}{a})$，由 $\angle AFB=\frac{2\pi}3$ 得 $\cos\angle AFB=-\frac12$，即 $\frac{-b^2/a}{\sqrt{4c^2+b^4/a^2}}=-\frac12$，化简得 $3b^4=4a^2c^2$，结合 $c^2=a^2+b^2$ 得 $b^2=2a^2$，$c^2=3a^2$，故 $e=\frac ca=\sqrt3$，B 成立。直线 $l$ 斜率 $k=\frac{-b^2/a}{-c}=\frac{b^2}{ac}=\frac{2a^2}{a\cdot\sqrt3a}=\frac{2}{\sqrt3}=\frac{2\sqrt3}{3}$，C 也成立。渐近线为 $y=\pm\frac ba x=\pm\sqrt2x$，D 错误。
+故选 ABC。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "ACD", "figures": [], "hash": "b910d952a99d8536", "key": "demo/示例卷#12", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "难题", "difficulty_conf": 0.71, "difficulty_source": "model", "fixed_at": "2026-10-29 04:45", "paper_complete": true, "paper_group": "2026精选模拟题/第6卷", "paper_group_index": 6, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/029", "2027 高考数学考前模拟十二套卷_images/030", "2027 高考数学考前模拟十二套卷_images/031", "2027 高考数学考前模拟十二套卷_images/032", "2027 高考数学考前模拟十二套卷_images/033", "2027 高考数学考前模拟十二套卷_images/034"], "paper_group_size": 18, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/030#11", "solution_source": "workbuddy", "source_label": "示例卷", "source_region": "河南", "source_region_confidence": "high", "source_region_source": "web"}, "options": [{"label": "A", "text": "$|PF|$ 的最小值为 1"}, {"label": "B", "text": "$|PQ|$ 的最小值为 1"}, {"label": "C", "text": "$\\angle AFB$ 为钝角"}, {"label": "D", "text": "若 $\\angle PFA = \\angle PFB$，直线 $PF$ 与 $l$ 的斜率之积为 $-\\frac{5}{2}$"}], "points": ["5.2.3", "5.3.2", "5.1.8"], "solution": "由 $x^{2}=4y$ 得焦点 $F(0,1)$，准线为 $y=-1$。\nA 项：设 $P(x_{0},y_{0})$，则 $|PF|=y_{0}+1\\geqslant1$，当 $P$ 为顶点时取到最小值 $1$，A 正确。\nB 项：$Q$ 是 $F(0,1)$ 在 $l$ 上的垂足，由 $l:kx-y+4=0$ 得 $Q\\left(-\\dfrac{3k}{k^{2}+1},\\dfrac{k^{2}+4}{k^{2}+1}\\right)$，它是定点，故 $|PQ|$ 是 $P$ 到定点的距离，并不等于 $P$ 到 $l$ 的距离。若 $Q$ 在 $\\Gamma$ 上，则 $\\dfrac{9k^{2}}{(k^{2}+1)^{2}}=4\\cdot\\dfrac{k^{2}+4}{k^{2}+1}$，即 $4k^{4}+11k^{2}+16=0$，无实根，故 $Q\\notin\\Gamma$。取 $k=10$，则 $Q\\left(-\\dfrac{30}{101},\\dfrac{104}{101}\\right)$；取 $P(-0.4,0.04)$（满足 $x^{2}=4y$），得 $|PQ|=\\sqrt{\\left(-0.4+\\dfrac{30}{101}\\right)^{2}+\\left(0.04-\\dfrac{104}{101}\\right)^{2}}\\approx0.995<1$，故 $|PQ|$ 的最小值不是 $1$，B 错误。\nC 项：设 $A(x_{1},y_{1})$，$B(x_{2},y_{2})$，由 $x^{2}=4kx+16$ 得 $x_{1}+x_{2}=4k$，$x_{1}x_{2}=-16$，于是 $y_{1}y_{2}=\\dfrac{(x_{1}x_{2})^{2}}{16}=16$，$y_{1}+y_{2}=\\dfrac{x_{1}^{2}+x_{2}^{2}}{4}=4k^{2}+8$，\n$\\overrightarrow{FA}\\cdot\\overrightarrow{FB}=x_{1}x_{2}+(y_{1}-1)(y_{2}-1)=-16+16-(y_{1}+y_{2})+1=-7-4k^{2}<0$，故 $\\angle AFB$ 为钝角，C 正确。\nD 项：对 $\\Gamma$ 上一点 $T(2t,t^{2})$，记 $\\theta=\\arctan t$，则 $\\overrightarrow{FT}=(2t,t^{2}-1)$，$|\\overrightarrow{FT}|=t^{2}+1$，其单位向量为 $\\left(\\dfrac{2t}{t^{2}+1},\\dfrac{t^{2}-1}{t^{2}+1}\\right)=(\\sin 2\\theta,-\\cos 2\\theta)$，即方向由 $2\\theta$ 唯一确定。\n记 $A$，$B$，$P$ 对应的角参数为 $\\alpha$，$\\beta$，$\\gamma$，则 $\\angle PFA=\\angle PFB$ 时 $2\\gamma=\\alpha+\\beta$（另一支 $2\\gamma=\\alpha+\\beta+\\pi$ 两端取正切后与它同解，不影响所得结果），即 $2\\arctan t_{P}=\\arctan t_{A}+\\arctan t_{B}$。\n两端取正切，由 $t_{A}t_{B}=\\dfrac{x_{1}x_{2}}{4}=-4$，$t_{A}+t_{B}=\\dfrac{x_{1}+x_{2}}{2}=2k$，得 $\\dfrac{2t_{P}}{1-t_{P}^{2}}=\\dfrac{t_{A}+t_{B}}{1-t_{A}t_{B}}=\\dfrac{2k}{5}$，即 $t_{P}=\\dfrac{k}{5}\\left(1-t_{P}^{2}\\right)$。\n而直线 $PF$ 的斜率为 $\\dfrac{t_{P}^{2}-1}{2t_{P}}$，故它与 $l$ 的斜率之积为 $k\\cdot\\dfrac{t_{P}^{2}-1}{2t_{P}}=-\\dfrac{k\\left(1-t_{P}^{2}\\right)}{2t_{P}}=-\\dfrac{5}{2}$，D 正确。\n综上，选 ACD。", "stem": "抛物线 $\\Gamma: x^2 = 4y$，$P$ 是 $\\Gamma$ 上的点，直线 $l: y = kx + 4 (k \\neq 0)$ 与 $\\Gamma$ 交于 $A,B$ 两点，过 $\\Gamma$ 的焦点 $F$ 作 $l$ 的垂线，垂足为 $Q$，则\\paren[ACD]", "type": "multi_choice"}
+\begin{question}
+抛物线 $\Gamma: x^2 = 4y$，$P$ 是 $\Gamma$ 上的点，直线 $l: y = kx + 4 (k \neq 0)$ 与 $\Gamma$ 交于 $A,B$ 两点，过 $\Gamma$ 的焦点 $F$ 作 $l$ 的垂线，垂足为 $Q$，则\paren[ACD]
+\begin{choices}
+  \item $|PF|$ 的最小值为 1
+  \item $|PQ|$ 的最小值为 1
+  \item $\angle AFB$ 为钝角
+  \item 若 $\angle PFA = \angle PFB$，直线 $PF$ 与 $l$ 的斜率之积为 $-\frac{5}{2}$
+\end{choices}
+\begin{solution}
+由 $x^{2}=4y$ 得焦点 $F(0,1)$，准线为 $y=-1$。
+A 项：设 $P(x_{0},y_{0})$，则 $|PF|=y_{0}+1\geqslant1$，当 $P$ 为顶点时取到最小值 $1$，A 正确。
+B 项：$Q$ 是 $F(0,1)$ 在 $l$ 上的垂足，由 $l:kx-y+4=0$ 得 $Q\left(-\dfrac{3k}{k^{2}+1},\dfrac{k^{2}+4}{k^{2}+1}\right)$，它是定点，故 $|PQ|$ 是 $P$ 到定点的距离，并不等于 $P$ 到 $l$ 的距离。若 $Q$ 在 $\Gamma$ 上，则 $\dfrac{9k^{2}}{(k^{2}+1)^{2}}=4\cdot\dfrac{k^{2}+4}{k^{2}+1}$，即 $4k^{4}+11k^{2}+16=0$，无实根，故 $Q\notin\Gamma$。取 $k=10$，则 $Q\left(-\dfrac{30}{101},\dfrac{104}{101}\right)$；取 $P(-0.4,0.04)$（满足 $x^{2}=4y$），得 $|PQ|=\sqrt{\left(-0.4+\dfrac{30}{101}\right)^{2}+\left(0.04-\dfrac{104}{101}\right)^{2}}\approx0.995<1$，故 $|PQ|$ 的最小值不是 $1$，B 错误。
+C 项：设 $A(x_{1},y_{1})$，$B(x_{2},y_{2})$，由 $x^{2}=4kx+16$ 得 $x_{1}+x_{2}=4k$，$x_{1}x_{2}=-16$，于是 $y_{1}y_{2}=\dfrac{(x_{1}x_{2})^{2}}{16}=16$，$y_{1}+y_{2}=\dfrac{x_{1}^{2}+x_{2}^{2}}{4}=4k^{2}+8$，
+$\overrightarrow{FA}\cdot\overrightarrow{FB}=x_{1}x_{2}+(y_{1}-1)(y_{2}-1)=-16+16-(y_{1}+y_{2})+1=-7-4k^{2}<0$，故 $\angle AFB$ 为钝角，C 正确。
+D 项：对 $\Gamma$ 上一点 $T(2t,t^{2})$，记 $\theta=\arctan t$，则 $\overrightarrow{FT}=(2t,t^{2}-1)$，$|\overrightarrow{FT}|=t^{2}+1$，其单位向量为 $\left(\dfrac{2t}{t^{2}+1},\dfrac{t^{2}-1}{t^{2}+1}\right)=(\sin 2\theta,-\cos 2\theta)$，即方向由 $2\theta$ 唯一确定。
+记 $A$，$B$，$P$ 对应的角参数为 $\alpha$，$\beta$，$\gamma$，则 $\angle PFA=\angle PFB$ 时 $2\gamma=\alpha+\beta$（另一支 $2\gamma=\alpha+\beta+\pi$ 两端取正切后与它同解，不影响所得结果），即 $2\arctan t_{P}=\arctan t_{A}+\arctan t_{B}$。
+两端取正切，由 $t_{A}t_{B}=\dfrac{x_{1}x_{2}}{4}=-4$，$t_{A}+t_{B}=\dfrac{x_{1}+x_{2}}{2}=2k$，得 $\dfrac{2t_{P}}{1-t_{P}^{2}}=\dfrac{t_{A}+t_{B}}{1-t_{A}t_{B}}=\dfrac{2k}{5}$，即 $t_{P}=\dfrac{k}{5}\left(1-t_{P}^{2}\right)$。
+而直线 $PF$ 的斜率为 $\dfrac{t_{P}^{2}-1}{2t_{P}}$，故它与 $l$ 的斜率之积为 $k\cdot\dfrac{t_{P}^{2}-1}{2t_{P}}=-\dfrac{k\left(1-t_{P}^{2}\right)}{2t_{P}}=-\dfrac{5}{2}$，D 正确。
+综上，选 ACD。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "$6$", "figures": [], "hash": "14e7aa22e937c7fc", "key": "demo/示例卷#13", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "简单题", "difficulty_conf": 0.987, "difficulty_source": "model", "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/005#12", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [], "points": ["9.3.3"], "solution": "平均数 $\\frac{1+2+x+6+7}{5}=4$，得 $x=4$，数据排序为 $1,2,4,6,7$。第 $70$ 百分位数位置 $i=5\\times0.7=3.5$，非整数，取第 $4$ 个数，即 $6$。", "stem": "已知一组数据 $1, 2, x, 6, 7$ 的平均数为 4，则该组数据的第 70 百分位数为\\fillin[$6$]。", "type": "fill_in_blank"}
+\begin{question}
+已知一组数据 $1, 2, x, 6, 7$ 的平均数为 4，则该组数据的第 70 百分位数为\fillin[$6$]。
+\begin{solution}
+平均数 $\frac{1+2+x+6+7}{5}=4$，得 $x=4$，数据排序为 $1,2,4,6,7$。第 $70$ 百分位数位置 $i=5\times0.7=3.5$，非整数，取第 $4$ 个数，即 $6$。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "$15$", "figures": [], "hash": "ba5aacaf908fbd89", "key": "demo/示例卷#14", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_confidence": "medium", "difficulty_override": true, "difficulty_source": "human", "paper_complete": true, "paper_group": "2026精选模拟题/第7卷", "paper_group_index": 7, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/035", "2027 高考数学考前模拟十二套卷_images/036", "2027 高考数学考前模拟十二套卷_images/037", "2027 高考数学考前模拟十二套卷_images/038", "2027 高考数学考前模拟十二套卷_images/039", "2027 高考数学考前模拟十二套卷_images/040"], "paper_group_size": 18, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/036#14", "solution_source": "workbuddy", "source_label": "示例卷", "source_region": "云南", "source_region_confidence": "high", "source_region_source": "web"}, "options": [], "points": ["5.1.2", "9.1.1"], "solution": "设直线 $l$ 在 $x$ 轴、$y$ 轴截距分别为正整数 $a,b$，则方程为 $\\dfrac{x}{a}+\\dfrac{y}{b}=1$。\n过点 $P(2025,1)$，故 $\\dfrac{2025}{a}+\\dfrac{1}{b}=1$。\n由 $\\dfrac{1}{b}=1-\\dfrac{2025}{a}=\\dfrac{a-2025}{a}>0$ 知 $a>2025$。令 $d=a-2025\\ (d\\in\\mathbb{N}^*)$，则 $a=d+2025$，\n$b=\\dfrac{a}{a-2025}=\\dfrac{d+2025}{d}=1+\\dfrac{2025}{d}$。\n要使 $b$ 为整数，需 $d\\mid 2025$。因 $2025=3^4\\cdot 5^2$，正约数个数为 $(4+1)(2+1)=15$。\n故满足条件的直线共有 $15$ 条。", "stem": "已知过点 $P(2025,1)$ 的直线 $l$ 在 $x$ 轴和 $y$ 轴上的截距均为正整数，则满足条件的直线 $l$ 的条数为\\fillin[$15$]。", "type": "fill_in_blank"}
+\begin{question}
+已知过点 $P(2025,1)$ 的直线 $l$ 在 $x$ 轴和 $y$ 轴上的截距均为正整数，则满足条件的直线 $l$ 的条数为\fillin[$15$]。
+\begin{solution}
+设直线 $l$ 在 $x$ 轴、$y$ 轴截距分别为正整数 $a,b$，则方程为 $\dfrac{x}{a}+\dfrac{y}{b}=1$。
+过点 $P(2025,1)$，故 $\dfrac{2025}{a}+\dfrac{1}{b}=1$。
+由 $\dfrac{1}{b}=1-\dfrac{2025}{a}=\dfrac{a-2025}{a}>0$ 知 $a>2025$。令 $d=a-2025\ (d\in\mathbb{N}^*)$，则 $a=d+2025$，
+$b=\dfrac{a}{a-2025}=\dfrac{d+2025}{d}=1+\dfrac{2025}{d}$。
+要使 $b$ 为整数，需 $d\mid 2025$。因 $2025=3^4\cdot 5^2$，正约数个数为 $(4+1)(2+1)=15$。
+故满足条件的直线共有 $15$ 条。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "{$[e^{1/e},+\\infty)$}", "figures": [], "hash": "c648373242c072cd", "key": "demo/示例卷#15", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "难题", "difficulty_conf": 0.929, "difficulty_source": "model", "fixed_at": "2026-10-31 21:51", "paper_complete": true, "paper_group": "2026精选模拟题/G2-第3卷", "paper_group_index": 3, "paper_group_pages": ["2025全国优质模拟题精选_images/047", "2025全国优质模拟题精选_images/048", "2025全国优质模拟题精选_images/049", "2025全国优质模拟题精选_images/050", "2025全国优质模拟题精选_images/051", "2025全国优质模拟题精选_images/052", "2025全国优质模拟题精选_images/053", "2025全国优质模拟题精选_images/054", "2025全国优质模拟题精选_images/055", "2025全国优质模拟题精选_images/056", "2025全国优质模拟题精选_images/057", "2025全国优质模拟题精选_images/058", "2025全国优质模拟题精选_images/059", "2025全国优质模拟题精选_images/060", "2025全国优质模拟题精选_images/061", "2025全国优质模拟题精选_images/062", "2025全国优质模拟题精选_images/063", "2025全国优质模拟题精选_images/064", "2025全国优质模拟题精选_images/065", "2025全国优质模拟题精选_images/066", "2025全国优质模拟题精选_images/067", "2025全国优质模拟题精选_images/068"], "paper_group_size": 41, "paper_kind": "汇编", "point_source": "llm", "renamed_from": "2026精选模拟题/P0066#32", "solution_reviewed_by": "W2_2025全国优质模拟题精_07", "solution_source": "workbuddy+复核", "source_label": "示例卷"}, "options": [], "points": ["4.6.1", "3.3.4", "4.4.2"], "solution": "须对一切 $x>0$ 有 $\\log_a x\\leqslant a^x$，其中 $a>0$ 且 $a\\neq 1$。\n\n若 $0<a<1$，则 $x\\to0^+$ 时 $\\log_a x\\to+\\infty$，而 $a^x\\to1$，不等式不可能恒成立，故必须 $a>1$。\n\n设 $c=\\ln a>0$，则 $\\log_a x=\\frac{\\ln x}{c}$，$a^x=\\mathrm{e}^{cx}$，原不等式等价于\n\\[\n\\ln x\\leqslant c\\,\\mathrm{e}^{cx}\\qquad (x>0).\n\\]\n令 $t=cx$，即 $x=\\frac{t}{c}$，$\\ln x=\\ln t-\\ln c$，上式化为\n\\[\n\\psi(t)=c\\,\\mathrm{e}^{t}-\\ln t+\\ln c\\geqslant 0\\qquad (t>0).\n\\]\n$\\psi'(t)=c\\,\\mathrm{e}^{t}-\\frac{1}{t}$，$\\psi''(t)=c\\,\\mathrm{e}^{t}+\\frac{1}{t^{2}}>0$，且 $t\\to0^+$ 与 $t\\to+\\infty$ 时 $\\psi(t)\\to+\\infty$，故 $\\psi$ 在 $(0,+\\infty)$ 上有唯一的最小值点 $t_0$，由 $\\psi'(t_0)=0$ 得\n\\[\nc\\,\\mathrm{e}^{t_0}=\\frac{1}{t_0},\\qquad t_0\\,\\mathrm{e}^{t_0}=\\frac{1}{c},\n\\]\n此时 $\\psi$ 的最小值为\n\\[\n\\psi(t_0)=\\frac{1}{t_0}-\\ln t_0+\\ln c .\n\\]\n对 $t_0\\mathrm{e}^{t_0}=\\frac{1}{c}$ 取对数得 $\\ln t_0+t_0=-\\ln c$，即 $\\ln c=-t_0-\\ln t_0$，代入得\n\\[\n\\psi(t_0)=\\frac{1}{t_0}-t_0-2\\ln t_0 .\n\\]\n令 $p(t)=\\frac{1}{t}-t-2\\ln t$（$t>0$），则 $p'(t)=-\\frac{1}{t^{2}}-1-\\frac{2}{t}<0$，故 $p$ 严格递减；又 $p(1)=1-1-0=0$，所以 $p(t)\\geqslant 0$ 当且仅当 $t\\leqslant 1$。\n\n于是 $\\log_a x\\leqslant a^x$ 恒成立 $\\iff$ $\\psi(t_0)\\geqslant 0$ $\\iff$ $t_0\\leqslant 1$。因 $t\\mapsto t\\mathrm{e}^{t}$ 在 $(0,+\\infty)$ 上单调递增，\n\\[\n\\frac{1}{c}=t_0\\mathrm{e}^{t_0}\\leqslant \\mathrm{e}\\iff c\\geqslant\\frac{1}{\\mathrm{e}} .\n\\]\n即 $\\ln a\\geqslant\\frac{1}{\\mathrm{e}}$，$a\\geqslant\\mathrm{e}^{1/\\mathrm{e}}$。\n\n验证端点：$a=\\mathrm{e}^{1/\\mathrm{e}}$ 时 $c=\\frac{1}{\\mathrm{e}}$，$t_0=1$，对应 $x=\\frac{t_0}{c}=\\mathrm{e}$，此时 $\\log_a\\mathrm{e}=\\frac{1}{c}=\\mathrm{e}$，$a^{\\mathrm{e}}=\\mathrm{e}$，两侧相等，等号确实可取。\n\n故 $a$ 的取值范围是 $[\\mathrm{e}^{1/\\mathrm{e}},+\\infty)$。", "stem": "若关于 $x$ 的不等式 $\\log_a x \\leqslant a^x$ 恒成立，则实数 $a$ 的取值范围是\\fillin[{$[e^{1/e},+\\infty)$}]", "type": "fill_in_blank"}
+\begin{question}
+若关于 $x$ 的不等式 $\log_a x \leqslant a^x$ 恒成立，则实数 $a$ 的取值范围是\fillin[{$[e^{1/e},+\infty)$}]
+\begin{solution}
+须对一切 $x>0$ 有 $\log_a x\leqslant a^x$，其中 $a>0$ 且 $a\neq 1$。
+
+若 $0<a<1$，则 $x\to0^+$ 时 $\log_a x\to+\infty$，而 $a^x\to1$，不等式不可能恒成立，故必须 $a>1$。
+
+设 $c=\ln a>0$，则 $\log_a x=\frac{\ln x}{c}$，$a^x=\mathrm{e}^{cx}$，原不等式等价于
+\[
+\ln x\leqslant c\,\mathrm{e}^{cx}\qquad (x>0).
+\]
+令 $t=cx$，即 $x=\frac{t}{c}$，$\ln x=\ln t-\ln c$，上式化为
+\[
+\psi(t)=c\,\mathrm{e}^{t}-\ln t+\ln c\geqslant 0\qquad (t>0).
+\]
+$\psi'(t)=c\,\mathrm{e}^{t}-\frac{1}{t}$，$\psi''(t)=c\,\mathrm{e}^{t}+\frac{1}{t^{2}}>0$，且 $t\to0^+$ 与 $t\to+\infty$ 时 $\psi(t)\to+\infty$，故 $\psi$ 在 $(0,+\infty)$ 上有唯一的最小值点 $t_0$，由 $\psi'(t_0)=0$ 得
+\[
+c\,\mathrm{e}^{t_0}=\frac{1}{t_0},\qquad t_0\,\mathrm{e}^{t_0}=\frac{1}{c},
+\]
+此时 $\psi$ 的最小值为
+\[
+\psi(t_0)=\frac{1}{t_0}-\ln t_0+\ln c .
+\]
+对 $t_0\mathrm{e}^{t_0}=\frac{1}{c}$ 取对数得 $\ln t_0+t_0=-\ln c$，即 $\ln c=-t_0-\ln t_0$，代入得
+\[
+\psi(t_0)=\frac{1}{t_0}-t_0-2\ln t_0 .
+\]
+令 $p(t)=\frac{1}{t}-t-2\ln t$（$t>0$），则 $p'(t)=-\frac{1}{t^{2}}-1-\frac{2}{t}<0$，故 $p$ 严格递减；又 $p(1)=1-1-0=0$，所以 $p(t)\geqslant 0$ 当且仅当 $t\leqslant 1$。
+
+于是 $\log_a x\leqslant a^x$ 恒成立 $\iff$ $\psi(t_0)\geqslant 0$ $\iff$ $t_0\leqslant 1$。因 $t\mapsto t\mathrm{e}^{t}$ 在 $(0,+\infty)$ 上单调递增，
+\[
+\frac{1}{c}=t_0\mathrm{e}^{t_0}\leqslant \mathrm{e}\iff c\geqslant\frac{1}{\mathrm{e}} .
+\]
+即 $\ln a\geqslant\frac{1}{\mathrm{e}}$，$a\geqslant\mathrm{e}^{1/\mathrm{e}}$。
+
+验证端点：$a=\mathrm{e}^{1/\mathrm{e}}$ 时 $c=\frac{1}{\mathrm{e}}$，$t_0=1$，对应 $x=\frac{t_0}{c}=\mathrm{e}$，此时 $\log_a\mathrm{e}=\frac{1}{c}=\mathrm{e}$，$a^{\mathrm{e}}=\mathrm{e}$，两侧相等，等号确实可取。
+
+故 $a$ 的取值范围是 $[\mathrm{e}^{1/\mathrm{e}},+\infty)$。
+\end{solution}
+\end{question}
+
+%% @q {"answer": "见解析", "figures": [], "hash": "e8c9ff107c39a20c", "key": "demo/示例卷#16", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "简单题", "difficulty_conf": 0.6, "difficulty_source": "model", "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/007#17", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [], "points": ["9.3.4", "9.2.6", "9.2.7"], "solution": "(1) 平均数 $\\bar y=\\frac{290}{5}=58$。由表 $y_3=36,y_4=92,y_5=142$，得 $y_1+y_2=20$，故 $y_1,y_2<58$，即 5 个数据中低于平均值的有 3 个（记为“成功”），高于的有 2 个。任取 2 个，$X$ 为其中低于平均值的个数，服从超几何分布：$P(X=0)=\\frac{\\binom30\\binom22}{\\binom52}=\\frac1{10}$，$P(X=1)=\\frac{\\binom31\\binom21}{\\binom52}=\\frac35$，$P(X=2)=\\frac{\\binom32\\binom20}{\\binom52}=\\frac3{10}$。期望 $E(X)=0\\cdot\\frac1{10}+1\\cdot\\frac35+2\\cdot\\frac3{10}=\\frac65$（亦可由 $E(X)=\\frac{2\\cdot3}{5}=\\frac65$）。\n(2) 模型② $\\hat y=5x^2+m$，令 $z=x^2$，则 $\\hat y=5z+m$，由最小二乘 $m=\\bar y-5\\bar z=58-5\\cdot11=3$，故 $\\hat y=5x^2+3$。残差平方和：模型① $RSS_1=(y_1+12)^2+(y_2-23)^2+681$；模型② $RSS_2=(y_1-8)^2+(y_2-23)^2+421$。二者之差 $RSS_1-RSS_2=40y_1+340>0$（因 $y_1>0$），故 $RSS_2<RSS_1$，模型②拟合效果更好。", "stem": "为了丰富农村儿童的课余文化生活，某基金会在农村儿童聚居地区捐建“悦读小屋”。自 2018 年以来，某村一直在组织开展“悦读小屋读书活动”。下表是对 2018 年以来近 5 年该村少年儿童的年借阅量的数据统计：\n\n\\begin{tabular}{|c|c|c|c|c|c|}\n\\hline\n年份 & 2018 & 2019 & 2020 & 2021 & 2022\\\\\n\\hline\n年份代码 $x$ & 1 & 2 & 3 & 4 & 5\\\\\n\\hline\n年借阅量 $y$ (册) & $y_1$ & $y_2$ & 36 & 92 & 142\\\\\n\\hline\n\\end{tabular}\n\n(参考数据: $\\sum_{i=1}^{5} y_i = 290$)\n\n\\begin{enumerate}\n\\item 在所统计的 5 个年借阅量中任选 2 个，记其中低于平均值的个数为 $X$，求 $X$ 的分布列和数学期望 $E(X)$；\n\\item 通过分析散点图的特征后，计划分别用 ① $\\hat{y} = 35x - 47$ 和 ② $\\hat{y} = 5x^2 + m$ 两种模型作为年借阅量 $y$ 关于年份代码 $x$ 的回归分析模型，请根据统计表的数据，求出模型 ② 的经验回归方程，并用残差平方和比较哪个模型拟合效果更好。\n\\end{enumerate}", "type": "detailed_answer"}
 \begin{problem}
-如图，抛物线 $y=x^{2}-2x-3$ 与 $x$ 轴交于 $A$、$B$ 两点（$A$ 在 $B$ 的左侧），与 $y$ 轴交于点 $C$。
+为了丰富农村儿童的课余文化生活，某基金会在农村儿童聚居地区捐建“悦读小屋”。自 2018 年以来，某村一直在组织开展“悦读小屋读书活动”。下表是对 2018 年以来近 5 年该村少年儿童的年借阅量的数据统计：
 
-(1) 求 $A$、$B$ 两点的坐标；
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+年份 & 2018 & 2019 & 2020 & 2021 & 2022\\
+\hline
+年份代码 $x$ & 1 & 2 & 3 & 4 & 5\\
+\hline
+年借阅量 $y$ (册) & $y_1$ & $y_2$ & 36 & 92 & 142\\
+\hline
+\end{tabular}
 
-(2) 求 $\triangle ABC$ 的面积。
+(参考数据: $\sum_{i=1}^{5} y_i = 290$)
 
-\includegraphics[width=0.5\linewidth]{7e044a2c74964f15.png}
+\begin{enumerate}
+\item 在所统计的 5 个年借阅量中任选 2 个，记其中低于平均值的个数为 $X$，求 $X$ 的分布列和数学期望 $E(X)$；
+\item 通过分析散点图的特征后，计划分别用 ① $\hat{y} = 35x - 47$ 和 ② $\hat{y} = 5x^2 + m$ 两种模型作为年借阅量 $y$ 关于年份代码 $x$ 的回归分析模型，请根据统计表的数据，求出模型 ② 的经验回归方程，并用残差平方和比较哪个模型拟合效果更好。
+\end{enumerate}
 \begin{solution}
 \textbf{答案：}见解析
-(1) 令 $y=0$，得 $x^{2}-2x-3=0$，解得 $x=-1$ 或 $x=3$，故 $A(-1,0)$、$B(3,0)$。
-
-(2) 令 $x=0$，得 $y=-3$，故 $C(0,-3)$。于是
-\[
-S_{\triangle ABC}=\dfrac{1}{2}|AB|\cdot|OC|=\dfrac{1}{2}\times 4\times 3=6 .
-\]
+(1) 平均数 $\bar y=\frac{290}{5}=58$。由表 $y_3=36,y_4=92,y_5=142$，得 $y_1+y_2=20$，故 $y_1,y_2<58$，即 5 个数据中低于平均值的有 3 个（记为“成功”），高于的有 2 个。任取 2 个，$X$ 为其中低于平均值的个数，服从超几何分布：$P(X=0)=\frac{\binom30\binom22}{\binom52}=\frac1{10}$，$P(X=1)=\frac{\binom31\binom21}{\binom52}=\frac35$，$P(X=2)=\frac{\binom32\binom20}{\binom52}=\frac3{10}$。期望 $E(X)=0\cdot\frac1{10}+1\cdot\frac35+2\cdot\frac3{10}=\frac65$（亦可由 $E(X)=\frac{2\cdot3}{5}=\frac65$）。
+(2) 模型② $\hat y=5x^2+m$，令 $z=x^2$，则 $\hat y=5z+m$，由最小二乘 $m=\bar y-5\bar z=58-5\cdot11=3$，故 $\hat y=5x^2+3$。残差平方和：模型① $RSS_1=(y_1+12)^2+(y_2-23)^2+681$；模型② $RSS_2=(y_1-8)^2+(y_2-23)^2+421$。二者之差 $RSS_1-RSS_2=40y_1+340>0$（因 $y_1>0$），故 $RSS_2<RSS_1$，模型②拟合效果更好。
 \end{solution}
 \end{problem}
 
+%% @q {"answer": "见解析", "figures": [], "hash": "a9cb6567d98c60df", "key": "demo/示例卷#17", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_conf": 0.769, "difficulty_source": "model", "fixed_at": "2026-10-31 01:18", "point_source": "llm", "region_confidence": "high", "region_scope": "single", "region_source": "auto", "renamed_from": "2026精选模拟题/P0001#35", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [], "points": ["5.4.1", "5.3.3", "5.2.1"], "solution": "(1) 椭圆 $C_2:\\dfrac{x^2}{a^2}+y^2=1$ 的焦点在 $x$ 轴上，故 $a^2>1$。设其半焦距为 $c_2$，则 $c_2^2=a^2-1$，左、右焦点为 $F_1(-c_2,0)$、$F_2(c_2,0)$。\n\n双曲线 $C_1:x^2-\\dfrac{y^2}{b^2}=1$ 经过这两点，把 $(\\pm c_2,0)$ 代入得 $c_2^2=1$，所以 $c_2=1$，$a^2=c_2^2+1=2$。于是\n\\[\nC_2:\\frac{x^2}{2}+y^2=1,\\qquad F_1(-1,0),\\quad F_2(1,0),\\qquad e_2=\\frac{c_2}{a}=\\frac{1}{\\sqrt{2}}=\\frac{\\sqrt{2}}{2}.\n\\]\n由 $e_1e_2=\\dfrac{\\sqrt{6}}{2}$ 得 $e_1=\\dfrac{\\sqrt{6}}{2}\\div\\dfrac{\\sqrt{2}}{2}=\\sqrt{3}$。双曲线 $C_1$ 的实半轴长为 $1$，故 $e_1^2=1+b^2=3$，得 $b^2=2$，即\n\\[\nC_1:x^2-\\frac{y^2}{2}=1 .\n\\]\n\n(2) 设 $P(x_0,y_0)$ 在第一象限，则 $x_0>1$，$y_0>0$，且 $x_0^2-\\dfrac{y_0^2}{2}=1$，即\n\\[\ny_0^2=2\\left(x_0^2-1\\right).\n\\]\n直线 $PF_1$、$PF_2$ 的斜率分别为\n\\[\ns_1=\\frac{y_0}{x_0+1},\\qquad s_2=\\frac{y_0}{x_0-1},\n\\]\n两者都存在且为正。因为 $F_1$、$F_2$ 都在椭圆 $C_2$ 内部，所以直线 $PF_1$ 与 $C_2$ 交于两点 $A$、$B$，直线 $PF_2$ 与 $C_2$ 交于两点 $C$、$D$。\n\n先求中点 $M$。设 $A(x_1,y_1)$、$B(x_2,y_2)$，$M(x_M,y_M)$，则\n\\[\n\\frac{x_1^2}{2}+y_1^2=1,\\qquad \\frac{x_2^2}{2}+y_2^2=1 .\n\\]\n两式相减，得\n\\[\n\\frac{(x_1+x_2)(x_1-x_2)}{2}+(y_1+y_2)(y_1-y_2)=0,\n\\]\n即 $x_M(x_1-x_2)+2y_M(y_1-y_2)=0$。因直线 $AB$ 的斜率为 $s_1$ 且 $x_1\\neq x_2$，两边同除以 $x_1-x_2$ 得中点弦关系\n\\[\nx_M+2s_1y_M=0 .\n\\]\n又 $M$ 在直线 $PF_1:y=s_1(x+1)$ 上，即 $y_M=s_1(x_M+1)$，代入上式得 $x_M=-2s_1^2(x_M+1)$，解得\n\\[\nx_M=-\\frac{2s_1^2}{1+2s_1^2},\\qquad y_M=s_1(x_M+1)=\\frac{s_1}{1+2s_1^2}.\n\\]\n同理，$N$ 满足 $x_N+2s_2y_N=0$ 且 $y_N=s_2(x_N-1)$，解得\n\\[\nx_N=\\frac{2s_2^2}{1+2s_2^2},\\qquad y_N=-\\frac{s_2}{1+2s_2^2}.\n\\]\n由 $x_M<0<x_N$ 知 $M\\neq N$，直线 $MN$ 的斜率为\n\\[\nk=\\frac{y_M-y_N}{x_M-x_N}\n=\\frac{s_1\\left(1+2s_2^2\\right)+s_2\\left(1+2s_1^2\\right)}{-2\\left[s_1^2\\left(1+2s_2^2\\right)+s_2^2\\left(1+2s_1^2\\right)\\right]}\n=-\\frac{(s_1+s_2)\\left(1+2s_1s_2\\right)}{2\\left(s_1^2+s_2^2+4s_1^2s_2^2\\right)} .\n\\]\n利用 $y_0^2=2\\left(x_0^2-1\\right)$，可得\n\\[\ns_1s_2=\\frac{y_0^2}{x_0^2-1}=2,\\qquad\ns_1+s_2=\\frac{y_0(x_0-1)+y_0(x_0+1)}{x_0^2-1}=\\frac{2x_0y_0}{x_0^2-1}=\\frac{4x_0}{y_0},\n\\]\n\\[\ns_1^2+s_2^2=(s_1+s_2)^2-2s_1s_2=\\frac{16x_0^2}{y_0^2}-4 .\n\\]\n代入 $k$ 的表达式：\n\\[\nk=-\\frac{\\dfrac{4x_0}{y_0}\\times(1+4)}{2\\left(\\dfrac{16x_0^2}{y_0^2}-4+16\\right)}\n=-\\frac{20x_0y_0}{32x_0^2+24y_0^2}\n=-\\frac{5x_0y_0}{8x_0^2+6y_0^2}\n=-\\frac{5x_0y_0}{20x_0^2-12},\n\\]\n最后一步用了 $6y_0^2=12x_0^2-12$。\n\n因为 $x_0>1$，$y_0>0$，$20x_0^2-12>8>0$，所以 $k<0$，求 $k$ 的最小值就是求 $|k|=\\dfrac{5x_0y_0}{20x_0^2-12}$ 的最大值。\n\n令 $u=\\dfrac{y_0}{x_0}$。由 $y_0^2=2x_0^2-2$ 得\n\\[\nu^2=2-\\frac{2}{x_0^2},\\qquad \\frac{1}{x_0^2}=\\frac{2-u^2}{2},\n\\]\n当 $x_0$ 取遍 $(1,+\\infty)$ 时 $u$ 取遍 $(0,\\sqrt{2})$。把 $|k|$ 的分子分母同除以 $x_0^2$，得\n\\[\n|k|=\\frac{5u}{20-\\dfrac{12}{x_0^2}}=\\frac{5u}{20-6\\left(2-u^2\\right)}=\\frac{5u}{8+6u^2}=\\frac{5}{6u+\\dfrac{8}{u}} .\n\\]\n由基本不等式，\n\\[\n6u+\\frac{8}{u}\\geqslant 2\\sqrt{6u\\cdot\\frac{8}{u}}=2\\sqrt{48}=8\\sqrt{3},\n\\]\n当且仅当 $6u=\\dfrac{8}{u}$，即 $u^2=\\dfrac{4}{3}$、$u=\\dfrac{2\\sqrt{3}}{3}\\in(0,\\sqrt{2})$ 时取等号。所以\n\\[\n|k|\\leqslant\\frac{5}{8\\sqrt{3}}=\\frac{5\\sqrt{3}}{24},\\qquad k\\geqslant-\\frac{5\\sqrt{3}}{24},\n\\]\n即 $k$ 的最小值为 $-\\dfrac{5\\sqrt{3}}{24}$，且能够取到。\n\n此时 $\\dfrac{y_0^2}{x_0^2}=\\dfrac{4}{3}$，与 $y_0^2=2x_0^2-2$ 联立得 $\\dfrac{2x_0^2-2}{x_0^2}=\\dfrac{4}{3}$，解得 $x_0^2=3$。因 $x_0>1$，取 $x_0=\\sqrt{3}$，从而 $y_0^2=2(3-1)=4$，$y_0=2$。\n\n所以当 $k$ 取最小值 $-\\dfrac{5\\sqrt{3}}{24}$ 时，点 $P$ 的坐标为 $(\\sqrt{3},2)$。", "stem": "已知双曲线 $C_1:x^{2}-\\frac{y^{2}}{b^{2}}=1$ 经过椭圆 $C_2:\\frac{x^{2}}{a^{2}}+y^{2}=1$ 的左、右焦点 $F_1,F_2$，设 $C_1,C_2$ 的离心率分别为 $e_1,e_2$，且 $e_1\\cdot e_2=\\frac{\\sqrt{6}}{2}$\n\\begin{enumerate}\n\\item 求 $C_1,C_2$ 的方程\n\\item 设 $P$ 为 $C_1$ 上一点，且在第一象限内，若直线 $PF_1$ 与 $C_2$ 交于 $A,B$ 两点，直线 $PF_2$ 与 $C_2$ 交于 $C,D$ 两点，设 $AB,CD$ 的中点分别为 $M,N$，记直线 $MN$ 的斜率为 $k$，当 $k$ 取最小值时，求点 $P$ 的坐标。\n\\end{enumerate}", "type": "detailed_answer"}
+\begin{problem}
+已知双曲线 $C_1:x^{2}-\frac{y^{2}}{b^{2}}=1$ 经过椭圆 $C_2:\frac{x^{2}}{a^{2}}+y^{2}=1$ 的左、右焦点 $F_1,F_2$，设 $C_1,C_2$ 的离心率分别为 $e_1,e_2$，且 $e_1\cdot e_2=\frac{\sqrt{6}}{2}$
+\begin{enumerate}
+\item 求 $C_1,C_2$ 的方程
+\item 设 $P$ 为 $C_1$ 上一点，且在第一象限内，若直线 $PF_1$ 与 $C_2$ 交于 $A,B$ 两点，直线 $PF_2$ 与 $C_2$ 交于 $C,D$ 两点，设 $AB,CD$ 的中点分别为 $M,N$，记直线 $MN$ 的斜率为 $k$，当 $k$ 取最小值时，求点 $P$ 的坐标。
+\end{enumerate}
+\begin{solution}
+\textbf{答案：}见解析
+(1) 椭圆 $C_2:\dfrac{x^2}{a^2}+y^2=1$ 的焦点在 $x$ 轴上，故 $a^2>1$。设其半焦距为 $c_2$，则 $c_2^2=a^2-1$，左、右焦点为 $F_1(-c_2,0)$、$F_2(c_2,0)$。
+
+双曲线 $C_1:x^2-\dfrac{y^2}{b^2}=1$ 经过这两点，把 $(\pm c_2,0)$ 代入得 $c_2^2=1$，所以 $c_2=1$，$a^2=c_2^2+1=2$。于是
+\[
+C_2:\frac{x^2}{2}+y^2=1,\qquad F_1(-1,0),\quad F_2(1,0),\qquad e_2=\frac{c_2}{a}=\frac{1}{\sqrt{2}}=\frac{\sqrt{2}}{2}.
+\]
+由 $e_1e_2=\dfrac{\sqrt{6}}{2}$ 得 $e_1=\dfrac{\sqrt{6}}{2}\div\dfrac{\sqrt{2}}{2}=\sqrt{3}$。双曲线 $C_1$ 的实半轴长为 $1$，故 $e_1^2=1+b^2=3$，得 $b^2=2$，即
+\[
+C_1:x^2-\frac{y^2}{2}=1 .
+\]
+
+(2) 设 $P(x_0,y_0)$ 在第一象限，则 $x_0>1$，$y_0>0$，且 $x_0^2-\dfrac{y_0^2}{2}=1$，即
+\[
+y_0^2=2\left(x_0^2-1\right).
+\]
+直线 $PF_1$、$PF_2$ 的斜率分别为
+\[
+s_1=\frac{y_0}{x_0+1},\qquad s_2=\frac{y_0}{x_0-1},
+\]
+两者都存在且为正。因为 $F_1$、$F_2$ 都在椭圆 $C_2$ 内部，所以直线 $PF_1$ 与 $C_2$ 交于两点 $A$、$B$，直线 $PF_2$ 与 $C_2$ 交于两点 $C$、$D$。
+
+先求中点 $M$。设 $A(x_1,y_1)$、$B(x_2,y_2)$，$M(x_M,y_M)$，则
+\[
+\frac{x_1^2}{2}+y_1^2=1,\qquad \frac{x_2^2}{2}+y_2^2=1 .
+\]
+两式相减，得
+\[
+\frac{(x_1+x_2)(x_1-x_2)}{2}+(y_1+y_2)(y_1-y_2)=0,
+\]
+即 $x_M(x_1-x_2)+2y_M(y_1-y_2)=0$。因直线 $AB$ 的斜率为 $s_1$ 且 $x_1\neq x_2$，两边同除以 $x_1-x_2$ 得中点弦关系
+\[
+x_M+2s_1y_M=0 .
+\]
+又 $M$ 在直线 $PF_1:y=s_1(x+1)$ 上，即 $y_M=s_1(x_M+1)$，代入上式得 $x_M=-2s_1^2(x_M+1)$，解得
+\[
+x_M=-\frac{2s_1^2}{1+2s_1^2},\qquad y_M=s_1(x_M+1)=\frac{s_1}{1+2s_1^2}.
+\]
+同理，$N$ 满足 $x_N+2s_2y_N=0$ 且 $y_N=s_2(x_N-1)$，解得
+\[
+x_N=\frac{2s_2^2}{1+2s_2^2},\qquad y_N=-\frac{s_2}{1+2s_2^2}.
+\]
+由 $x_M<0<x_N$ 知 $M\neq N$，直线 $MN$ 的斜率为
+\[
+k=\frac{y_M-y_N}{x_M-x_N}
+=\frac{s_1\left(1+2s_2^2\right)+s_2\left(1+2s_1^2\right)}{-2\left[s_1^2\left(1+2s_2^2\right)+s_2^2\left(1+2s_1^2\right)\right]}
+=-\frac{(s_1+s_2)\left(1+2s_1s_2\right)}{2\left(s_1^2+s_2^2+4s_1^2s_2^2\right)} .
+\]
+利用 $y_0^2=2\left(x_0^2-1\right)$，可得
+\[
+s_1s_2=\frac{y_0^2}{x_0^2-1}=2,\qquad
+s_1+s_2=\frac{y_0(x_0-1)+y_0(x_0+1)}{x_0^2-1}=\frac{2x_0y_0}{x_0^2-1}=\frac{4x_0}{y_0},
+\]
+\[
+s_1^2+s_2^2=(s_1+s_2)^2-2s_1s_2=\frac{16x_0^2}{y_0^2}-4 .
+\]
+代入 $k$ 的表达式：
+\[
+k=-\frac{\dfrac{4x_0}{y_0}\times(1+4)}{2\left(\dfrac{16x_0^2}{y_0^2}-4+16\right)}
+=-\frac{20x_0y_0}{32x_0^2+24y_0^2}
+=-\frac{5x_0y_0}{8x_0^2+6y_0^2}
+=-\frac{5x_0y_0}{20x_0^2-12},
+\]
+最后一步用了 $6y_0^2=12x_0^2-12$。
+
+因为 $x_0>1$，$y_0>0$，$20x_0^2-12>8>0$，所以 $k<0$，求 $k$ 的最小值就是求 $|k|=\dfrac{5x_0y_0}{20x_0^2-12}$ 的最大值。
+
+令 $u=\dfrac{y_0}{x_0}$。由 $y_0^2=2x_0^2-2$ 得
+\[
+u^2=2-\frac{2}{x_0^2},\qquad \frac{1}{x_0^2}=\frac{2-u^2}{2},
+\]
+当 $x_0$ 取遍 $(1,+\infty)$ 时 $u$ 取遍 $(0,\sqrt{2})$。把 $|k|$ 的分子分母同除以 $x_0^2$，得
+\[
+|k|=\frac{5u}{20-\dfrac{12}{x_0^2}}=\frac{5u}{20-6\left(2-u^2\right)}=\frac{5u}{8+6u^2}=\frac{5}{6u+\dfrac{8}{u}} .
+\]
+由基本不等式，
+\[
+6u+\frac{8}{u}\geqslant 2\sqrt{6u\cdot\frac{8}{u}}=2\sqrt{48}=8\sqrt{3},
+\]
+当且仅当 $6u=\dfrac{8}{u}$，即 $u^2=\dfrac{4}{3}$、$u=\dfrac{2\sqrt{3}}{3}\in(0,\sqrt{2})$ 时取等号。所以
+\[
+|k|\leqslant\frac{5}{8\sqrt{3}}=\frac{5\sqrt{3}}{24},\qquad k\geqslant-\frac{5\sqrt{3}}{24},
+\]
+即 $k$ 的最小值为 $-\dfrac{5\sqrt{3}}{24}$，且能够取到。
+
+此时 $\dfrac{y_0^2}{x_0^2}=\dfrac{4}{3}$，与 $y_0^2=2x_0^2-2$ 联立得 $\dfrac{2x_0^2-2}{x_0^2}=\dfrac{4}{3}$，解得 $x_0^2=3$。因 $x_0>1$，取 $x_0=\sqrt{3}$，从而 $y_0^2=2(3-1)=4$，$y_0=2$。
+
+所以当 $k$ 取最小值 $-\dfrac{5\sqrt{3}}{24}$ 时，点 $P$ 的坐标为 $(\sqrt{3},2)$。
+\end{solution}
+\end{problem}
+
+%% @q {"answer": "见解析", "figures": [], "hash": "041e9ebb5832eb44", "key": "demo/示例卷#18", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "难题", "difficulty_confidence": "high", "difficulty_override": true, "difficulty_source": "human", "paper_complete": true, "paper_group": "2026精选模拟题/第12卷", "paper_group_index": 12, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/062", "2027 高考数学考前模拟十二套卷_images/063", "2027 高考数学考前模拟十二套卷_images/064", "2027 高考数学考前模拟十二套卷_images/065", "2027 高考数学考前模拟十二套卷_images/066"], "paper_group_size": 18, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/065#18", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [], "points": ["6.3.4", "6.2.2", "6.2.6"], "solution": "(1) $g(x)=\\sin4x-\\sqrt3\\cos4x=2\\sin(4x-\\frac{\\pi}{3})$。由 $g(x)=\\frac43$ 得 $\\sin(4x-\\frac{\\pi}{3})=\\frac23$。令 $t=4x-\\frac{\\pi}{3}$，当 $x\\in[\\frac{\\pi}{6},\\frac{17\\pi}{24}]$ 时 $t\\in[\\frac{\\pi}{3},\\frac{5\\pi}{2}]$。在此区间内解为 $t_1=\\pi-\\arcsin\\frac23$，$t_2=2\\pi+\\arcsin\\frac23$（注意 $\\arcsin\\frac23<\\frac{\\pi}{3}$ 已不在区间内），故 $t_1+t_2=3\\pi$。对应 $x=\\frac{t+\\pi/3}{4}$，故 $x_1+x_2=\\frac{t_1+t_2+2\\cdot\\pi/3}{4}=\\frac{11\\pi}{12}$。\n\n(2) $h(x)=k\\sin2x-\\cos2x=\\sqrt{k^2+1}\\sin(2x-\\varphi)$，其中 $\\cos\\varphi=\\frac{k}{\\sqrt{k^2+1}}$，$\\sin\\varphi=\\frac{1}{\\sqrt{k^2+1}}$，即 $\\tan\\varphi=\\frac1k$。取最大值时 $2x_0=\\varphi+\\frac{\\pi}{2}+2n\\pi$，于是 $\\tan4x_0=\\tan(2\\varphi+\\pi)=\\tan2\\varphi=\\frac{2\\tan\\varphi}{1-\\tan^2\\varphi}=\\frac{2k}{k^2-1}$。当 $2<k<3$ 时该式关于 $k$ 单调递减，值域为 $(\\frac34,\\frac43)$。", "stem": "如果存在实数对 $(m,n)$ 使函数 $f(x)=m\\sin(\\omega x)+n\\cos(\\omega x)(x\\in R)$，那么我们就称函数 $f(x)$ 为实数对 $(m,n)$ 的“$\\omega$ 型正余弦生成函数”，实数对 $(m,n)$ 为函数 $f(x)$ 的“$\\omega$ 型正余弦生成数对”。\n\n\\begin{enumerate}\n\\item 已知函数 $y=g(x)$ 的“4 型正余弦生成数对”为 $(1,-\\sqrt{3})$，求方程 $g(x)=\\frac{4}{3}$ 在区间 $\\left[\\frac{\\pi}{6}, \\frac{17\\pi}{24}\\right]$ 上所有实根之和；\n\\item 若实数对 $(k,-1)$ 的“2 型正余弦生成函数” $y=h(x)$ 在 $x=x_{0}$ 处取最大值，其中 $2<k<3$，求 $\\tan 4x_{0}$ 的取值范围；\n\\end{enumerate}", "type": "detailed_answer"}
+\begin{problem}
+如果存在实数对 $(m,n)$ 使函数 $f(x)=m\sin(\omega x)+n\cos(\omega x)(x\in R)$，那么我们就称函数 $f(x)$ 为实数对 $(m,n)$ 的“$\omega$ 型正余弦生成函数”，实数对 $(m,n)$ 为函数 $f(x)$ 的“$\omega$ 型正余弦生成数对”。
+
+\begin{enumerate}
+\item 已知函数 $y=g(x)$ 的“4 型正余弦生成数对”为 $(1,-\sqrt{3})$，求方程 $g(x)=\frac{4}{3}$ 在区间 $\left[\frac{\pi}{6}, \frac{17\pi}{24}\right]$ 上所有实根之和；
+\item 若实数对 $(k,-1)$ 的“2 型正余弦生成函数” $y=h(x)$ 在 $x=x_{0}$ 处取最大值，其中 $2<k<3$，求 $\tan 4x_{0}$ 的取值范围；
+\end{enumerate}
+\begin{solution}
+\textbf{答案：}见解析
+(1) $g(x)=\sin4x-\sqrt3\cos4x=2\sin(4x-\frac{\pi}{3})$。由 $g(x)=\frac43$ 得 $\sin(4x-\frac{\pi}{3})=\frac23$。令 $t=4x-\frac{\pi}{3}$，当 $x\in[\frac{\pi}{6},\frac{17\pi}{24}]$ 时 $t\in[\frac{\pi}{3},\frac{5\pi}{2}]$。在此区间内解为 $t_1=\pi-\arcsin\frac23$，$t_2=2\pi+\arcsin\frac23$（注意 $\arcsin\frac23<\frac{\pi}{3}$ 已不在区间内），故 $t_1+t_2=3\pi$。对应 $x=\frac{t+\pi/3}{4}$，故 $x_1+x_2=\frac{t_1+t_2+2\cdot\pi/3}{4}=\frac{11\pi}{12}$。
+
+(2) $h(x)=k\sin2x-\cos2x=\sqrt{k^2+1}\sin(2x-\varphi)$，其中 $\cos\varphi=\frac{k}{\sqrt{k^2+1}}$，$\sin\varphi=\frac{1}{\sqrt{k^2+1}}$，即 $\tan\varphi=\frac1k$。取最大值时 $2x_0=\varphi+\frac{\pi}{2}+2n\pi$，于是 $\tan4x_0=\tan(2\varphi+\pi)=\tan2\varphi=\frac{2\tan\varphi}{1-\tan^2\varphi}=\frac{2k}{k^2-1}$。当 $2<k<3$ 时该式关于 $k$ 单调递减，值域为 $(\frac34,\frac43)$。
+\end{solution}
+\end{problem}
+
+%% @q {"answer": "见解析", "figures": [{"id": "a4b00e83db1fe462.png", "kind": "bitmap", "source": "inline", "tikz": "", "width": "0.42\\linewidth"}], "hash": "a5e11d8c2b39cb32", "key": "demo/示例卷#19", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "中档题", "difficulty_conf": 0.974, "difficulty_source": "model", "dup_of": "2026精选模拟题/006#15", "dup_score": 0.827, "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/006#15", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [], "points": ["10.3.4", "10.3.5", "10.2.3"], "solution": "(1) 正三棱柱中 $AM\\perp BC$（等边三角形中线），且侧棱垂直底面故 $CC_1\\perp AM$，于是 $AM\\perp$ 平面 $BCC_1B_1$，从而 $AM\\perp BC_1$。\n(2) 取 $B(-1,0,0),C(1,0,0),A(0,\\sqrt3,0)$，高 $h$，则 $C_1(1,0,h)$，平面 $BCC_1B_1$ 为 $y=0$。$\\overrightarrow{AC_1}=(1,-\\sqrt3,h)$，与平面的角 $\\theta$ 满足 $\\sin\\theta=\\frac{\\sqrt3}{\\sqrt{4+h^2}}=\\frac{\\sqrt2}{2}$，得 $h=\\sqrt2$。平面 $ABC_1$ 法向量可取 $(-√6,√2,2√3)$，点 $M(0,0,0)$ 到该平面距离 $d=\\frac{√6}{\\sqrt{6+2+12}}=\\frac{√6}{2√5}=\\frac{√{30}}{10}$。", "stem": "如图，在正三棱柱 $ABC-A_{1}B_{1}C_{1}$ 中，$M$ 是 $BC$ 的中点。\n\n\\begin{enumerate}\n\\item 证明：$AM \\perp BC_{1}$；\n\\item 若 $AB=2$，直线 $AC_{1}$ 与平面 $BCC_{1}B_{1}$ 的所成角为 $\\frac{\\pi}{4}$，求点 $M$ 到平面 $ABC_{1}$ 的距离。\n\\end{enumerate}\n\n\\includegraphics[width=0.42\\linewidth]{a4b00e83db1fe462.png}", "type": "detailed_answer"}
+\begin{problem}
+如图，在正三棱柱 $ABC-A_{1}B_{1}C_{1}$ 中，$M$ 是 $BC$ 的中点。
+
+\begin{enumerate}
+\item 证明：$AM \perp BC_{1}$；
+\item 若 $AB=2$，直线 $AC_{1}$ 与平面 $BCC_{1}B_{1}$ 的所成角为 $\frac{\pi}{4}$，求点 $M$ 到平面 $ABC_{1}$ 的距离。
+\end{enumerate}
+
+\includegraphics[width=0.42\linewidth]{a4b00e83db1fe462.png}
+\begin{solution}
+\textbf{答案：}见解析
+(1) 正三棱柱中 $AM\perp BC$（等边三角形中线），且侧棱垂直底面故 $CC_1\perp AM$，于是 $AM\perp$ 平面 $BCC_1B_1$，从而 $AM\perp BC_1$。
+(2) 取 $B(-1,0,0),C(1,0,0),A(0,\sqrt3,0)$，高 $h$，则 $C_1(1,0,h)$，平面 $BCC_1B_1$ 为 $y=0$。$\overrightarrow{AC_1}=(1,-\sqrt3,h)$，与平面的角 $\theta$ 满足 $\sin\theta=\frac{\sqrt3}{\sqrt{4+h^2}}=\frac{\sqrt2}{2}$，得 $h=\sqrt2$。平面 $ABC_1$ 法向量可取 $(-√6,√2,2√3)$，点 $M(0,0,0)$ 到该平面距离 $d=\frac{√6}{\sqrt{6+2+12}}=\frac{√6}{2√5}=\frac{√{30}}{10}$。
+\end{solution}
+\end{problem}
+
+%% @q {"answer": "见解析", "figures": [], "hash": "517d8e11ffb89a74", "key": "demo/示例卷#20", "meta": {"answer_source": "workbuddy", "book": "示例卷", "demo": true, "difficulty": "简单题", "difficulty_conf": 0.75, "difficulty_source": "model", "fixed_at": "2026-10-31 22:20", "paper_complete": true, "paper_group": "2026精选模拟题/第1卷", "paper_group_index": 1, "paper_group_pages": ["2027 高考数学考前模拟十二套卷_images/004", "2027 高考数学考前模拟十二套卷_images/005", "2027 高考数学考前模拟十二套卷_images/006", "2027 高考数学考前模拟十二套卷_images/007", "2027 高考数学考前模拟十二套卷_images/008"], "paper_group_size": 19, "paper_kind": "汇编", "point_source": "llm", "region_confidence": "low", "region_scope": "book", "region_source": "auto", "renamed_from": "2026精选模拟题/007#18", "solution_source": "workbuddy", "source_label": "示例卷"}, "options": [], "points": ["7.6.1", "7.3.1", "9.2.2"], "solution": "解：(1)设 $\\{a_{n}\\}$ 的公比为 $q$，且 $q>0$．\n依题意得 $\\begin{cases}2a_{1}q=a_{1}q^{2}-3a_{1}\\\\ a_{1}q^{2}-5a_{1}=12\\end{cases}$，解得 $\\begin{cases}q=3\\\\ a_{1}=3\\end{cases}$．\n所以 $a_{n}=3^{n}$，$S_{n}=\\frac{3(1-3^{n})}{1-3}=\\frac{3^{n+1}-3}{2}$．\n(2)记事件 $A=$“这三项按照原顺序排列依然构成等比数列”，则事件 $A$ 包含如下基本事件：\n$a_{1}$，$a_{2}$，$a_{3}$；$a_{2}$，$a_{3}$，$a_{4}$；……；$a_{8}$，$a_{9}$，$a_{10}$；\n$a_{1}$，$a_{3}$，$a_{5}$；$a_{2}$，$a_{4}$，$a_{6}$；……；$a_{6}$，$a_{8}$，$a_{10}$；\n$a_{1}$，$a_{4}$，$a_{7}$；$a_{2}$，$a_{5}$，$a_{8}$；$a_{3}$，$a_{6}$，$a_{9}$；$a_{4}$，$a_{7}$，$a_{10}$；\n$a_{1}$，$a_{5}$，$a_{9}$；$a_{2}$，$a_{6}$，$a_{10}$；\n则 $n(A)=8+6+4+2=20$，\n于是 $P(A)=\\frac{20}{\\mathrm{C}_{10}^{3}}=\\frac{20}{120}=\\frac{1}{6}$．\n(3)因为 $\\{a_{n}+b_{n}\\}$、$\\{a_{n}-b_{n}\\}$ 均为等比数列，\n所以 $\\begin{cases}(3^{n+1}+b_{n+1})^{2}=(3^{n}+b_{n})\\cdot(3^{n+2}+b_{n+2})\\\\ (3^{n+1}-b_{n+1})^{2}=(3^{n}-b_{n})\\cdot(3^{n+2}-b_{n+2})\\end{cases}$\n整理得 $\\begin{cases}2\\cdot 3^{n+1}\\cdot b_{n+1}+b_{n+1}^{2}=3^{n}b_{n+2}+3^{n+2}b_{n}+b_{n}b_{n+2}\\\\ -2\\cdot 3^{n+1}\\cdot b_{n+1}+b_{n+1}^{2}=-3^{n}b_{n+2}-3^{n+2}b_{n}+b_{n}b_{n+2}\\end{cases}$\n上述两式相加得 $b_{n+1}^{2}=b_{n}b_{n+2}$，\n又数列 $\\{b_{n}\\}$ 的每项均不为 0，所以 $\\{b_{n}\\}$ 为等比数列．", "stem": "已知正项等比数列 $\\{a_n\\}$ 满足 $a_3 - 5a_1 = 12$ 且 $-3a_1, a_2, a_3$ 成等差数列。\n\n\\begin{enumerate}\n\\item 求 $a_n$ 及其 $\\{a_n\\}$ 的前 $n$ 项和 $S_n$；\n\\item 从 $a_1, a_2, a_3, \\dots, a_{10}$ 中任取三项，求这三项按照原顺序排列依然构成等比数列的概率；\n\\item 设每项均不为 0 的数列 $\\{b_n\\}$ 满足 $\\{a_n + b_n\\}$、$\\{a_n - b_n\\}$ 均为等比数列。证明: $\\{b_n\\}$ 为等比数列。\n\\end{enumerate}", "type": "detailed_answer"}
+\begin{problem}
+已知正项等比数列 $\{a_n\}$ 满足 $a_3 - 5a_1 = 12$ 且 $-3a_1, a_2, a_3$ 成等差数列。
+
+\begin{enumerate}
+\item 求 $a_n$ 及其 $\{a_n\}$ 的前 $n$ 项和 $S_n$；
+\item 从 $a_1, a_2, a_3, \dots, a_{10}$ 中任取三项，求这三项按照原顺序排列依然构成等比数列的概率；
+\item 设每项均不为 0 的数列 $\{b_n\}$ 满足 $\{a_n + b_n\}$、$\{a_n - b_n\}$ 均为等比数列。证明: $\{b_n\}$ 为等比数列。
+\end{enumerate}
+\begin{solution}
+\textbf{答案：}见解析
+解：(1)设 $\{a_{n}\}$ 的公比为 $q$，且 $q>0$．
+依题意得 $\begin{cases}2a_{1}q=a_{1}q^{2}-3a_{1}\\ a_{1}q^{2}-5a_{1}=12\end{cases}$，解得 $\begin{cases}q=3\\ a_{1}=3\end{cases}$．
+所以 $a_{n}=3^{n}$，$S_{n}=\frac{3(1-3^{n})}{1-3}=\frac{3^{n+1}-3}{2}$．
+(2)记事件 $A=$“这三项按照原顺序排列依然构成等比数列”，则事件 $A$ 包含如下基本事件：
+$a_{1}$，$a_{2}$，$a_{3}$；$a_{2}$，$a_{3}$，$a_{4}$；……；$a_{8}$，$a_{9}$，$a_{10}$；
+$a_{1}$，$a_{3}$，$a_{5}$；$a_{2}$，$a_{4}$，$a_{6}$；……；$a_{6}$，$a_{8}$，$a_{10}$；
+$a_{1}$，$a_{4}$，$a_{7}$；$a_{2}$，$a_{5}$，$a_{8}$；$a_{3}$，$a_{6}$，$a_{9}$；$a_{4}$，$a_{7}$，$a_{10}$；
+$a_{1}$，$a_{5}$，$a_{9}$；$a_{2}$，$a_{6}$，$a_{10}$；
+则 $n(A)=8+6+4+2=20$，
+于是 $P(A)=\frac{20}{\mathrm{C}_{10}^{3}}=\frac{20}{120}=\frac{1}{6}$．
+(3)因为 $\{a_{n}+b_{n}\}$、$\{a_{n}-b_{n}\}$ 均为等比数列，
+所以 $\begin{cases}(3^{n+1}+b_{n+1})^{2}=(3^{n}+b_{n})\cdot(3^{n+2}+b_{n+2})\\ (3^{n+1}-b_{n+1})^{2}=(3^{n}-b_{n})\cdot(3^{n+2}-b_{n+2})\end{cases}$
+整理得 $\begin{cases}2\cdot 3^{n+1}\cdot b_{n+1}+b_{n+1}^{2}=3^{n}b_{n+2}+3^{n+2}b_{n}+b_{n}b_{n+2}\\ -2\cdot 3^{n+1}\cdot b_{n+1}+b_{n+1}^{2}=-3^{n}b_{n+2}-3^{n+2}b_{n}+b_{n}b_{n+2}\end{cases}$
+上述两式相加得 $b_{n+1}^{2}=b_{n}b_{n+2}$，
+又数列 $\{b_{n}\}$ 的每项均不为 0，所以 $\{b_{n}\}$ 为等比数列．
+\end{solution}
+\end{problem}

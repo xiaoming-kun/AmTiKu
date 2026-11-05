@@ -17,17 +17,6 @@ venv/
 回收站/
 图片/_transparent/
 待录入图片/
-_handout_build/
-
-# ══ Slidev 渲染工程（AmTiKu/slidev/）══
-# 依赖与产物可再生成；**package.json / package-lock.json / styles/index.css 要入库**
-slidev/node_modules/
-slidev/public/img/
-slidev/_handout_build/
-slidev/dist/
-slidev/_canvas_*
-# AI 通过 `slidev mcp` 直接编辑的 deck（内容，不是代码；`slidev mcp agent.md` 指向它）
-slidev/agent.md
 
 # ══ LaTeX 编译中间产物 ══
 # 组卷编译会在 试卷/ 下留 .aux/.log/.out；这些是**可重新生成**的，
@@ -74,12 +63,15 @@ slidev/agent.md
 回收站/
 待解/
 知识点.json
-# 知识链路（考点之间的先修关系）：和 知识点.json 一样是**数据**——
-# 它是照知识点库的 id 写的，单独入库只会得到一份引用不存在考点的悬空数据。
-知识链路.json
 归档快照.json
 # 内部发布清单（只在本地用；`git add -A` 会把没被忽略的文件一起扫进来，踩过）
 待发布清单.md
+
+# ══ 归档：一次性产物与清理清单（**含真题/导出物，不进 git**）══════════
+# 实测踩过：`归档/图片_未引用_*` 43MB 一直挂成未跟踪，一次 `git add -A`
+# 就会把几千张图扫进仓库。只保留 `发布文档/`（那 3 个文件本来就入库）。
+归档/*
+!归档/发布文档/
 
 # ══ 发布前摘掉的：含真题/内部信息，不进公开仓库 ══════════════════
 # ⚠️ .gitignore **不支持行尾注释**——注释必须独占一行，否则整行（含注释）都当成模式（踩过）
@@ -106,7 +98,6 @@ slidev/agent.md
 !demo数据/题目/
 !demo数据/图片/
 !demo数据/知识点.json
-!demo数据/知识链路.json
 
 # ══ 发布体系已整体移除（2026-10-02）══════════════════════════
 # 本项目已转为**私有题库，不再对外发布**，以下路径连同内容一并删除：

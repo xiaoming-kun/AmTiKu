@@ -13,15 +13,15 @@
  */
 import { useEffect } from 'react'
 import {
-  LayoutGrid, ScanLine, FolderTree, Sparkles,
-  ClipboardList, NotebookPen, Trash2, History, Route, BookOpen,
+  LayoutGrid, ScanLine, FolderTree, Sparkles, Activity,
+  ClipboardList, Trash2, History,
   PanelLeftClose, PanelLeft, Check,
 } from 'lucide-react'
 import Appearance from '@/app/Appearance'
 
 export type NavKey =
-  | 'workbench' | 'ingest' | 'points' | 'chain' | 'klist'
-  | 'export' | 'paper' | 'handout' | 'trash' | 'changes'
+  | 'workbench' | 'health' | 'ingest' | 'points'
+  | 'export' | 'paper' | 'trash' | 'changes'
 
 type Item = {
   key: NavKey
@@ -37,10 +37,10 @@ export const NAV_GROUPS: { label: string; items: Item[] }[] = [
     label: '工作流',
     items: [
       { key: 'workbench', label: '工作台', hint: 'W', icon: LayoutGrid, desc: '找题、挑题、组卷' },
-      { key: 'ingest', label: '录题', hint: 'I', icon: ScanLine, desc: '把 LaTeX 粘进来入库' },
+      { key: 'health', label: '题库体检', hint: 'H', icon: Activity, desc: '覆盖、难度、缺口和待补队列' },
+      { key: 'ingest', label: '手工录入', hint: 'I', icon: ScanLine,
+        desc: '粘贴 LaTeX / 拖 .tex 进来入库' },
       { key: 'points', label: '知识点', hint: 'K', icon: FolderTree, desc: '按章节考点筛题' },
-      { key: 'chain', label: '知识链路', hint: 'L', icon: Route, desc: '考点之间的先修关系图' },
-      { key: 'klist', label: '知识清单', hint: 'J', icon: BookOpen, desc: '按考点看讲解与分层选题' },
     ],
   },
   {
@@ -48,7 +48,6 @@ export const NAV_GROUPS: { label: string; items: Item[] }[] = [
     items: [
       { key: 'export', label: '智能组卷', hint: 'B', icon: Sparkles, desc: '随机组卷、考点覆盖卷、导出 PDF' },
       { key: 'paper', label: '试卷管理', hint: 'P', icon: ClipboardList, desc: '当前卷子与已存试卷' },
-      { key: 'handout', label: '讲义编辑', hint: 'M', icon: NotebookPen, desc: '画布自由排版，导出讲义' },
       { key: 'trash', label: '回收站', hint: 'R', icon: Trash2, desc: '删除的题都在这儿，可恢复' },
       { key: 'changes', label: '变更记录', hint: 'C', icon: History, desc: '每次批量改动的账本' },
     ],
@@ -57,11 +56,13 @@ export const NAV_GROUPS: { label: string; items: Item[] }[] = [
 
 /** 快捷键 → 导航项。App.tsx 单键监听用这张表。 */
 export const NAV_BY_HINT: Record<string, NavKey> = Object.fromEntries(
-  NAV_GROUPS.flatMap((g) => g.items.map((i) => [i.hint.toLowerCase(), i.key])),
+  NAV_GROUPS.flatMap((g) => g.items.filter((i) => i.hint)
+    .map((i) => [i.hint.toLowerCase(), i.key] as [string, NavKey])),
 )
 
-const W_OPEN = 208
-const W_SHUT = 60
+/** 展开 / 收起时的栏宽。**导出**：布局预算要知道它占多少（见 App 的 drawerMax）。 */
+export const NAV_W_OPEN = 208
+export const NAV_W_SHUT = 60
 
 export default function Nav({
   active, onPick, collapsed, onCollapsed, kind, onKind, kinds, total, pointsCovered, pointsTotal,
@@ -87,7 +88,7 @@ export default function Nav({
 
   return (
     <aside
-      style={{ width: collapsed ? W_SHUT : W_OPEN }}
+      style={{ width: collapsed ? NAV_W_SHUT : NAV_W_OPEN }}
       className="relative z-20 flex shrink-0 flex-col border-r border-border bg-surface
                  transition-[width] duration-200 ease-[cubic-bezier(.22,.61,.36,1)]"
     >
@@ -152,11 +153,13 @@ export default function Nav({
                       <>
                         <span className={`min-w-0 flex-1 truncate text-left text-[13px]
                                           ${on ? 'font-semibold' : 'font-medium'}`}>{it.label}</span>
-                        <kbd className={`shrink-0 rounded border px-1 text-[10px] font-medium leading-[15px]
-                                         ${on ? 'border-brand-line bg-surface/70 text-brand-ink'
-                                              : 'border-border bg-surface-2 text-ink-faint'}`}>
-                          {it.hint}
-                        </kbd>
+                        {it.hint && (
+                          <kbd className={`shrink-0 rounded border px-1 text-[10px] font-medium leading-[15px]
+                                           ${on ? 'border-brand-line bg-surface/70 text-brand-ink'
+                                                : 'border-border bg-surface-2 text-ink-faint'}`}>
+                            {it.hint}
+                          </kbd>
+                        )}
                       </>
                     )}
                   </button>

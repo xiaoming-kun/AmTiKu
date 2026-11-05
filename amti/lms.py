@@ -21,6 +21,9 @@ r"""LM Studio 的**按需启动**。
 """
 from __future__ import annotations
 
+import json
+import math
+import os
 import shutil
 import subprocess
 import time
@@ -71,6 +74,49 @@ VISION_MODEL = (Path.home() / ".lmstudio/models/PaddlePaddle"
 VISION_MMPROJ = (Path.home() / ".lmstudio/models/PaddlePaddle"
                  / "PaddleOCR-VL-1.6-GGUF/PaddleOCR-VL-1.6-GGUF-mmproj.gguf")
 
+#: 求解模型的 MLX 目录——**关思考的模板补丁打在它身上**。
+#:
+#: 为什么要在模型文件外面动手：LM Studio 的 MLX 引擎**不吃** `reasoning_effort`
+#: （实测 `none` / `low` / 顶层 `enable_thinking` / `chat_template_kwargs`
+#: 四种传法全部无效），而 Qwen3.8 默认 `xhigh` 思考，会把 `maxtok` 全烧在
+#: 推理上，正文一个字不返回、HTTP 还是 200——实测整卷 532 秒、0 题块、
+#: `finish=length`，一声不吭。模板那条只有 `enable_thinking is false`
+#: 才插空思考块，所以只能改文件本身。
+MLX_ROOT = Path.home() / ".lmstudio/models"
+MLX_MODEL_DIR = (Path.home() / ".lmstudio/models/lmstudio-community"
+                 / "Qwen3.8-27B-MLX-4bit")
+NO_THINK_LINE = "{%- set enable_thinking = false %}"
+
+
+def ensure_no_think() -> str:
+    r"""给**所有 MLX 模型**补一行「默认关思考」。幂等；没模型就什么都不做。
+
+    为什么要扫全目录：实测 9B 也一样默认思考，把 16000 的 maxtok 全烧在
+    reasoning 上、正文一个字不返回（守卫当场拦下）。补丁只认 27B 那个路径
+    的话，换个模型就又中招。判据是 `config.json` 里有 `quantization`
+    （MLX 的标记），GGUF 目录不动。
+    """
+    import json as _json
+    notes = []
+    for tpl in sorted(MLX_ROOT.glob("*/*/chat_template.jinja")):
+        cfg = tpl.parent / "config.json"
+        if not cfg.is_file():
+            continue
+        try:
+            if "quantization" not in _json.loads(cfg.read_text(encoding="utf-8")):
+                continue
+            text = tpl.read_text(encoding="utf-8")
+        except (OSError, ValueError):
+            continue
+        if text.lstrip().startswith(NO_THINK_LINE):
+            continue
+        try:
+            tpl.write_text(NO_THINK_LINE + "\n" + text, encoding="utf-8")
+            notes.append(tpl.parent.name)
+        except OSError:
+            pass
+    return ("给 %s 补上关思考的模板行" % "、".join(notes)) if notes else ""
+
 
 def up(timeout: float = 2.0) -> bool:
     """:1234 的接口通不通。"""
@@ -99,12 +145,80 @@ def loaded(timeout: float = 15.0) -> list[str]:
     return _parse_ps(out)
 
 
+def _run_quiet(cmd: list[str], timeout: float) -> None:
+    """跑一条命令，失败/超时都不吭声——调用方只关心"起没起来"。"""
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except Exception:                                         # noqa: BLE001
+        pass
+
+
+def _wait_up(seconds: float) -> bool:
+    t0 = time.time()
+    while time.time() - t0 < seconds:
+        if up():
+            return True
+        time.sleep(1.0)
+    return False
+
+
+def _clear_stale_lock() -> None:
+    r"""清掉 LM Studio 上次没退干净留下的 pid 锁。
+
+    实测：进程被 kill 之后 `llmster-pid.lock` 还在，双击图标只是闪一下就退，
+    看起来像"应用坏了"。
+    """
+    lock = Path.home() / ".lmstudio" / ".internal" / "llmster-pid.lock"
+    if not lock.is_file():
+        return
+    try:
+        pid = int("".join(c for c in lock.read_text() if c.isdigit()) or 0)
+    except Exception:                                         # noqa: BLE001
+        return
+    if pid:
+        try:
+            os.kill(pid, 0)          # 还活着就别动
+            return
+        except OSError:
+            pass
+    try:
+        lock.unlink()
+    except Exception:                                         # noqa: BLE001
+        pass
+
+
+def _launch_app() -> str:
+    r"""把 LM Studio **应用**拉起来。`lms` 只是它的命令行，应用没开时叫不动。
+
+    两条路：`open -a` 正常、Finder 兜底（实测用 `open` 有时不弹窗，
+    走 Finder 的 `open application file` 反而能起来）。
+    """
+    _run_quiet(["open", "-a", "LM Studio"], 20)
+    time.sleep(4)
+    if up():
+        return "open -a 启动成功"
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             'tell application "Finder" to open application file "LM Studio" '
+             'of folder "Applications" of startup disk'],
+            capture_output=True, text=True, timeout=25)
+        time.sleep(4)
+    except Exception:                                         # noqa: BLE001
+        pass
+    return "Finder 兜底已尝试"
+
+
 def ensure(model: str = "", *, key: str = "", wait: float = 120.0) -> tuple[bool, str]:
     r"""保证模型可用。**已经就绪就立刻返回，什么都不做。**
 
     返回 `(能不能用, 说明)`。调用方都在"用户点了按钮、正在等"的路径上，
     所以失败信息必须说清**卡在哪一步**——含糊的"失败"等于让人干等。
     """
+    note = ensure_no_think()   # 模板被重下载冲掉时补回来（幂等）
+    if note and model:
+        # 刚补的模板，已加载的实例还用着旧的 → 卸掉，让它重载时读到新的
+        _run_quiet(["lms", "unload", model], 60)
     t0 = time.time()
     started = False
 
@@ -113,18 +227,19 @@ def ensure(model: str = "", *, key: str = "", wait: float = 120.0) -> tuple[bool
             return False, ("没装 LM Studio 的命令行工具 `%s`。"
                            "装好后重试；或改用 llama.cpp（见本文件顶部）"
                            % SERVER_START[0])
-        try:
-            subprocess.run(SERVER_START, capture_output=True, timeout=60)
-        except Exception as e:
-            return False, "启动服务失败：%s: %s" % (type(e).__name__, e)
+        # ① 应用开着的话，`lms server start` 最快
+        _run_quiet(SERVER_START, 60)
+        ok = _wait_up(15)
+        if not ok:
+            # ② 应用根本没开：先把 App 拉起来（open → Finder 兜底），再起服务
+            note = _launch_app()
+            _clear_stale_lock()
+            _run_quiet(SERVER_START, 60)
+            ok = _wait_up(wait)
+            if not ok:
+                return False, ("LM Studio 应用起来了吗？:1234 等了 %.0f 秒仍不通（%s）"
+                               % (wait, note))
         started = True
-        deadline = time.time() + wait
-        while time.time() < deadline:
-            if up():
-                break
-            time.sleep(1.0)
-        else:
-            return False, "服务起了 %.0f 秒还没就绪（:1234 不通）" % wait
 
     if not model:
         return True, "接口就绪" + ("（刚启动，%.0f 秒）" % (time.time() - t0) if started else "")
@@ -148,6 +263,133 @@ def ensure(model: str = "", *, key: str = "", wait: float = 120.0) -> tuple[bool
 #: 读图服务是不是**本进程起的**。
 #: 只有自己起的才在退出时收掉 —— 你手动 `./启动.sh vision` 起的那个
 #: 也许正被别的脚本用着，不该跟着 web 服务一起死。
+#: 整卷结构化要的上下文。10 页数学卷约 1.5 万 token，再加 8k 输出，32k 起步。
+SOLVE_CTX = int(os.environ.get("AMTIKU_SOLVE_CTX", "32768"))
+
+#: 模型常驻时长（秒）。默认一周——省得隔夜重跑时第一发请求就 400。
+TTL_SECONDS = int(os.environ.get("AMTIKU_LLM_TTL", str(7 * 24 * 3600)))
+
+#: 已确认可用的 (模型, 上下文) → identifier。避免每次调用都问一遍 `lms ps`。
+_CTX_CACHE: dict[tuple[str, int], str] = {}
+
+
+def ps_json(timeout: float = 20.0) -> list[dict]:
+    r"""`lms ps --json` 的结构化结果。拿不到就返回空列表（调用方当"没加载"）。"""
+    if not shutil.which("lms"):
+        return []
+    try:
+        out = subprocess.run(["lms", "ps", "--json"], capture_output=True,
+                             text=True, timeout=timeout).stdout
+        return json.loads(out) if out.strip() else []
+    except Exception:                                         # noqa: BLE001
+        return []
+
+
+def unload(model: str, timeout: float = 120.0) -> tuple[bool, str]:
+    r"""卸载一个已加载的模型。返回 `(成功, 说明)`。
+
+    只给界面的「AI 模型状态」用：用户想立刻释放 9B/27B 内存时，
+    不用切终端敲 `lms unload`。**不主动加载**任何东西。
+    """
+    if not (model or "").strip():
+        return False, "没有指定模型"
+    if not shutil.which("lms"):
+        return False, "没装 LM Studio 命令行工具 `lms`"
+    try:
+        p = subprocess.run(["lms", "unload", model], capture_output=True,
+                           text=True, timeout=timeout)
+    except Exception as e:                                    # noqa: BLE001
+        return False, "卸载失败：%s" % e
+    out = ((p.stdout or "") + (p.stderr or "")).strip()
+    if p.returncode != 0:
+        return False, out or ("lms unload 退出码 %d" % p.returncode)
+    return True, out or "已卸载"
+
+
+def ensure_ctx(model: str, *, need_tokens: int = 0,
+               min_ctx: int = SOLVE_CTX, wait: float = 900.0,
+               ttl: int | None = None) -> tuple[bool, str, str]:
+    r"""确保 `model` 以**足够大的上下文**加载，返回 `(能不用, identifier, 说明)`。
+
+    ## 为什么要这个
+
+    整卷结构化是把**十几页文本一次性**塞给 27B。LM Studio 默认按 8192 起，
+    于是第一次跑必然 `HTTP 400`——报错原文还只说 "Bad Request"，看不出是
+    上下文不够。手工 `lms load -c 32768` 能解决，但**没人会记得每次都敲**，
+    而且加载出来的 identifier 会变成 `qwen/qwen3.8-27b:2`，
+    调用方拿旧名字还会 404。
+
+    所以把这三件事收成一处：
+
+      ① 上下文不够 → 自动卸载重载（按需要算，不低于 `min_ctx`）
+      ② 重载后 identifier 变了 → 把新名字返回给调用方
+      ③ 已经够了 → **什么都不做**，直接复用（不折腾正在跑的模型）
+
+    `need_tokens` 给的是"这份文档大约多少 token"，会按 1.15 倍余量、
+    向上取整到 4096 的倍数；再与 `min_ctx`、模型自身上限取合适值。
+    """
+    ok, why = ensure()
+    if not ok:
+        return False, "", why
+
+    want = min_ctx
+    if need_tokens > 0:
+        want = max(want, int(math.ceil((need_tokens + 8192) * 1.15 / 4096)) * 4096)
+
+    rows = ps_json()
+    hits = [r for r in rows
+            if r.get("modelKey") == model or model in (r.get("identifier") or "")]
+    ceiling = max([r.get("maxContextLength") or 0 for r in hits] or [0])
+    # **装不下就别发**：请求一旦超过上下文，服务端只会回一句 400 并把
+    # 三十万 token 的输入原样丢掉——整卷白扫、白等。这里当场说清楚，
+    # 顺带把「拆开再录」这个唯一可行的下一步写进错误里。
+    if ceiling and need_tokens > ceiling:
+        return False, "", (
+            "输入太长：约 %d token，超过 `%s` 的上下文上限 %d。"
+            "整本汇编/答案册不能一次结构化 —— 拆成单份试卷再录，"
+            "或换上下文更大的模型。" % (need_tokens, model, ceiling))
+    if ceiling and want > ceiling:
+        want = ceiling
+
+    key = (model, want)
+    if key in _CTX_CACHE:
+        return True, _CTX_CACHE[key], "复用已确认的 `%s`（%d）" % (_CTX_CACHE[key], want)
+
+    good = [r for r in hits if (r.get("contextLength") or 0) >= want]
+    if good:
+        ident = good[0]["identifier"]
+        _CTX_CACHE[key] = ident
+        return True, ident, "复用 `%s`（上下文 %d ≥ %d）" % (
+            ident, good[0].get("contextLength"), want)
+
+    # 不够 → 把同款模型的实例都卸掉，按目标上下文重载
+    for r in hits:
+        try:
+            subprocess.run(["lms", "unload", r["identifier"]],
+                           capture_output=True, timeout=120)
+        except Exception:                                     # noqa: BLE001
+            pass
+    try:
+        # `--ttl` 给一周：LM Studio 默认 60 分钟不用就卸载，隔一晚上再跑
+        # 第一发请求就会撞 400（模型正在 JIT 加载）。这里直接把它钉住。
+        subprocess.run(["lms", "load", model, "-c", str(want), "--gpu", "max",
+                        "--ttl", str(ttl or TTL_SECONDS), "-y"],
+                       capture_output=True, text=True, timeout=wait)
+    except Exception as e:                                    # noqa: BLE001
+        return False, "", "加载 `%s`（-c %d）失败：%s: %s" % (model, want, type(e).__name__, e)
+
+    rows = ps_json()
+    hits = [r for r in rows if r.get("modelKey") == model]
+    good = [r for r in hits if (r.get("contextLength") or 0) >= want]
+    if not good:
+        return False, "", ("`%s` 重载后仍没有 %d 上下文（现有：%s）。"
+                           "多半是内存不够，换个更小的模型或降 `AMTIKU_SOLVE_CTX`。"
+                           % (model, want, [r.get("contextLength") for r in hits]))
+    ident = good[0]["identifier"]
+    _CTX_CACHE[key] = ident
+    return True, ident, "已按 %d 上下文重载 → `%s`" % (want, ident)
+
+
 _VISION_SPAWNED = False
 
 
@@ -261,6 +503,26 @@ def _selftest() -> int:
     check("两个模型",
           _parse_ps("IDENTIFIER  MODEL\n"
                     "a           m1\nb           m2\n"), ["a", "b"])
+
+    # 上下文护栏：装不下的文档**不能发出去**（发了就是 400 + 整卷白跑）。
+    # 数字取自真实现场：260 页答案册估 32.5 万 token，模型上限 262144。
+    global ps_json, ensure
+    _old_ps, _old_ensure = ps_json, ensure
+    ps_json = lambda *_a, **_k: [{"modelKey": "m", "identifier": "m",
+                                  "contextLength": 32768,
+                                  "maxContextLength": 262144}]
+    ensure = lambda *_a, **_k: (True, "")
+    _CTX_CACHE.clear()
+    try:
+        ok, _ident, why = ensure_ctx("m", need_tokens=324935)
+        fits = ensure_ctx("m", need_tokens=12000)[0]
+    finally:
+        ps_json, ensure = _old_ps, _old_ensure
+        _CTX_CACHE.clear()
+    check("装不下（32.5 万 > 26.2 万）→ 不发请求", ok, False)
+    check("错误里写清上限和下一步", "262144" in why and "拆成单份" in why, True)
+    check("装得下 → 放行", fits, True)
+
     print("lms 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0
 
@@ -285,6 +547,19 @@ if __name__ == "__main__":
     import sys as _s
     if "--selftest" in _s.argv:
         raise SystemExit(_selftest())
+    _args = [a for a in _s.argv[1:] if not a.startswith("-")]
+    if _args:
+        # `python3 -m amti.lms 32768` → 确保模型按该上下文加载（启动脚本可先调它）
+        try:
+            _ctx = int(_args[0])
+        except ValueError:
+            _ctx = SOLVE_CTX
+        _ok, _ident, _msg = ensure_ctx(os.environ.get("AMTIKU_LLM", "qwen/qwen3.8-27b"),
+                                       min_ctx=_ctx)
+        print(("✓ " if _ok else "✗ ") + _msg)
+        if _ok:
+            print("identifier:", _ident)
+        raise SystemExit(0 if _ok else 1)
     # 无参数 = 显示现状（给 启动.sh status 用），**不启动**
     print(status())
     raise SystemExit(0)

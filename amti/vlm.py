@@ -25,15 +25,32 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import tempfile
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from . import lms
 
 #: 请求里 `"model"` 字段。llama.cpp 只加载了一个模型，这个值它不看，
 #: 但 OpenAI 协议要求有，所以给个能看懂的名字。
 MODEL = "paddleocr-vl"
+
+# ── 后备：PaddleOCR-VL 不在时，用已在跑的 27B（LM Studio :1234）读图 ──
+#
+# 2026-10-26 起读图模型（paddleocr-vl / dots.ocr）已从 LM Studio 删掉，
+# 全卷识别走 PaddleOCR-VL（见 `amti/paddle.py`）。单题截图这条路还留着，
+# 但模型没了就会报「找不到模型文件」——于是加一个后备：直接问 27B。
+# 它是多模态的，且已经为「结构化」常驻，不必再拉一个服务。
+SOLVE_API = lms.API + "/chat/completions"
+SOLVE_MODEL = "qwen/qwen3.8-27b"
+LATEX_PROMPT = (
+    "把图片里的题目转成 exam-zh LaTeX，只输出 LaTeX，不要解释：\n"
+    "题干用 \\begin{question}…\\end{question}，解析用 "
+    "\\begin{solution}…\\end{solution}；选择题选项用 "
+    "\\begin{choices}\\item … \\end{choices}；行内公式用 $…$。")
 
 #: paddleocr-vl 的提示词。**实测有效**：图片 → `A.240 B.280`、
 #: `\(y\uparrow\)`（公式以 LaTeX 出来）。
@@ -60,6 +77,27 @@ def _data_url(data: bytes, mime: str) -> str:
     return "data:%s;base64,%s" % (mime, base64.b64encode(data).decode())
 
 
+def _sniff(data: bytes) -> tuple[str, str]:
+    r"""字节头 → `(扩展名, MIME)`。
+
+    ⚠️ 原来一律当 PNG 发、临时文件也一律叫 `.png`——截图是 JPEG 时，
+    `paddle.parse_file` 按扩展名解码会报错，模型那边也会收到错误的 MIME。
+    按魔数认最省事，也不怕文件名骗人。
+    """
+    if data[:5] == b"%PDF-":
+        return "pdf", "application/pdf"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png", "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg", "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp", "image/webp"
+    if data[:2] in (b"II", b"MM"):
+        return "tif", "image/tiff"
+    # 认不出就当 PNG：让下游报"解不开"比在这里瞎猜强
+    return "png", "image/png"
+
+
 def pdf_pages(data: bytes, dpi: int = PDF_DPI) -> list[bytes]:
     r"""PDF 字节 → 每页一张 PNG。**只读，不落盘。**
 
@@ -74,20 +112,42 @@ def pdf_pages(data: bytes, dpi: int = PDF_DPI) -> list[bytes]:
     return out
 
 
-def _chat(images: list[bytes], prompt: str, model: str) -> tuple[str, dict]:
+def _chat(images: list[bytes], prompt: str, model: str,
+          api: str | None = None) -> tuple[str, dict]:
     r"""把若干张图 + 一句话发给模型，返回 `(正文, 元信息)`。
 
     多张图**一次请求**发出去（PDF 的每一页）——逐页分开请求会
     丢掉"跨页同一道题"的上下文，而卷子里跨页是常态。
+
+    ⚠️ 两条路要唤的不是同一个服务：
+      · 默认（`api=None`）走 llama.cpp :1235（paddleocr-vl）→ `ensure_vision()`
+      · 显式给 `api`（27B 顶班）走 LM Studio :1234 → `ensure_ctx()`
+    原来不分青红皂白调 `ensure_ctx(model)`，等于去 LM Studio 等一个
+    llama.cpp 上的模型；而且 `need_tokens=len(text)` 里的 `text` 根本不存在，
+    一调用就 `NameError`——这条路此前从没跑通过。
     """
+    mimes = [_sniff(im)[1] for im in images]
     content: list[dict] = [
-        {"type": "image_url", "image_url": {"url": _data_url(im, "image/png")}}
-        for im in images]
+        {"type": "image_url", "image_url": {"url": _data_url(im, mime)}}
+        for im, mime in zip(images, mimes)]
     content.append({"type": "text", "text": prompt})
-    payload = {"model": model, "messages": [{"role": "user", "content": content}],
+
+    ident = model
+    if api:
+        # 27B 顶班：图会占掉不少 token，按"每页约 1.5k + 提示词"估一个下限
+        need = len(prompt) // 2 + 1500 * len(images) + 8192
+        ok, ident, why = lms.ensure_ctx(model, need_tokens=need)
+        if not ok:
+            raise RuntimeError(why)
+    else:
+        ok, why = lms.ensure_vision()
+        if not ok:
+            raise RuntimeError(why)
+
+    payload = {"model": ident, "messages": [{"role": "user", "content": content}],
                "temperature": 0.1, "max_tokens": 8000}
     req = urllib.request.Request(
-        lms.VISION_API + "/chat/completions",
+        api or (lms.VISION_API + "/chat/completions"),
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"})
     t0 = time.time()
@@ -104,6 +164,45 @@ def _chat(images: list[bytes], prompt: str, model: str) -> tuple[str, dict]:
         "finish_reason": ch.get("finish_reason") or "",
         "prompt_tokens": usage.get("prompt_tokens"),
         "model": model,
+    }
+
+
+def _need_tokens(text: str) -> int:
+    r"""粗估中文/公式混排要多少 token（1 token ≈ 2 字符，另留 8k 输出）。
+
+    只用来决定"要不要按更大上下文重载"，估大一点没坏处（多占点内存），
+    估小了就是 HTTP 400 + 整卷白跑。
+    """
+    return len(text) // 2 + 8192
+
+
+def _chat_text(text: str, prompt: str, model: str) -> tuple[str, dict]:
+    r"""纯文本请求（不带图）。PaddleOCR 已经把字认完，这里只让 27B 改格式。"""
+    # **先按输入长度确保上下文**：整卷十几页文本直接塞给按 8192 起的模型，
+    # 换来的是一句看不出原因的 `HTTP 400 Bad Request`（`ensure_ctx` 顶上写着）。
+    ok, ident, why = lms.ensure_ctx(model, need_tokens=_need_tokens(text + prompt))
+    if not ok:
+        raise RuntimeError(why)
+    payload = {"model": ident,
+               "messages": [{"role": "user", "content": prompt + "\n\n" + text}],
+               "temperature": 0.1, "max_tokens": 8000}
+    req = urllib.request.Request(
+        SOLVE_API, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"})
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            d = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "ignore")
+        raise RuntimeError(_explain_http(e.code, body, model)) from None
+    ch = d["choices"][0]
+    return (ch["message"]["content"] or ""), {
+        "seconds": round(time.time() - t0, 1),
+        "finish_reason": ch.get("finish_reason") or "",
+        "prompt_tokens": (d.get("usage") or {}).get("prompt_tokens"),
+        "model": model,
+        "note": why,
     }
 
 
@@ -135,12 +234,69 @@ def extract(data: bytes, name: str = "upload.png", *,
     """
     if not data:
         raise ValueError("空文件")
-    is_pdf = data[:5] == b"%PDF-"
+    ext, _mime = _sniff(data)
+    is_pdf = ext == "pdf"
     warnings: list[str] = []
 
-    ok, why = lms.ensure_vision()
-    if not ok:
-        raise RuntimeError(why)
+    # ── 首选：PaddleOCR-VL 认字 → 27B 改格式 ─────────────────────────
+    # 识别只负责"把字读准"，格式改写交给 27B——两件事分开，出错好定位。
+    # ⚠️ 这条路**失败要能退回去**：原来 `parse_file` 或 27B 一出错就整条
+    # 请求 503，明明还有"27B 直接看图"这条后备。Paddle 没装好属于常态。
+    from . import paddle
+    ok_p, why_p = paddle.available()
+    if ok_p:
+        t0 = time.time()
+        tmpdir = Path(tempfile.mkdtemp(prefix="vlm-"))
+        try:
+            src = tmpdir / ("in." + ext)
+            src.write_bytes(data)
+            md = paddle.parse_file(src)
+            ok, why = lms.ensure(SOLVE_MODEL)
+            if not ok:
+                raise RuntimeError(why)
+            latex, meta = _chat_text(md, LATEX_PROMPT, SOLVE_MODEL)
+            if not (latex or "").strip():
+                raise RuntimeError("27B 没有返回任何 LaTeX（识别到的原文 %d 字）" % len(md))
+            pages = max(1, md.count("<!-- page "))
+            notes = ["PaddleOCR-VL 识别 → 27B 转 exam-zh LaTeX"]
+            if meta.get("note") and "已在内存" not in meta["note"]:
+                notes.append(str(meta["note"]))
+            if meta.get("finish_reason") == "length":
+                notes.append("输出被 max_tokens 截断：成品末尾可能缺解析——"
+                             "这一份请重点看最后一道题")
+            return {"latex": latex.strip(), "pages": pages, "name": name,
+                    "model": "paddleocr-vl+" + SOLVE_MODEL,
+                    "seconds": round(time.time() - t0, 1),
+                    "warnings": notes}
+        except Exception as e:                              # noqa: BLE001
+            # 落到后备之前先把原因留给人看，别让"为什么慢/为什么换了模型"成谜
+            warnings.append("PaddleOCR-VL 这条路没走通（%s），改用 27B 直接读图"
+                            % str(e)[:160])
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    chat_api = None
+    why = ""
+    if lms.VISION_MODEL.is_file():
+        ok, why = lms.ensure_vision()
+        if not ok:
+            # 视觉模型文件在、但运行时没配好 mmproj（LM Studio 的常见状态）。
+            # 这时**不要**把请求整条打回——27B 本来就是常驻的、也能看图，
+            # 换它顶一下，比让人对着 503 猜原因强。
+            warnings.append("读图模型起不来（%s），改用 `%s` 直接读图"
+                            % (str(why)[:160], SOLVE_MODEL))
+            ok, why = lms.ensure(SOLVE_MODEL)
+            if not ok:
+                raise RuntimeError(why)
+            chat_api, model, prompt = SOLVE_API, SOLVE_MODEL, LATEX_PROMPT
+    else:
+        # 读图模型不在了 → 用常驻的 27B 顶一下（提示词也换成"直接出 LaTeX"）
+        ok, why = lms.ensure(SOLVE_MODEL)
+        if not ok:
+            raise RuntimeError(why)
+        chat_api, model, prompt = SOLVE_API, SOLVE_MODEL, LATEX_PROMPT
+        warnings.append("没装 PaddleOCR-VL，改用 `%s` 读图" % SOLVE_MODEL)
     if why and "已在内存" not in why:
         warnings.append(why)          # 记下"这次起了多久"，方便判断是不是冷启动慢
 
@@ -157,7 +313,7 @@ def extract(data: bytes, name: str = "upload.png", *,
     for i, im in enumerate(images):
         if len(images) > 1:
             parts.append("%% ── 第 %d 页 ──" % (i + 1))
-        t, meta = _chat([im], prompt, model)
+        t, meta = _chat([im], prompt, model, api=chat_api)
         parts.append(t)
     text = "\n\n".join(parts)
 
@@ -222,6 +378,13 @@ def _selftest() -> int:
     except ImportError:
         print("  ⚠ 没装 PyMuPDF，跳过 PDF 栅格化检查")
 
+    # 图像字节要按魔数认，不能一律当 PNG：截图多是 JPEG，
+    # 临时文件叫 `.png` 会让 Paddle 按错格式解码、模型收到的 MIME 也是错的。
+    check("JPEG 字节认得出（不是当 PNG）", _sniff(b"\xff\xd8\xff\xe0abc")[:2]
+          == ("jpg", "image/jpeg"), _sniff(b"\xff\xd8\xff\xe0abc"))
+    check("PNG 字节认得出", _sniff(_png_bytes())[0] == "png")
+    check("PDF 字节认得出", _sniff(b"%PDF-1.7\n")[0] == "pdf")
+
     # 报错翻译：这句英文是**必须认出来**的，否则用户对着 400 猜
     msg = _explain_http(400, '{"error":{"message":"The provided messages contain '
                              'images, but ppocr does not support image inputs."}}',
@@ -234,6 +397,18 @@ def _selftest() -> int:
     # **一次只发一页**——这是正确性要求，不是性能取舍。
     # 要真调模型才测得到，所以把 `_chat` 换掉、数调用次数：
     # 两页的 PDF 必须产生**两次**请求，否则就是又在静默丢页。
+    #
+    # ⚠️ 这台机器上 PaddleOCR 是装好的，`extract()` 会走 Paddle→27B，
+    # 自检就变成"必须开模型"（而且真烧几分钟）。所以这里把 Paddle 这条路
+    # 明确关掉、把两个 `lms` 唤起函数换成假的，只测**逐页请求**的编排。
+    from . import paddle as _paddle
+    _old_avail, _old_parse = _paddle.available, _paddle.parse_file
+    _old_ensure, _old_ev = lms.ensure, lms.ensure_vision
+    _old_vm = lms.VISION_MODEL
+    _paddle.available = lambda: (False, "自检强制走后备")
+    lms.ensure = lambda *_a, **_k: (True, "自检")
+    lms.ensure_vision = lambda *_a, **_k: (True, "自检")
+    lms.VISION_MODEL = Path(__file__)          # 只要"文件存在"，让 _chat 走 :1235
     try:
         import fitz as _fitz
         d2 = _fitz.open()
@@ -246,7 +421,7 @@ def _selftest() -> int:
             seen: list[int] = []
             real = globals()["_chat"]
 
-            def fake(images, prompt, model):
+            def fake(images, prompt, model, api=None):
                 seen.append(len(images))
                 return "page-%d" % len(seen), {"prompt_tokens": 1}
             globals()["_chat"] = fake
@@ -266,8 +441,24 @@ def _selftest() -> int:
         r1, calls1 = count_calls(_png_bytes(), "one.png", dpi=100)
         check("单页图片 → 一次请求", calls1 == [1], calls1)
         check("单页时不插页码注释（多余）", "第 1 页" not in r1["latex"], r1["latex"][:60])
+
+        # Paddle 那条路**挂了要能退回去**，而不是把整条请求打死。
+        _paddle.available = lambda: (True, "自检假装装了")
+        def _boom(_p):
+            raise RuntimeError("假装 Paddle 崩了")
+        _paddle.parse_file = _boom
+        r3, calls3 = count_calls(_png_bytes(), "one.png", dpi=100)
+        check("Paddle 崩了 → 退回逐页读图，不 503",
+              calls3 == [1] and "page-1" in r3["latex"], (calls3, r3["latex"][:40]))
+        check("退回时把原因写进 warnings",
+              any("PaddleOCR-VL" in w and "没走通" in w for w in r3["warnings"]),
+              r3["warnings"])
     except ImportError:
         print("  ⚠ 没装 PyMuPDF，跳过逐页请求检查")
+    finally:
+        _paddle.available, _paddle.parse_file = _old_avail, _old_parse
+        lms.ensure, lms.ensure_vision = _old_ensure, _old_ev
+        lms.VISION_MODEL = _old_vm
 
     # 空文件必须拒，不能把空字节发出去
     try:

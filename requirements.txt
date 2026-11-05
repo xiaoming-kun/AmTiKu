@@ -1,0 +1,15 @@
+# AmTiKu 运行时依赖（打发布包 / CI 用这一份）
+#
+# 从 `amti/` 里真实的 import 归纳而来（PIL→pillow、fitz→pymupdf），
+# 版本锁在发布时的开发机状态，保证"我这儿能跑 → 用户那儿同版本"。
+#
+# 装：python3 -m pip install -r requirements.txt
+# 国内镜像（pypi.org 常常连不上，实测 000）：
+#   -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+fastapi==0.136.1
+uvicorn==0.47.0
+pydantic==2.13.4
+pillow==12.2.0
+numpy==2.4.6
+pymupdf==1.28.2

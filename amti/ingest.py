@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -125,6 +126,10 @@ def _auto_key(book: str, label: str, i: int, meta: dict,
 
     撞了就往后顺延（`#1` → `#2` → …），保证新题一定落得下。
     """
+    # 分隔符不能进 key：`/` 会被当成卷名/题号的分隔，`#` 会和 `#N` 混。
+    # 换成全角字符，key 安全、meta 里的原出处不改。
+    book = str(book or "").replace("/", "／").replace("#", "＃")
+    label = str(label or "").replace("/", "／").replace("#", "＃")
     taken = taken or set()
     n = i
     key = f"{book}/{label}#{n}"
@@ -134,35 +139,180 @@ def _auto_key(book: str, label: str, i: int, meta: dict,
     return key
 
 
+#: 手工录入的唯一策略口径。界面/接口/干跑/提交都从这里取默认值，
+#: 避免“这次改了 no-update，下次忘了 sync 到另一个入口”。
+#: 补旧题模式是**显式例外**：只补空考点/难度，不新增、不改正文。
+MANUAL_INGEST_POLICY = {
+    "allow_upgrade": False,       # 默认不显示/不执行升级
+    "skip_near": True,            # 整题相似超过阈值不录入
+    "near_threshold": dedup.NEAR_DUP_SCORE,
+    "update_existing": False,     # 默认已有题不更新
+    "backfill_update_existing": True,  # 补旧题模式例外
+}
+
+
+_TITLE_RE = re.compile(r"\\title\s*\{")
+
+
+def _read_braced(s: str, i: int) -> tuple[str | None, int]:
+    r"""读 `s[i] == '{'` 起的配对花括号内容；认嵌套与 `\{`。
+
+    返回 `(内容, 右括号之后的下标)`。配不平返回 `(None, i)`。
+    比正则可靠：标题里常有 `\textbf{…}`、`\thanks{…}` 甚至数学公式。
+    """
+    if i >= len(s) or s[i] != "{":
+        return None, i
+    depth, j, n = 0, i, len(s)
+    while j < n:
+        c = s[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[i + 1:j], j + 1
+        j += 1
+    return None, i
+
+
+def _clean_title(raw: str) -> str:
+    r"""标题去 LaTeX：保留字面字，去掉命令与分组。
+
+    `\thanks{…}` / `\footnote{…}` 整条删掉——它们是致谢/脚注，不是出处。
+    """
+    t = re.sub(r"\\(?:thanks|footnote)\s*\{[^{}]*\}", "", raw or "")
+    t = re.sub(r"\\[a-zA-Z]+\s*", "", t)
+    t = t.replace("\\\\", " ").replace("~", " ")
+    t = t.replace("\\&", "&").replace("\\%", "%").replace("\\_", "_")
+    t = t.replace("{", "").replace("}", "")
+    return re.sub(r"\s+", " ", t).strip(" .。；;，,")
+
+
+def extract_source_hint(text: str) -> dict:
+    r"""从源材料**前几行**认出处：`\title{…}` 或第一行像标题的纯文本。
+
+    返回 `{"title": str, "year": int | None}`。只做提示，**不决定元数据**——
+    界面把它填进「出处/年份」输入框，人还可以改。
+    """
+    text = text or ""
+    m0 = re.search(r"\\begin\{(?:question|problem)\}", text)
+    head = text[:m0.start()] if m0 else text
+    title = ""
+    m = _TITLE_RE.search(head)
+    if m:
+        raw, _ = _read_braced(head, m.end() - 1)
+        title = _clean_title(raw or "")
+    if not title:
+        # 没有 `\title`：前几行里第一条不以反斜杠/注释开头的短文本。
+        for line in head.splitlines():
+            line = line.strip()
+            if not line or line.startswith("%") or line.startswith("\\"):
+                continue
+            if len(line) <= 120:
+                title = _clean_title(line)
+                break
+    year = None
+    if title:
+        ys = [int(x) for x in re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", title)]
+        if ys:
+            year = max(ys)       # 「2024-2025 学年」取考试年 2025
+    return {"title": title, "year": year}
+
+
+def extract_source_titles(text: str) -> list[dict]:
+    r"""找出材料里**所有** `\title{…}`（不只看第一个），带回在原文里的位置。
+
+    一份材料粘多张卷子时，每张卷子前面的 `\title` 就是这道题该用的出处；
+    界面据此给每张卡预填「单题出处」，不用整批共用一个 label。
+    返回 `[{"title", "year", "pos"}]`，按出现顺序。
+    """
+    out: list[dict] = []
+    for m in _TITLE_RE.finditer(text or ""):
+        raw, _ = _read_braced(text, m.end() - 1)
+        title = _clean_title(raw or "")
+        if not title:
+            continue
+        ys = [int(x) for x in re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", title)]
+        out.append({"title": title, "year": max(ys) if ys else None, "pos": m.start()})
+    return out
+
+
+def _override_by_block(items: list[dict] | None) -> dict[int, dict]:
+    r"""把界面回传的逐题覆盖整理成 `{块下标: {…}}`。
+
+    块下标是 `split_source` 切出来的**原始顺序**（0 起），来自干跑里的
+    `items[].block`。这样即使中间有一块解析失败，后面的题也不会错位。
+    没带 `block` 的按数组位置兜底。
+    """
+    out: dict[int, dict] = {}
+    for pos, ov in enumerate(items or []):
+        if not isinstance(ov, dict):
+            continue
+        try:
+            b = int(ov.get("block", pos))
+        except (TypeError, ValueError):
+            b = pos
+        out[b] = ov
+    return out
+
+
+def _points_list(v) -> list[str]:
+    if v is None:
+        return []
+    if isinstance(v, str):
+        v = [x.strip() for x in v.split(",")]
+    return [str(x).strip() for x in v if str(x).strip()]
+
+
 def parse_source(text: str, *, book: str = "手工录入", label: str = "",
                  region: str = "", year: int | None = None,
                  source_no: str = "", points: list[str] | None = None,
-                 difficulty: str = "", qtype: str = "") -> dict:
-    r"""解析源材料。返回 `{questions, errors}`。**不写任何东西。**
+                 difficulty: str = "", qtype: str = "",
+                 items: list[dict] | None = None) -> dict:
+    r"""解析源材料。返回 `{questions, errors, blocks}`。**不写任何东西。**
 
     `points` / `difficulty` / `qtype` 是**在界面上填的**。源材料的 meta JSON
     里也能写这几样，但界面上明明白白选了就该以界面为准（界面覆盖源材料）。
     自动打标那条路（LLM 读题干定考点）只在两者都没有时才跑。
 
-    `qtype` 覆盖**从 LaTeX 推断出来的题型**（`\begin{problem}` → 解答题、
-    有选项 → 单选/多选、有 `\fillin` → 填空）。推断看的是正文形态，
-    绝大多数时候对；但录一道还没写答案的多选题时会被判成单选，
-    所以给人留一个明确指定的口子。选错了后端会当场拦下来
-    （填空题不该有选项、多选题答案至少两个字母…），干跑就能看见。
+    `items` 是**多题录入**的逐题覆盖（按 `block` 对到切出来的块）：
+        {"block": 0, "pick": true, "source_no": "1",
+         "points": ["8.5.1"], "difficulty": "简单题",
+         "qtype": "single_choice", "point_source": "llm",
+         "tag_model": "qwen3.5-9b-mlx", "tagged_at": "2026-..."}
+    逐题值优先于全局值；`points: []` / `difficulty: ""` 是**明确清空**，
+    不是「没填」。`pick=False` 由 `preview`/`commit` 在外面筛，解析照常进行
+    ——这样才能在界面上把没勾的卡片也显示出来。
+
+    `blocks` 与 `questions` 一一对应，记录每道题来自第几个题块（0 起）。
     """
     blocks = split_source(text)
     out: list[Question] = []
+    used_blocks: list[int] = []
+    used_texts: list[str] = []
+    used_titles: list[dict] = []
     errors: list[dict] = []
+    title_marks = extract_source_titles(text)
+    cursor = 0
+    ovs = _override_by_block(items)
     # 库里已有的 key。`_auto_key` 靠它避让，否则出处留空时
     # 每道新题都算出同一个 key，第二道起全被当成"重复"跳过。
-    taken = {x.key for _f, x in store.iter_questions()}
+    taken = {x.key for x in store.load_cached()}
 
     for i, blk in enumerate(blocks, 1):
         q = parse_question(blk)
         if q is None:
-            errors.append({"seq": i, "reason": "认不出题目环境",
-                           "snippet": blk[:80]})
+            errors.append({"seq": i, "block": i - 1,
+                           "reason": "认不出题目环境", "snippet": blk[:80]})
             continue
+        ov = ovs.get(i - 1, {})
+
+        def val(key: str, default):
+            """逐题覆盖：键在就用它的值（空串/空列表也算明确值）。"""
+            return ov[key] if key in ov and ov[key] is not None else default
 
         meta: dict = {}
         m = _META_RE.search(blk)
@@ -174,36 +324,112 @@ def parse_source(text: str, *, book: str = "手工录入", label: str = "",
                 if d.get("key"):
                     q.key = d["key"]
             except ValueError:
-                errors.append({"seq": i, "reason": "元数据行不是合法 JSON"})
-        # 优先级：**界面 > 源材料 meta > 从正文推断**
+                errors.append({"seq": i, "block": i - 1,
+                               "reason": "元数据行不是合法 JSON"})
+
+        qtype_i = val("qtype", qtype)
         if q.type and meta.get("type"):
             q.type = meta["type"]
-        if qtype:
-            q.type = qtype
+        if qtype_i:
+            q.type = qtype_i
 
-        meta.setdefault("book", book)
+        book_i = str(val("book", book) or "手工录入").strip()
+
+        def _inherit_str(key: str, default: str) -> str:
+            """逐题覆盖为空 = 沿用全局；非空才覆盖。"""
+            if key in ov:
+                v = str(ov.get(key) or "").strip()
+                if v:
+                    return v
+            return str(default or "").strip()
+
+        label_i = _inherit_str("label", label)
+        region_i = _inherit_str("region", region)
+        year_i = val("year", year)
+        if "year" in ov and not year_i:
+            year_i = year
+        source_no_i = val("source_no", source_no)
+
+        # 全局参数保持老口径（源材料 meta 优先），逐题明确值覆盖。
+        meta.setdefault("book", book_i)
         # **题号**：单题录入时记原卷的题号。试卷上标来源要用它，
         # 不能用 key 里的序号——那是新库自己的顺序，不是原卷题号。
-        if source_no:
-            meta.setdefault("source_no", source_no)
-        if label:
-            meta.setdefault("source_label", label)
-        if region:
-            meta.setdefault("region", region)
-        if year:
-            meta.setdefault("year", year)
-        # 界面上选的难度／考点**覆盖**源材料里的（用户明确选了就该算数）
-        if difficulty:
-            meta["difficulty"] = difficulty
-            meta["stars"] = {"简单题": 1, "中档题": 2, "难题": 3}.get(difficulty, 0)
-        if points:
-            q.points = list(points)
-            meta["point_source"] = "manual"
+        if source_no_i:
+            meta["source_no"] = source_no_i
+        elif "source_no" in ov:
+            meta.pop("source_no", None)
+        if label_i:
+            if "label" in ov:
+                meta["source_label"] = label_i
+            else:
+                meta.setdefault("source_label", label_i)
+        # 逐题 label 空串 = **沿用全局出处**，不是“明确清空”。
+        # 界面单卷时每张卡都带 label:''，早先这里 pop 掉了全局出处，
+        # 导致“左栏明明写了出处，入库题却没有出处”。
+        if region_i:
+            if "region" in ov:
+                meta["region"] = region_i
+            else:
+                meta.setdefault("region", region_i)
+        elif "region" in ov:
+            meta.pop("region", None)
+        if year_i:
+            meta["year"] = int(year_i)
+        # 逐题 year 空串 = 沿用全局年份；同上，不能 pop。
+        if "book" in ov:
+            meta["book"] = book_i
+
+        # 考点：逐题 > 全局 > 源材料 meta / 正文
+        pts_i = points
+        if "points" in ov:
+            pts_i = _points_list(ov.get("points"))
+        if pts_i is not None:
+            pts_i = [p for p in dict.fromkeys(_points_list(pts_i)) if kb.get(p)]
+            if pts_i:
+                q.points = list(pts_i)
+                meta["point_source"] = str(ov.get("point_source") or "manual")
+                for f in ("tag_model", "tagged_at"):
+                    if ov.get(f):
+                        meta[f] = str(ov.get(f))
+            elif "points" in ov:
+                q.points = []
+                meta.pop("point_source", None)
+
+        # 难度：逐题 > 全局。逐题空串 = 明确清空（让难度回落到主考点派生）。
+        diff_i = difficulty
+        if "difficulty" in ov:
+            diff_i = str(ov.get("difficulty") or "").strip()
+        if diff_i:
+            meta["difficulty"] = diff_i
+            meta["stars"] = {"简单题": 1, "中档题": 2, "难题": 3}.get(diff_i, 0)
+        elif "difficulty" in ov:
+            meta.pop("difficulty", None)
+            meta.pop("stars", None)
+
         q.meta = meta
+        if ov.get("key"):
+            q.key = str(ov["key"])
         if not q.key:
-            q.key = _auto_key(book, label or "录入", i, meta, taken)
+            q.key = _auto_key(book_i, label_i or "录入", i, meta, taken)
         taken.add(q.key)          # 同一批里也不许撞
+        # 这块题前面最近的一个 `\title`（多卷材料分段用）
+        pos = text.find(blk, cursor)
+        if pos < 0:
+            pos = cursor
+        cursor = pos + len(blk)
+        mark = None
+        for t in title_marks:
+            if t["pos"] < pos:
+                mark = t
+            else:
+                break
+        used_titles.append({
+            "title": (mark or {}).get("title", ""),
+            "year": (mark or {}).get("year"),
+        })
         out.append(q)
+        used_blocks.append(i - 1)
+        used_texts.append(blk)
 
     # 块内题号重复会导致 key 撞车——这必须在写之前发现
     seen: dict[str, int] = {}
@@ -211,9 +437,12 @@ def parse_source(text: str, *, book: str = "手工录入", label: str = "",
         seen[q.key] = seen.get(q.key, 0) + 1
     for k, n in seen.items():
         if n > 1:
-            errors.append({"seq": 0, "reason": f"key 重复 {k}（出现 {n} 次）"})
+            errors.append({"seq": 0, "block": None,
+                           "reason": f"key 重复 {k}（出现 {n} 次）"})
 
-    return {"questions": out, "errors": errors}
+    return {"questions": out, "errors": errors, "blocks": used_blocks,
+            "texts": used_texts, "block_titles": used_titles,
+            "source_titles": title_marks}
 
 
 def dup_fingerprint_of(item: dict) -> str:
@@ -224,7 +453,9 @@ def dup_fingerprint_of(item: dict) -> str:
     return "\x00".join(parts)
 
 
-def apply_merge_into(qs: list[Question], merge_into: dict | None) -> list[dict]:
+def apply_merge_into(qs: list[Question], merge_into: dict | None,
+                     *, blocks: list[int] | None = None,
+                     merge_blocks: dict | None = None) -> list[dict]:
     r"""把新题**并到指定的库内题**上——「这其实就是同一道题，别新建了」。
 
     判重是算出来的，算不准（相似度 0.8 的两道题可能真是两道）。
@@ -233,12 +464,19 @@ def apply_merge_into(qs: list[Question], merge_into: dict | None) -> list[dict]:
     而不是新写一份。
 
     `merge_into` 形如 `{新题现在的 key: 库内那道题的 key}`。
+    `merge_blocks` 形如 `{题块下标: 库内那道题的 key}`——多题录入界面用这个，
+    因为出处在解析后还能改，**key 会跟着变，块下标不会**。
     """
     done: list[dict] = []
-    if not merge_into:
+    if not merge_into and not merge_blocks:
         return done
-    for q in qs:
+    merge_into = merge_into or {}
+    merge_blocks = merge_blocks or {}
+    for i, q in enumerate(qs):
+        b = blocks[i] if blocks is not None and i < len(blocks) else None
         tgt = merge_into.get(q.key)
+        if not tgt and b is not None:
+            tgt = merge_blocks.get(b) or merge_blocks.get(str(b))
         if not tgt or tgt == q.key:
             continue
         # 原 key 记进 meta：将来能查"这道题是从哪条录入并过来的"
@@ -293,10 +531,10 @@ def merge_plan(old: Question, new: Question, *, force: bool = False) -> dict:
     """
     plan: dict = {}
 
-    if new.solution.strip() and not old.solution.strip():
+    if new.has_solution and not old.has_solution:
         plan["solution"] = new.solution
         plan["solution_why"] = "库里没有解析"
-    elif force and new.solution.strip() and new.solution.strip() != old.solution.strip():
+    elif force and new.has_solution and new.solution.strip() != old.solution.strip():
         plan["solution"] = new.solution
         plan["solution_why"] = "覆盖已有解析"
 
@@ -328,6 +566,30 @@ def merge_plan(old: Question, new: Question, *, force: bool = False) -> dict:
                 # 星级跟主考点走，不能留旧主考点那份
                 plan["stars"] = kb.stars_of(plan["points"][0])
 
+    return plan
+
+
+def backfill_plan(old: Question, new: Question) -> dict:
+    r"""补旧题计划：**只补旧题的空考点/空难度，不碰正文**。
+
+    和 `merge_plan` 的区别：
+
+    * 不返回 `solution`/`answer`/`stars`（难度除外）——补标签模式不能改正文；
+    * 考点只在**旧题一个考点都没有**时才补；旧题已有考点不合并、不覆盖；
+    * 难度只在旧题**没有考点、也没有人手填难度**时才补；
+      旧题有考点时难度是从主考点派生的，不算“缺”。
+
+    这样用户重录一份老卷子时，可以只把当年漏标的考点补上，
+    而不会把库里已经审过的答案/解析/考点动掉。
+    """
+    plan: dict = {}
+    if not old.points and new.points:
+        plan["points"] = list(new.points)
+    old_manual_diff = str(old.meta.get("difficulty") or "").strip()
+    new_diff = str(new.meta.get("difficulty") or "").strip()
+    if not old.points and not old_manual_diff and new_diff:
+        plan["difficulty"] = new_diff
+        plan["stars"] = {"简单题": 1, "中档题": 2, "难题": 3}.get(new_diff, 0)
     return plan
 
 
@@ -419,6 +681,15 @@ def dup_fingerprint(q: Question) -> str:
     return "\x00".join(parts)
 
 
+# 整栏只剩「【缺：…】」占位（外加标点与空白）＝**等于没有解析**。
+# 扫描端按 `设计/试卷扫描标准化规范-交给大模型.md` 的铁律，用 `【缺：…】` 标原件就没有的内容；
+# 而本闸原来只看「非空」，于是 2026-11-02 实测：南京一中卷 11 道选择题的解析栏
+# 全是 `【缺：原答案册未提供本题解析】`，闸门全绿放进来。
+# ⚠️ **只判「整栏都是占位」**：解析里夹一处 `【缺：…】`（个别符号读不清、推导仍完整）
+# 的题照收，别把能用的解析当垃圾拦掉。
+_GAP_ONLY_RE = re.compile(r"^(?:\s|　|[。．.，,、；;：:！!？?]|【缺[^】]*】)+$")
+
+
 def _incomplete_errors(qs) -> list[dict]:
     r"""**规矩（用户 2026-09-21 定）：没有答案或没有解析的题，一律不许入库。**
 
@@ -432,33 +703,153 @@ def _incomplete_errors(qs) -> list[dict]:
     out: list[dict] = []
     for q in qs:
         miss = []
+        sol = (q.solution or "").strip()
+        if not sol:
+            miss.append("解析")
+        elif _GAP_ONLY_RE.match(sol):
+            out.append({"seq": 0, "key": q.key,
+                        "reason": "解析整栏只有「【缺：…】」占位（原件就没有）——"
+                                  "按没有解析处理，不许入库；要走求解那条线补完再录"})
         if not (q.answer or "").strip():
             miss.append("答案")
-        if not (q.solution or "").strip():
-            miss.append("解析")
         if miss:
             out.append({"seq": 0, "key": q.key,
                         "reason": "缺%s——本库规矩：没有答案或没有解析的题目不许入库"
                                   % "与".join(miss)})
     return out
 
+# 「答案栏里混进解析」的标记：出现就不是一个答案值。
+_ANSWER_MIX = re.compile(
+    r"【解答】|【解析】|【锤子|数学解析"
+    r"|(?:^|[\n；;])\s*(?:解析|答案)\s*[:：]")
+# 卷首说明 / 节标题：不该出现在题干或解析里。
+_FRONT_MATTER = re.compile(r"考试结束后|答题卡.{0,8}一并交回|本试卷共")
+_SECTION_HEAD = re.compile(
+    r"^[一二三四五六七八九十]\s*[、.．]\s*"
+    r"(?:单项选择题|多选题|选择题|填空题|解答题|单选题)")
+
+
+def _flat(s: str) -> str:
+    """比对答案/作答位用：去掉排版噪音，但保留内容。"""
+    # `；`/`;` 只是多空答案的分隔符：作答位是逐个 `\fillin`，答案栏是拼起来的。
+    return re.sub(r"[\s${}\\;；]", "", s or "")
+
+
+def _structure_errors(qs) -> list[dict]:
+    r"""**结构自洽闸**：字段之间对不上，比"缺字段"更危险。
+
+    这些错进了库不会报错、也能渲染，但卷面/答案是错的（实测：44 道
+    逐题订正里绝大多数都属这一类）：
+
+      · `q.problems()` 的结构错（单选多答案、选项数不对、图没登记…）；
+      · 答案栏与题干里的 `\paren[…]` / `\fillin[…]` **对不上**；
+      · 答案栏抄了整条题干、或混进了解析/`答案：`标签；
+      · 解析栏抄了整条题干；
+      · 题干/解析里混进卷首说明或下一节的标题；
+      · 两个选项文字完全相同（OCR 串行）。
+
+    **宁可整批拒收，也不要让错答案进库。**
+    """
+    out: list[dict] = []
+    for q in qs:
+        why: list[str] = []
+        # 「选项内容为空」单独判：整组全空＝选项是图（`images` 之后会写
+        # `figure_missing`）；只空一两个才是 OCR 丢字。这里不提前拦整组图片题。
+        probs = [p for p in q.problems() if "内容为空" not in p]
+        why.extend("结构不合法：%s" % p for p in probs)
+
+        ans = (q.answer or "").strip()
+        sol = (q.solution or "").strip()
+        stem = (q.stem or "").strip()
+
+        if ans and _flat(ans) == _flat(stem):
+            why.append("答案栏抄了整条题干")
+        if sol and _flat(sol) == _flat(stem):
+            why.append("解析栏抄了整条题干")
+        if ans and _ANSWER_MIX.search(ans):
+            why.append("答案栏里混进了解析/「答案：」标签")
+
+        for line in (stem + "\n" + sol).splitlines():
+            line = line.strip()
+            if _SECTION_HEAD.match(line) or _FRONT_MATTER.search(line):
+                why.append("题干/解析里混进了卷首说明或节标题：%s" % line[:32])
+                break
+
+        texts = [o.text.strip() for o in q.options if o.text.strip()]
+        if len(texts) != len(set(texts)):
+            dup = next(t for t in texts if texts.count(t) > 1)
+            why.append("有两个选项文字完全相同：%s" % dup[:32])
+        empties = [o.label for o in q.options if not o.text.strip()]
+        if empties and len(empties) != len(q.options):
+            why.append("选项 %s 内容为空（不是整组图片选项）" % "、".join(empties))
+
+        # 答案栏 ↔ 作答位：这是"答案被挂到别的题上"最常见的形态。
+        from .latex_ir import fillin_answers, paren_answers
+        pa = paren_answers(q.stem)
+        fa = fillin_answers(q.stem)
+        if q.type in ("single_choice", "multi_choice") and pa:
+            if _flat(pa[-1]) != _flat(ans):
+                why.append("答案栏 %r 与作答位 \\paren[%s] 不一致"
+                           % (ans[:24], pa[-1][:24]))
+        elif q.type == "fill_in_blank" and fa:
+            if _flat("".join(fa)) != _flat(ans):
+                why.append("答案栏 %r 与作答位 \\fillin[…] 不一致" % ans[:24])
+        elif q.type == "detailed_answer" and pa:
+            why.append("解答题的题干里不该有 \\paren[…] 作答位")
+
+        if why:
+            out.append({"seq": 0, "key": q.key, "reason": "；".join(why)})
+    return out
+
+
+#: 查重索引缓存（按卷文件签名）。30k 道的整题指纹索引构建要几秒，
+#: 多题录入每次解析都重建就是白等；库一改签名就整体失效。
+_INDEX_CACHE: dict = {}
+_INDEX_LOCK = threading.Lock()
+
+
+def _dedup_index(sig, all_qs, *, full: bool = False):
+    r"""取（或构建）查重索引。`full=True` 索引整题指纹，用于 95% 规则。"""
+    key = "full" if full else "stem"
+    with _INDEX_LOCK:
+        c = _INDEX_CACHE
+        if c.get("sig") != sig:
+            c.clear()
+            c["sig"] = sig
+        if key not in c:
+            c[key] = (dedup.DedupIndex(
+                all_qs, text_of=dup_fingerprint, normalize=lambda x: x)
+                if full else dedup.DedupIndex(all_qs))
+        return c[key]
+
+
 def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str = "",
             region: str = "", year: int | None = None, source_no: str = "",
             points: list[str] | None = None, difficulty: str = "",
             qtype: str = "",
             update_force: bool = False, merge_into: dict | None = None,
-            dup_threshold: float = 0.80) -> dict:
+            merge_blocks: dict | None = None,
+            items: list[dict] | None = None,
+            allow_upgrade: bool = True,
+            skip_near: bool = False,
+            near_threshold: float = dedup.NEAR_DUP_SCORE,
+            dup_threshold: float = 0.80,
+            backfill: bool = False) -> dict:
     r"""干跑：解析 + 图片预检 + 查重 + 校验 + 影响面。**什么都不写。**
 
     `src_dirs` 是图片搜索目录（不传则用默认来源目录）。
     """
     parsed = parse_source(text, book=book, label=label, region=region, year=year,
                           source_no=source_no, points=points, difficulty=difficulty,
-                          qtype=qtype)
+                          qtype=qtype, items=items)
     qs: list[Question] = parsed["questions"]
+    q_blocks: list[int] = parsed.get("blocks") or list(range(len(qs)))
+    q_texts: list[str] = parsed.get("texts") or [""] * len(qs)
+    q_titles: list[dict] = parsed.get("block_titles") or [{}] * len(qs)
     errors = list(parsed["errors"])
     # 「并入这道」：先把 key 改过去，后面的查重/升级才认得出是同一道题
-    merged = apply_merge_into(qs, merge_into)
+    merged = apply_merge_into(qs, merge_into, blocks=q_blocks,
+                              merge_blocks=merge_blocks)
 
     # ══ 处理顺序：**验证 → 修改 → 复核**（顶层设计 §七点六，优先级最高）══
     #
@@ -486,6 +877,7 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
         for name in norm.normalize(q, norm.ENTRY):
             rule_log.setdefault(name, []).append(q.key)
     errors.extend(_incomplete_errors(qs))     # 缺答案/解析 → 硬错误（新规矩）
+    errors.extend(_structure_errors(qs))      # 字段自洽 → 硬错误（P0 闸）
 
     # ── ③ 图片入库（复制到 图片/ + 引用改成内容寻址名）──
     # **这一步必须在复核之前**：复核要检查最终的引用形态。
@@ -523,9 +915,27 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
 
     # ── ① 解析结果 ──
     items = []
-    for q in qs:
+    for q, b, blk, bt in zip(qs, q_blocks, q_texts, q_titles):
         items.append({
             "key": q.key,
+            # 原始题块：卡片上的「改源码」用。**保留原样**，不要拿渲染器重排，
+            # 否则用户改一个字会把整段格式/公式都重写一遍。
+            "tex": blk,
+            # 多题录入：界面用 `block` 把卡片对回源材料里的题块。
+            # 出处在解析后还能改（key 会变），块下标不会变。
+            "block": b,
+            "block_title": bt.get("title") or "",
+            "block_year": bt.get("year"),
+            "source_no": q.meta.get("source_no") or "",
+            "label": q.meta.get("source_label") or "",
+            "book": q.meta.get("book") or "",
+            "year": q.meta.get("year") or None,
+            "point_source": q.meta.get("point_source") or "",
+            "tag_model": q.meta.get("tag_model") or "",
+            "tagged_at": q.meta.get("tagged_at") or "",
+            # 只有**明确写在 meta 里**的难度才算人手定的；`q.difficulty`
+            # 可能是主考点派生的——界面要能分清，否则改考点后难度不跟着变。
+            "manual_difficulty": q.meta.get("difficulty") or "",
             "type": q.type,
             "type_label": QTYPE_LABEL.get(q.type, q.type),
             "stem": q.stem,
@@ -542,14 +952,28 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
             "difficulty": q.difficulty,
             "stars": q.stars,
             "figures": [f.id for f in q.figures],
+            # 干跑还没复制到 `图片/`，但原图在来源目录里；给卡片一个预览入口。
+            "figure_previews": {
+                f.id: fig_report.get(f.id, {}).get("from", "")
+                for f in q.figures
+                if fig_report.get(f.id, {}).get("status") == "found"
+                and fig_report.get(f.id, {}).get("from")
+            },
             "flags": {
                 "答案": bool(q.answer.strip()),
-                "解析": bool(q.solution.strip()),
-                "图": any(f.kind == "bitmap" for f in q.figures),
+                "解析": q.has_solution,
+                "图": q.figure_ok,
                 "标签": bool(q.points),
                 "小问": "\\begin{enumerate}" in q.stem,
             },
             "problems": q.problems(),
+            # 逐题诊断：界面上把**不能入库的原因**直接挂在卡上，而不是
+            # 只在右栏底部汇总一句"3 道有问题"（人还得自己找是哪三道）。
+            "errors": [],
+            "spec_before": [],
+            "spec_after": [],
+            "missing_images": [],
+            "blocking": [],
         })
 
     # ── 图片缺失清单（③ 的结果）──
@@ -569,19 +993,29 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
     # 指纹 → 库里那道。**另一份卷子上的同一道题，key 必然不同**，
     # 只按 key 找「库里那份」，重复题的考点/难度就永远对不上账。
     by_fp: dict[str, Question] = {}
-    for _f, q in store.iter_questions():
+    # **一趟扫完**：这里原先是 `iter_questions()` + `load_all()` 两趟，
+    # 每趟都把 29k 道重新解析一遍；多题录入每粘一份卷子都跑一次 preview，
+    # 两趟就是十秒级的白等。`load_cached()` 按卷文件签名缓存，写库后自动失效，
+    # 读的仍是同一份真相。
+    all_qs = store.load_cached()
+    sig = store.volume_signature()
+    idx = _dedup_index(sig, all_qs)
+    for q in all_qs:
         fp = dup_fingerprint(q)
         existing.add(fp)
         by_fp.setdefault(fp, q)
         existing_keys.add(q.key)
         by_key[q.key] = q
-    idx = dedup.DedupIndex(store.load_all())
+    # 先判精确重复；**全是指纹完全相同的批次不需要整题索引**（省几秒）。
     for it in items:
         # ⚠️ **判据必须和 `commit` 一致**：key 相同 **或** 指纹相同。
         # 只看指纹会漏掉「同一个 key 但内容改了」——干跑说"新题"、
         # 入库却判"已在库"，两边说的不是一回事。
         it["same_key"] = (it["key"] in existing_keys
                           or dup_fingerprint_of(it) in existing)
+    need_full = skip_near and any(not it["same_key"] for it in items)
+    idx_full = _dedup_index(sig, all_qs, full=True) if need_full else None
+    for it in items:
         # ⚠️ **排除它自己**。库里已经有这个 key 时（重录 / 升级），不排除就会
         # 看到"这道题和它自己重复"——纯粹是噪音，还会让人以为库里另有一道。
         hits = idx.find(it["stem"], threshold=dup_threshold, top=3,
@@ -595,22 +1029,67 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
                 h["stem"] = src.stem
                 h["type_label"] = QTYPE_LABEL.get(src.type, src.type)
                 h["has_answer"] = bool(src.answer.strip())
-                h["has_solution"] = bool(src.solution.strip())
+                h["has_solution"] = src.has_solution
                 h["point_titles"] = src.point_titles
                 h["difficulty"] = src.difficulty
+                # 给人工对比用：库内答案/解析截断即可，避免整份卷子 payload 过大。
+                h["answer_preview"] = (src.answer or "")[:300]
+                h["solution_preview"] = (src.solution or "")[:600]
+                # 题干相似度是**粗筛**；这里再算一遍整题（题干+选项）相似度，
+                # 95% 阈值按这个口径判，避免"题干一样、选项不同"被误杀。
+                h["score_full"] = round(dedup.similarity(
+                    dup_fingerprint_of(it), dup_fingerprint(src)), 3)
+        hits.sort(key=lambda h: (-(h.get("score_full") or 0),
+                                 -(h.get("score") or 0)))
         it["dups"] = hits
+        it["near_dup"] = False
+        it["near_score"] = 0.0
+        it["near_key"] = ""
+        if skip_near and not it["same_key"] and idx_full is not None:
+            # 按用户 2026-11-03 口径：整题相似 >95% 就跳过，**不区分变式**。
+            nh, _ncomplete = idx_full.find_norm(
+                dup_fingerprint_of(it), threshold=near_threshold,
+                top=1, exclude={it["key"]})
+            if nh and nh[0]["score"] > near_threshold:
+                best = nh[0]
+                full = float(best["score"])
+                it["near_dup"] = True
+                it["near_score"] = round(full, 3)
+                it["near_key"] = best["key"]
+                src = by_key.get(best["key"])
+                if src is not None:
+                    disp = dict(best)
+                    disp.update({
+                        "score_full": round(full, 3), "stem": src.stem,
+                        "type_label": QTYPE_LABEL.get(src.type, src.type),
+                        "has_answer": bool(src.answer.strip()),
+                        "has_solution": src.has_solution,
+                        "point_titles": src.point_titles,
+                        "difficulty": src.difficulty,
+                        "answer_preview": (src.answer or "")[:300],
+                        "solution_preview": (src.solution or "")[:600],
+                        "verdict": "高度相似",
+                    })
+                    it["dups"] = [disp] + [x for x in it["dups"]
+                                           if x["key"] != best["key"]]
         # **升级判定**：这道题库里已经有了，但手里这份更全？
         # 干跑就要说清楚"会升级还是会被跳过"，否则点下确认才发现白录了。
         old = by_key.get(it["key"])
         if old is None:
             old = by_fp.get(dup_fingerprint_of(it))
         it["dup_key"] = old.key if old is not None else ""
+        it["old_points"] = list(old.points) if old is not None else []
+        it["old_difficulty"] = str(old.meta.get("difficulty") or "") if old is not None else ""
         if old is not None:
-            plan = merge_plan(old, _as_question(it), force=update_force)
-            if old.key != it["key"]:
-                # 别处的同一道题（key 不同）：正文一个字都不动，只对考点/难度
-                plan = {k: v for k, v in plan.items()
-                        if k in ("points", "difficulty", "stars")}
+            if backfill:
+                # 补旧题：**只补空考点/空难度**，不碰答案/解析，不合并已有考点。
+                plan = backfill_plan(old, _as_question(it))
+            else:
+                plan = merge_plan(old, _as_question(it), force=update_force)
+                if old.key != it["key"]:
+                    # 别处的同一道题（key 不同）：正文一个字都不动，只对考点/难度
+                    plan = {k: v for k, v in plan.items()
+                            if k in ("points", "difficulty", "stars")}
             it["update"] = {k: v for k, v in plan.items()
                             if k not in ("solution",)}   # 正文太long，只报字段名
             it["update_fields"] = [k for k in plan
@@ -619,14 +1098,76 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
             it["update"] = {}
             it["update_fields"] = []
 
-    # `merge` = **题目完全相同（含选项）所以不会入库**；
-    # 这正是 `commit` 的跳过判据，口径必须一致。
-    # 内容相似（但不完全相同）的算 `suspect`，只是提示，照样入库。
-    n_merge = sum(1 for it in items if it["same_key"])
+    # 手工录入规则：库里已有同题一律**跳过，不新增也不更新**。
+    # 预览也不该显示"将升级"（否则人以为提交会补字段）。
+    if not allow_upgrade:
+        for it in items:
+            it["update"] = {}
+            it["update_fields"] = []
+    # 高度相似（>95%）的也不显示升级：它同样要整题跳过。
+    for it in items:
+        if it.get("near_dup"):
+            it["update"] = {}
+            it["update_fields"] = []
+
+    # `merge` = **题目完全相同（含选项）**；`near` = 整题相似 >95%（非变式），
+    # 两者在手工录入里都**不入库、不更新**。`suspect` 只是提示。
     n_upgrade = sum(1 for it in items if it["update_fields"])
-    n_new = len(items) - n_merge
+    if backfill:
+        # 补旧题模式：精确重复可更新；新题/近似重复都不新增。
+        n_merge = 0
+        n_near = 0
+        n_new = 0
+        n_skip = len(items) - n_upgrade
+    else:
+        n_merge = sum(1 for it in items if it["same_key"])
+        n_near = sum(1 for it in items if it.get("near_dup"))
+        n_new = len(items) - n_merge - n_near
+        n_skip = n_merge + n_near
     n_suspect = sum(1 for it in items
                     if it["dups"] and it["dups"][0]["verdict"] == "疑似")
+
+    # ── 逐题诊断：把错误/规范/缺图挂到对应卡片上 ──
+    #
+    # 汇总一句"3 道有问题"没用——人还得自己逐张卡找是哪三道。
+    # 这里一次挂好，界面直接显示"这道为什么不能入库"。
+    item_by_key = {it["key"]: it for it in items}
+    item_by_block = {it["block"]: it for it in items}
+    for e in errors:
+        it = item_by_key.get(e.get("key") or "")
+        if it is None and e.get("block") is not None:
+            it = item_by_block.get(e["block"])
+        if it is not None:
+            it["errors"].append(e)
+    for b in before:
+        it = item_by_key.get(b.get("key") or "")
+        if it is not None:
+            it["spec_before"].append(b)
+    for b in after:
+        it = item_by_key.get(b.get("key") or "")
+        if it is not None:
+            it["spec_after"].append(b)
+    for k, name in img_rep["missing"]:
+        it = item_by_key.get(k)
+        if it is not None:
+            it["missing_images"].append(name)
+
+    for it in items:
+        why: list[str] = []
+        if not it["flags"]["答案"]:
+            why.append("缺答案")
+        if not it["flags"]["解析"]:
+            why.append("缺解析")
+        # commit 会因为这些整批拒绝：只把**带 key 的硬错误**算进来。
+        # 坏元数据行（block 有、key 没有）只提示，不拦——正文本身还能录。
+        for e in it["errors"]:
+            if e.get("key") and e.get("reason"):
+                why.append(str(e["reason"]))
+        for v in it["spec_after"]:
+            why.append("规范复核：%s" % v.get("why", ""))
+        for name in it["missing_images"]:
+            why.append("缺图：%s" % name)
+        it["blocking"] = list(dict.fromkeys(why))
 
     # ── ④ 类型与字段校验 ──
     from collections import Counter
@@ -638,10 +1179,17 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
         "count": len(qs),
         "items": items,
         "errors": errors,
+        # 前几行里的标题/年份：界面用来预填「出处/年份」，**可改**。
+        "source_hint": extract_source_hint(text),
+        # 多卷材料里所有 \title 及原文位置；界面用来给每张卡预填单题出处。
+        "source_titles": parsed.get("source_titles") or [],
         "images": fig_report,
         "missing_images": missing,
-        "dup": {"new": n_new, "merge": n_merge, "suspect": n_suspect,
-                "upgrade": n_upgrade},
+        "dup": {"new": n_new, "merge": n_merge, "near": n_near,
+                "skip": n_skip, "suspect": n_suspect,
+                "upgrade": n_upgrade, "update": n_upgrade,
+                "backfill": bool(backfill)},
+        "backfill": bool(backfill),
         "types": [{"value": k, "label": QTYPE_LABEL.get(k, k), "n": v}
                   for k, v in types.most_common()],
         "problems": [{"key": it["key"], "problems": it["problems"]}
@@ -668,25 +1216,54 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
     }
 
 
+def select_by_pick(qs: list[Question], blocks: list[int],
+                   items: list[dict] | None) -> tuple[list[Question], list[int]]:
+    r"""多题录入：按界面回传的 `pick` 只留下勾选的题。
+
+    `blocks` 与 `qs` 一一对应（来自 `parse_source`）。没勾的题仍然解析、
+    仍然显示，但不写库；`items` 为空（CLI/老界面）时原样全留，行为不变。
+    """
+    if not items:
+        return list(qs), list(blocks)
+    ovs = _override_by_block(items)
+    keep = [(q, b) for q, b in zip(qs, blocks)
+            if ovs.get(b, {}).get("pick", True)]
+    return [q for q, _b in keep], [b for _q, b in keep]
+
+
 def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str = "",
            region: str = "", year: int | None = None, source_no: str = "",
            points: list[str] | None = None, difficulty: str = "",
            qtype: str = "",
            update_existing: bool = True, update_force: bool = False,
-           merge_into: dict | None = None,
-           skip_dup: bool = True, skip_missing_figures: bool = True) -> dict:
+           merge_into: dict | None = None, merge_blocks: dict | None = None,
+           items: list[dict] | None = None,
+           skip_dup: bool = True, skip_missing_figures: bool = True,
+           skip_near: bool = False,
+           near_threshold: float = dedup.NEAR_DUP_SCORE,
+           backfill: bool = False) -> dict:
     r"""正式导入：图片入库 → 追加主文件。返回变更报告。
 
-    `skip_dup=True` 时跳过与库内已高度重复（≥0.96）的题；
-    `skip_missing_figures=True` 时跳过缺图的题——**不导入半成品**。
+    `skip_dup=True` 时跳过 key 或指纹（题干+选项）完全相同的题；
+    `skip_near=True` 时再跳过**整题相似度 > `near_threshold`（默认 95%）**
+    的题；`skip_missing_figures=True` 时跳过缺图的题。
+    `backfill=True` 是**补旧题模式**：只给库里已有题补空考点/空难度，
+    不新增、不改答案/解析/已有考点。
     """
     parsed = parse_source(text, book=book, label=label, region=region, year=year,
                           source_no=source_no, points=points, difficulty=difficulty,
-                          qtype=qtype)
+                          qtype=qtype, items=items)
     qs: list[Question] = parsed["questions"]
+    q_blocks: list[int] = parsed.get("blocks") or list(range(len(qs)))
     if not qs:
         return {"ok": False, "error": "没有解析出任何题目", "added": []}
-    apply_merge_into(qs, merge_into)      # 「并入这道」：key 先改过去
+    # 多题录入：只落**勾选**的题。没勾的题仍然解析/展示，但不进库。
+    qs, q_blocks = select_by_pick(qs, q_blocks, items)
+    if not qs:
+        return {"ok": False, "error": "没有勾选任何题目", "added": []}
+    # 「并入这道」：key 先改过去。块下标优先，出处在解析后改了也不会错位。
+    apply_merge_into(qs, merge_into, blocks=q_blocks,
+                     merge_blocks=merge_blocks)
 
     # ══ 与 `preview` **完全相同**的五步（顶层设计 §七点六）══
     # 少一步或者换顺序，干跑看到的和落盘的就不是一个东西。
@@ -704,11 +1281,11 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     for q in qs:
         for name in norm.normalize(q, norm.ENTRY):
             rule_log[name] = rule_log.get(name, 0) + 1
-    bad_qs = _incomplete_errors(qs)          # 缺答案/解析 → 整批不入库（新规矩）
+    bad_qs = _incomplete_errors(qs) + _structure_errors(qs)  # 缺字段 + 字段自洽
     if bad_qs:
         head = "；".join("%s（%s）" % (b["key"], b["reason"].split("——")[0]) for b in bad_qs[:3])
         return {"ok": False, "added": [], "rules_applied": {},
-                "error": "有 %d 道缺答案或解析，整批未入库：%s" % (len(bad_qs), head)}
+                "error": "有 %d 道不合入库要求，整批未入库：%s" % (len(bad_qs), head)}
 
     # ③ 图片入库（**真的复制**到 图片/ + 改写引用）
     img_rep = im.ingest_all(qs, src_dirs=src_dirs, dry_run=False,
@@ -742,7 +1319,8 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     # ＋`load_all()` 两趟（每趟把 21,063 道重新解析一遍），
     # 而 commit 是逐场调的 —— 体检 571 场光重复读库就要多花十几分钟。
     all_qs, _sig = store.load_for_update()
-    idx = dedup.DedupIndex(all_qs)
+    idx = _dedup_index(_sig, all_qs)
+    idx_full = None
     skipped: list[dict] = []
     keep: list[Question] = []
     # 查重被截断了几道（见下面 `find_checked` 的说明）。>0 时报告里要明说
@@ -768,6 +1346,22 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
         fp = dup_fingerprint(q)
         if skip_dup and (q.key in existing_keys or fp in existing_fp):
             old = by_key.get(q.key) or by_fp.get(fp)
+            if backfill:
+                if old is None:
+                    skipped.append({"key": q.key,
+                                    "reason": "补旧题模式只更新已有题，不新增"})
+                    continue
+                plan = backfill_plan(old, q)
+                if not plan:
+                    skipped.append({"key": q.key,
+                                    "reason": "库里这道已有考点/难度，没有可补的空字段"})
+                    continue
+                fields = apply_plan(old, plan,
+                                    point_source=q.meta.get("point_source") or "manual")
+                upgrades.append({"key": q.key, "dup_key": old.key,
+                                 "fields": fields, "why": "补旧题空字段",
+                                 "answer_prev": ""})
+                continue
             plan = merge_plan(old, q, force=update_force) if old is not None else {}
             if old is not None and old.key != q.key:
                 # 别处的同一道题：正文一个字都不动，只对考点/难度
@@ -786,13 +1380,33 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
                     reason += "，且手里这份并不更全"
                 skipped.append({"key": q.key, "reason": reason})
             continue
+        if backfill:
+            # 补旧题模式：不是精确重复的题一律不新增（近似重复也不更新，
+            # 因为不知道应该改库里哪一道）。
+            skipped.append({"key": q.key,
+                            "reason": "补旧题模式只更新已有题，不新增"})
+            continue
+        if skip_near:
+            if idx_full is None:      # 有非精确重复的题才建整题索引
+                idx_full = _dedup_index(_sig, all_qs, full=True)
+            nh, _ncomplete = idx_full.find_norm(
+                fp, threshold=near_threshold, top=1, exclude={q.key})
+            if nh and nh[0]["score"] > near_threshold:
+                skipped.append({
+                    "key": q.key,
+                    "reason": "与库内 %s 整题相似 %.1f%%（>%.0f%%），"
+                              "按规则不导入、不更新"
+                              % (nh[0]["key"], nh[0]["score"] * 100,
+                                 near_threshold * 100)})
+                continue
         if skip_missing_figures and (set(q.meta.get("figure_missing") or []) & missing_names):
             skipped.append({"key": q.key, "reason": "缺图，不予导入"})
             continue
         # ⚠️ 用 `find_checked` 而不是 `find`：粗筛的候选数有上限，
         # 被截断时"没找到重复"是**不可信**的。这个信号要一路带到报告里，
         # 不能让它烂在索引内部 —— 否则用户看到的是"查过了，没重复"。
-        hits, dup_complete = idx.find_checked(q.stem, threshold=dedup.SUSPECT_SCORE, top=1)
+        hits, dup_complete = idx.find_checked(
+            q.stem, threshold=dedup.SUSPECT_SCORE, top=1)
         if not dup_complete:
             dup_incomplete += 1
         if hits:
@@ -826,7 +1440,13 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
         #  · 就算把 `keep` 拼回去，快照之后**别人**写进来的题照样会被覆盖。
         # 合并式写回把两个都解决了：锁内重读全库，按 key 把本次升级套上去，
         # 库里多出来的（并发的写入）原样保留，库里少掉的（别人删了）也不复活。
-        upgraded = {q.key: q for q in all_qs}          # 已含本次升级后的对象
+        #
+        # ⚠️ **只能拿「本次真正升级的那几道」**。`all_qs` 是 append 之前的
+        # **全库快照**；用整份快照覆盖，等于把快照之后别人（后台求解器 /
+        # 另一场录入）写进**任意已有题**的答案/解析静默回滚，接口还返回 ok。
+        # 旧写法就是全量，worker 复核时发现了这个窗口。
+        upgraded_keys = {u["dup_key"] for u in upgrades}
+        upgraded = {q.key: q for q in all_qs if q.key in upgraded_keys}
         keep_by_key = {q.key: q for q in keep}
 
         def _merge(qs):
@@ -954,6 +1574,117 @@ def _selftest() -> int:
     ks = [it["key"] for it in pv4["items"]]
     check("同一批两道题 key 不重复", len(set(ks)) == 2, str(ks))
 
+    # ── 多题录入：标题识别 + 逐题覆盖 ────────────────────────────────
+    _hint = extract_source_hint(
+        "\\title{2025年长沙市高三调研}\n\n" + src)
+    check("从 \\title 认出出处", _hint["title"] == "2025年长沙市高三调研", _hint)
+    check("从标题认出年份", _hint["year"] == 2025, _hint)
+    _hint2 = extract_source_hint("2024-2025学年 某市高三一模\n" + src)
+    check("没写 \\title 时看前几行纯文本",
+          _hint2["title"].startswith("2024-2025学年"), _hint2)
+    check("学年区间取考试年（后一个）", _hint2["year"] == 2025, _hint2)
+
+    _ovs = parse_source(src, book="测试录入", label="第1套", items=[
+        {"block": 0, "source_no": "7", "points": ["1.1.1"],
+         "difficulty": "难题", "qtype": "multi_choice", "point_source": "llm"},
+        {"block": 1, "source_no": "8", "points": [], "difficulty": "简单题"},
+    ])
+    _a, _b = _ovs["questions"]
+    check("逐题覆盖：题号", (_a.meta.get("source_no"), _b.meta.get("source_no"))
+          == ("7", "8"), str((_a.meta, _b.meta)))
+    check("逐题覆盖：考点与来源", _a.points == ["1.1.1"]
+          and _a.meta.get("point_source") == "llm", str(_a.meta))
+    check("逐题覆盖：难度", _a.difficulty == "难题" and _b.difficulty == "简单题",
+          str((_a.meta, _b.meta)))
+    check("逐题覆盖：题型", _a.type == "multi_choice", _a.type)
+    check("逐题明确清空考点", _b.points == [] and not _b.meta.get("point_source"),
+          str(_b.meta))
+    # 逐题空 label/year 必须沿用全局——多题界面单卷时每张卡都会带空串。
+    _ov_global = parse_source(
+        src, book="测试录入", label="江苏南京中华中学10月质量检测",
+        region="江苏", year=2026,
+        items=[{"block": 0, "label": "", "year": ""},
+               {"block": 1, "label": "", "year": ""}])
+    _g0, _g1 = _ov_global["questions"]
+    check("逐题空 label 沿用全局出处",
+          _g0.meta.get("source_label") == "江苏南京中华中学10月质量检测"
+          and _g1.meta.get("source_label") == "江苏南京中华中学10月质量检测",
+          str([_g0.meta.get("source_label"), _g1.meta.get("source_label")]))
+    check("逐题空 year 沿用全局年份",
+          _g0.meta.get("year") == 2026 and _g1.meta.get("year") == 2026,
+          str([_g0.meta.get("year"), _g1.meta.get("year")]))
+    check("逐题空 label 不破坏 key",
+          "江苏南京中华中学10月质量检测" in _g0.key, _g0.key)
+
+    check("blocks 与题目一一对应", _ovs["blocks"] == [0, 1], str(_ovs["blocks"]))
+
+    # ── 补旧题：只补空考点/空难度，不碰正文 ──────────────────────
+    _old = Question(key="补/旧#1", type="single_choice", stem="题干",
+                    answer="A", solution="解析")
+    _new = Question(key="补/新#1", type="single_choice", stem="题干",
+                    answer="A", solution="解析", points=["8.1.2"],
+                    meta={"difficulty": "简单题"})
+    _bp = backfill_plan(_old, _new)
+    check("补旧题补空考点", _bp.get("points") == ["8.1.2"], str(_bp))
+    check("补旧题补空难度", _bp.get("difficulty") == "简单题", str(_bp))
+    check("补旧题不动正文", "answer" not in _bp and "solution" not in _bp, str(_bp))
+    _old2 = Question(key="补/旧#2", type="single_choice", stem="题干",
+                     answer="A", solution="解析", points=["1.1.1"],
+                     meta={"difficulty": "中档题"})
+    check("旧题已有考点/难度时不补", backfill_plan(_old2, _new) == {},
+          str(backfill_plan(_old2, _new)))
+
+    # ── 多卷：每个题块归到前面最近的 \title ──────────────────────
+    _multi = "\\title{2024年甲卷}\n" + src + "\\title{2025年乙卷}\n" + src
+    _mt = extract_source_titles(_multi)
+    check("多卷识别两个标题", [x["title"] for x in _mt] == ["2024年甲卷", "2025年乙卷"],
+          str(_mt))
+    _ms = parse_source(_multi, book="多卷测试", label="精选模拟题")
+    check("多卷题块带回各自标题",
+          [x.get("title") for x in _ms.get("block_titles", [])]
+          == ["2024年甲卷", "2024年甲卷", "2025年乙卷", "2025年乙卷"],
+          str(_ms.get("block_titles")))
+
+    _pv5 = preview(src, book="测试录入", label="第1套", items=[
+        {"block": 0, "source_no": "7", "points": ["1.1.1"],
+         "difficulty": "难题", "qtype": "multi_choice"},
+        {"block": 1, "source_no": "8", "points": [], "difficulty": "简单题"},
+    ])
+    check("干跑把 block 带回给界面",
+          [it["block"] for it in _pv5["items"]] == [0, 1],
+          str([it["block"] for it in _pv5["items"]]))
+    check("干跑带逐题题号/考点/难度",
+          _pv5["items"][0]["source_no"] == "7"
+          and _pv5["items"][0]["points"] == ["1.1.1"]
+          and _pv5["items"][0]["manual_difficulty"] == "难题",
+          str(_pv5["items"][0]))
+    check("干跑带标题提示", _pv5["source_hint"]["title"] == "", _pv5["source_hint"])
+
+    _pv6 = preview("\\begin{problem}\n甲\n\\end{problem}", book="测试录入")
+    check("缺解析的题被逐题标成 blocking",
+          any("解析" in x for x in _pv6["items"][0]["blocking"]),
+          str(_pv6["items"][0]["blocking"]))
+
+    # 并入按**块下标**：出处在干跑后还能改，key 会变，块不会。
+    _m1 = Question(key="a/b#1", type="single_choice")
+    _m2 = Question(key="a/b#2", type="single_choice")
+    _done = apply_merge_into([_m1, _m2], None, blocks=[3, 4],
+                             merge_blocks={"4": "lib/x"})
+    check("merge_blocks 按块下标并入",
+          _m1.key == "a/b#1" and _m2.key == "lib/x" and len(_done) == 1,
+          str([_m1.key, _m2.key, _done]))
+
+    # 勾选：只落勾了的题；blocks 有空洞（前面某块解析失败）也不许错位。
+    _s1 = Question(key="a#1", type="single_choice")
+    _s2 = Question(key="a#2", type="single_choice")
+    _picked, _pb = select_by_pick([_s1, _s2], [0, 2], [
+        {"block": 0, "pick": True}, {"block": 2, "pick": False}])
+    check("勾选：没勾的题不写库", [q.key for q in _picked] == ["a#1"]
+          and _pb == [0], str(([q.key for q in _picked], _pb)))
+    _picked2, _ = select_by_pick([_s1, _s2], [0, 2], None)
+    check("勾选：没传 items 时保持全留（CLI/老界面不变）",
+          len(_picked2) == 2, str(len(_picked2)))
+
     # ── 升级（merge_plan）────────────────────────────────────────────
     #
     # 铁律是**只升不降**：重录一遍不许把已有的解析/答案/考点抹掉。
@@ -962,6 +1693,20 @@ def _selftest() -> int:
         return Question(key="t/x", type="single_choice", stem=stem,
                         answer=ans, solution=sol, points=list(pts),
                         meta={"difficulty": diff} if diff else {})
+
+    # ── 半成品闸：整栏只有「【缺：…】」占位 ＝ 没有解析 ────────────────
+    #
+    # 2026-11-02 实测：扫描端按规范用 `【缺：…】` 标原件就没有的内容，
+    # 而闸门原来只看「非空」，南京一中卷 11 道选择题的占位符全绿进了库。
+    # 反例也要守住：**个别符号**读不清、推导完整的题不许被误杀。
+    check("整栏只有占位 → 判缺解析",
+          any("只有「【缺" in e["reason"]
+              for e in _incomplete_errors([_q(sol="【缺：原答案册未提供本题解析】", ans="B")])))
+    check("两行占位叠在一起 → 仍判缺解析",
+          bool(_incomplete_errors([_q(sol="【缺：解析】\n【缺：答案】", ans="B")])))
+    check("推导完整、只缺一处符号 → 照收不误",
+          not _incomplete_errors([_q(sol="又 $NC$【缺：符号不清】平面 $\\alpha$，故得证。", ans="B")]))
+    check("解析为空 → 判缺解析", bool(_incomplete_errors([_q(sol="", ans="B")])))
 
     old = _q(sol="", ans="", pts=["1.1.1"])
     new = _q(sol="我写的解析", ans="B", pts=["1.1.1", "1.1.2"])
@@ -1005,6 +1750,40 @@ def _selftest() -> int:
                                           _q(ans="A", pts=["1.1.1"])) == {})
     check("旧的更全 → 空计划", merge_plan(_q(sol="有", ans="A", pts=["1", "2"]),
                                           _q(sol="", ans="", pts=[])) == {})
+
+    # ── 结构自洽闸（P0）：字段之间对不上，整批拒收 ──
+    print("  ── 结构闸 ──")
+
+    def _mk(**kw):
+        base = dict(key="t/gate", type="single_choice",
+                    stem=r"$1+1=$\paren[B]",
+                    options=[Option("A", "$1$"), Option("B", "$2$")],
+                    answer="B", solution="由 $1+1=2$ 得。", points=["1.1.1"])
+        base.update(kw)
+        return Question(**base)
+
+    check("干净题放行", not _structure_errors([_mk()]))
+    check("答案与作答位不一致 → 拦", bool(_structure_errors([_mk(answer="A")])))
+    check("答案抄整条题干 → 拦", bool(_structure_errors([_mk(answer=_mk().stem)])))
+    check("答案混进「答案：」标签 → 拦", bool(_structure_errors([_mk(answer="答案：B")])))
+    check("解析抄整条题干 → 拦", bool(_structure_errors([_mk(solution=_mk().stem)])))
+    check("题干混进卷首说明 → 拦",
+          bool(_structure_errors([_mk(
+              stem=r"$1+1=$\paren[B]" "\n"
+                   "四、解答题：本题共 5 小题，共 77 分。")])))
+    check("两个选项文字相同 → 拦",
+          bool(_structure_errors([_mk(options=[Option("A", "$1$"),
+                                                Option("B", "$1$")])])))
+    check("填空答案与槽不一致 → 拦",
+          bool(_structure_errors([_mk(type="fill_in_blank", options=[],
+                                      stem=r"$1+1=$\fillin[2]。", answer="3")])))
+    check("单选三个答案（problems）→ 拦",
+          bool(_structure_errors([_mk(answer="AB")])))
+    check("整组图片选项（文字全空）放行",
+          not _structure_errors([_mk(options=[Option("A", ""), Option("B", "")])]))
+    check("只有一个选项空 → 拦",
+          bool(_structure_errors([_mk(options=[Option("A", ""),
+                                                Option("B", "$2$")])])))
 
     print("ingest 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0

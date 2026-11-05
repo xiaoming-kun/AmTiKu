@@ -507,7 +507,7 @@ def chk_slash_parallel(text: str):
     """
     for m in _MATH_SEG.finditer(text):
         body = next((g for g in m.groups() if g is not None), "")
-        if re.search(r"(?<![\\:/])//(?![\\:/])", body):
+        if re.search(r"(?<![\\:/])//(?![:/])", body):
             return ("数学模式里用 `//` 当平行号（会印成两道斜杠），"
                     "请写 `\\parallel`")
     return None
@@ -570,7 +570,7 @@ def run(questions=None, *, image_resolver=None) -> list[dict]:
     return bad
 
 
-def main() -> int:
+def main(*, strict_style: bool = False) -> int:
     from collections import Counter
     from . import store
 
@@ -591,12 +591,24 @@ def main() -> int:
                 why = fn(t)
                 if why:
                     style.append("%s [%s] %s" % (q.key, f, why))
+        # 同一题两个选项文字完全一样：几乎必然是 OCR 串行/漏字（实测 25 道，
+        # 例如 `0, 1, -1, 1`）。**只在风格里曝光，不拦验收**——正确选项
+        # 得回原卷核对，自动猜一个只会把错题伪装成对题。
+        texts = [o.text.strip() for o in q.options if o.text.strip()]
+        if len(texts) > 1 and len(set(texts)) < len(texts):
+            dup = sorted({t for t in texts if texts.count(t) > 1})
+            style.append("%s [options] 有两个选项文字相同：%s"
+                         % (q.key, dup[0][:40]))
     if style:
         print("\n风格提示（%d 处，不拦验收）：" % len(style))
         for x in style[:10]:
             print("  %s" % x)
         if len(style) > 10:
             print("  … 其余 %d 处" % (len(style) - 10))
+
+    if style and strict_style:
+        print("\n✗ --strict-style：风格项 %d 处，本次按不通过处理" % len(style))
+        return 1
 
     if bad:
         print("\n明细（前 20 条）：")

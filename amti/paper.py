@@ -13,14 +13,15 @@
 
 两条对三种卷型一视同仁的规矩（用户的要求）：
 
-  1. **每题都印出处**——`（2023新高考II卷 第22题）`，并进题干同一行，
-     实现只有一份（`_stem_with_source`，复用讲义那套 `source_label`）；
+  1. **每题默认印出处**——`（2023新高考II卷）`（**不带原卷题号**），并进题干同一行，
+     实现只有一份（`_stem_with_source`，复用 `source_label`）；
   2. **卷面上不印难度**——难度是**内部排版**用的（解答题留白按难度给，
      见 `BLANK_BY_DIFFICULTY`），印给学生看没有意义：星级和「简单/中档/难题」
      从来不是题目自带的属性，出处的线索价值高得多。
 """
 from __future__ import annotations
 
+import copy as _copy
 import re
 
 from . import generate as gen
@@ -45,6 +46,12 @@ from .render_tex import question_to_tex
 ANS_RED = "amtiAnsRed"                     # 颜色名（定义见导言区）
 ANS_RED_HEX = "D22116"                     # 与讲义/网页同一个红
 _ANS_DEFINE = r"\definecolor{%s}{HTML}{%s}" % (ANS_RED, ANS_RED_HEX)
+
+# 品牌页眉页脚。**这是版式，不是水印**：只占页边距里的页眉/页脚位，
+# 不压正文、不斜铺、不影响阅读；和水印的区别是可以直接删掉而不伤内容。
+BRAND_NAME = "AmTiKu"
+BRAND_HEX = "CE338A"                       # 与网页/讲义同一个品牌色
+BRAND_LABEL = "高中数学题库"
 
 _ANS_MACRO = re.compile(r"(\\(?:paren|fillin)\s*\[|\\fillin\s*\{)")
 
@@ -207,23 +214,104 @@ def _cap_figure_height(tex: str, cap: str = r"0.46\textheight") -> str:
     return re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", sub, tex)
 
 
+# 模拟题出处名的**脏数据过滤器**。
+#
+# 老数据的 `meta.source_label` 常是卷头/页码被误当卷名（实测：
+# 「满分：150 分，考试时间：120 分钟」「004」），直接拿来当标签很荒唐。
+# 命中这些词就当成"没有详细信息"→ 用兜底标签。
+_LABEL_JUNK = re.compile(
+    r"满分|考试时间|共\s*\d+\s*页|第\s*\d+\s*页|答题卡|评分标准|参考答案|须知|"
+    r"^\s*\d+\s*$")
+
+# 老 `meta.source_label` 里常把原卷题号粘在卷名后面（611 道，如
+# 「浙江七彩阳光联盟返校考第 6 题」）。出卷子**不印原卷题号**，
+# 所以清洗出处名时把尾巴上的「第 N 题」剪掉。
+_SOURCE_NO_TAIL = re.compile(r"\s*第\s*[0-9一二三四五六七八九十百]+\s*题\s*$")
+
+
+def _clean_head(s) -> str:
+    r"""把出处名洗干净：去扩展名、去 `_images` 这种录入后缀、去首尾符号。"""
+    s = re.sub(r"\.(pdf|docx?)$", "", str(s or "").strip(), flags=re.I)
+    s = _SOURCE_NO_TAIL.sub("", s.replace("_images", ""))
+    return s.strip(" _-—·、")
+
+
+def _sim_head(q) -> str:
+    r"""模拟题的出处名。**取不到详细信息就用「精选模拟题」。**
+
+    三个来源，按可靠程度排：
+      1. `模拟题/<卷名>#N` 的 key 段——**key 是题库唯一真相**（3699 道走这条）；
+      2. `meta.source_label`——但老数据常是脏的（「满分：150 分…」「004」），要过滤；
+      3. key 的第一段（书册类，`2027千题册经典重点册（上）_images/085#12`）
+         → 洗成「2027千题册经典重点册（上）」。
+    都没有 → 「精选模拟题」（用户定的兜底话术）。
+    """
+    key = str(getattr(q, "key", "") or "")
+    if key.startswith("模拟题/") and "#" in key:
+        head = _clean_head(key.split("/", 1)[1].rsplit("#", 1)[0])
+        if head and not _LABEL_JUNK.search(head):
+            return head
+    meta = getattr(q, "meta", None) or {}
+    head = _clean_head(meta.get("source_label"))
+    if head and not _LABEL_JUNK.search(head) and len(head) <= 40:
+        return head
+    head = _clean_head(key.split("/", 1)[0] if "/" in key else "")
+    if (head and not _LABEL_JUNK.search(head) and 4 <= len(head) <= 40
+            and re.search(r"[\u4e00-\u9fff]", head)):
+        return head
+    return "精选模拟题"
+
+
+def source_label(q) -> str:
+    r"""出处标签，如「2024新高考I卷」「武汉市2027届高中毕业生九月调研考试」。
+
+    * **高考题**：`meta.year` + `meta.region`（老数据从 key 兜底）。
+    * **模拟题**：卷名（卷名怎么取见 `_sim_head`）；取不到就写
+      「精选模拟题」——用户的要求：**模拟题也要带标签**，没有详细信息
+      就用这句兜底。
+    * 其它 kind（目前没有）：不给标签。
+
+    ⚠️ **不印原卷题号**（「第 2 题」）。用户 2026-11-05 明确要求：
+    「比如这个第几题，完全没必要」。原卷题号对做题的人没用，反而像
+    从别处剪贴来的；要看出处，年份/卷别就够了。题目在**本卷**里的题号
+    由 LaTeX 环境自己排，和这里无关。
+
+    标签在卷面上**并进题干同一行**（`（标签）题干…`），方便学生回查原卷。
+    这套取值规则在 `_stem_with_source` 里只此一份。
+    """
+    kind = getattr(q, "kind", "")
+    key = str(getattr(q, "key", "") or "")
+    if kind == "高考":
+        meta = getattr(q, "meta", None) or {}
+        year = str(meta.get("year") or "").strip()
+        region = str(meta.get("region") or "").strip()
+        # 卷别兜底：老数据可能没有 region，从 key 里取（高考真题汇编/2024/新高考I卷#1）
+        if not region and "/" in key:
+            parts = key.split("/")
+            if len(parts) >= 3:
+                region = parts[-1].split("#")[0].strip()
+        return _SOURCE_NO_TAIL.sub("", f"{year}{region}")
+    if kind == "模拟":
+        return _sim_head(q)
+    return ""
+
+
 def _stem_with_source(tex: str, q: Question) -> str:
-    r"""把出处并进题干**第一行**：`（2023新高考II卷 第22题）题干……`
+    r"""把出处并进题干**第一行**：`（2023新高考II卷）题干……`
 
     为什么插在第一个换行之后：`question_to_tex` 的第一行是
     `\begin{question}` / `\begin{problem}[points = 12]`，插在它前面会被
     exam-zh 当成环境自己的参数吃掉。题干与出处**同一行**是用户的要求
     （跟讲义一致）——出处是这道题的定语，另起一行容易被当成题面的一部分。
 
-    出处实现**只有一份**：讲义那套 `slidev_handout.source_label()`——高考题
-    「年份 + 卷别 + 第 N 题」，模拟题「卷名 + 第 N 题」，信息不全兜底
-    「精选模拟题 第 N 题」。这里再抄一份的话，卷面和讲义早晚会印出两个不同的
-    出处（本项目最忌讳的"预览与导出不一致"，讲义那边有 `测试/讲义测试.py` 盯着）。
+    出处实现**只有一份**：`source_label()`——高考题「年份 + 卷别」，
+    模拟题「卷名」，信息不全兜底「精选模拟题」；**不印原卷题号**。这里再抄
+    一份的话，卷面和讲义早晚会印出两个不同的出处（本项目最忌讳的
+    "预览与导出不一致"）。
 
     卷名是**纯文本**，走 `_esc_text` 转义——库里真有卷名带 `_`、`#` 的题，
     不转义会被 TeX 当数学下标/宏参数，整份卷子编译不过。
     """
-    from .slidev_handout import source_label    # 延迟导入：讲义模块只依赖 paths/logutil
     lab = source_label(q)
     if not lab:
         return tex
@@ -270,6 +358,61 @@ def _cjk_fontset_opt(comma: bool = False) -> str:
     return (", fontset=fandol" if comma else "[fontset=fandol]")
 
 
+def _brand_page_style(label: str = BRAND_LABEL) -> list[str]:
+    r"""AmTiKu 的**页眉页脚版式**（不是水印）。
+
+    为什么在 `\AtBeginDocument` 里重定义 `plain`，而不是在导言区直接
+    `\fancypagestyle{plain}`：
+
+    * `exam-zh` 自己在 `\AtEndPreamble` 里重定义 `plain`，并在
+      `\AtBeginDocument` 里 `\pagestyle{plain}`；直接写会被它盖掉。
+    * `elegantnote`（讲义）在类加载时就定义了 `fancy-note` / `plain`。
+    * 两个文档类的 hook 顺序不同，统一在**正文开始那一刻**接管 `plain`，
+      两种文档都吃同一份版式；调用方在正文里再 `\pagestyle{fancy}`
+      （如全库审阅脚本）仍然能覆盖它，不会被这里锁死。
+
+    版式本身只占页眉/页脚，不碰版心：
+
+        ┌────────────────────────────────────┐
+        │ AmTiKu                    高中数学题库 │  ← 页眉（品牌色 + 灰标签）
+        │ ────────────────────────────────── │  ← 0.4pt 细线
+        │                                    │
+        │              正文                   │
+        │                                    │
+        │        AmTiKu · 第 1 页 / 共 17 页    │  ← 页脚（居中、灰色小字）
+        └────────────────────────────────────┘
+
+    页脚保留原来的页码功能，只是前面带上品牌名；不印网址、不印二维码，
+    也不用半透明大字——那些才是水印。
+    """
+    return [
+        r"\definecolor{amtibrand}{HTML}{" + BRAND_HEX + r"}",
+        r"\usepackage{xcolor}",
+        r"\usepackage{fancyhdr}",
+        r"\usepackage{lastpage}",
+        r"\newcommand{\amtipagestyle}{%",
+        r"  \fancyhf{}%",
+        # 抬高 1.5pt：不然 0.4pt 的细线会贴着字底，看着像给字号加了下划线
+        r"  \fancyhead[L]{\raisebox{1.5pt}{\small\color{amtibrand}\bfseries "
+        + BRAND_NAME + r"}}%",
+        r"  \fancyhead[R]{\raisebox{1.5pt}{\small\color{gray}"
+        + _esc_text(label) + r"}}%",
+        r"  \fancyfoot[C]{\footnotesize\color{gray}" + BRAND_NAME
+        + r" · 第 \thepage 页 / 共 \pageref{LastPage} 页}%",
+        r"  \renewcommand{\headrulewidth}{0.4pt}%",
+        # 细线用浅灰，不抢字；品牌色只留给 AmTiKu 这个字标
+        r"  \renewcommand{\headrule}{{\color{gray!45}\hrule height 0.4pt "
+        r"width \headwidth}}%",
+        r"  \renewcommand{\footrulewidth}{0pt}%",
+        r"}",
+        r"\AtBeginDocument{%",
+        r"  \fancypagestyle{plain}{\amtipagestyle}%",
+        r"  \pagestyle{plain}%",
+        r"  \thispagestyle{plain}%",
+        r"}",
+    ]
+
+
 # 讲义可选的几种字号（ctex 的 `\zihao` 编号 → 实际磅值）。
 #
 #   `-4` 小四 12pt    `4` 四号 14pt    `3` 三号 16pt    `2` 二号 22pt
@@ -299,49 +442,53 @@ BLANK_BY_DIFFICULTY: dict[str, float] = {
 
 
 def blank_for(diff: str, uniform: float = 0.0) -> float:
-    r"""这道解答题后面留多少。`uniform > 0` 时一律用它。"""
-    if uniform and uniform > 0:
+    r"""这道解答题后面留多少。
+
+    `uniform > 0` 一律用它；`uniform < 0` 表示**不留白**（紧凑版）；
+    `uniform == 0`（默认）按难度 3/5/8cm。
+    """
+    if uniform < 0:
+        return 0.0
+    if uniform > 0:
         return uniform
     return BLANK_BY_DIFFICULTY.get(diff, 5.0)
 
 
-def choices_columns(q: Question, default: int = 4) -> int:
-    r"""按选项长短挑列数。
-
-    不能**数字符**——源码长度和排出来的宽度差得远：
-
-        $\frac{1}{2}$        源码 13 个字符，排出来只有两三个字的宽
-        样本 $x_1$ 的标准差    17 个字符，排出来真的宽
-
-    所以：把行内公式挖掉，剩下的按"中文算 2、其它算 1"计；每个公式
-    再折 5 个半角宽。
-
-    判据按**高考卷的惯例**定：一行两个是常态，四个都特别短才排一行四个，
-    整句话的选项单独占一行。
-    """
-    if not q.options:
-        return default
-
-    def width(t: str) -> int:
-        t = t or ""
-        math = re.findall(r"\$[^$]*\$", t)
-        plain = re.sub(r"\$[^$]*\$", "", t)
-        return sum(2 if ord(c) > 0x2E80 else 1 for c in plain) + len(math) * 5
-
-    n = max(width(o.text) for o in q.options)
-    if n <= 7:
-        return 4
-    if n <= 34:
-        return 2
-    return 1
+# ⚠️ **选项列数不许在 Python 里估算**——这里原先有一个 `choices_columns()`，
+# 按源码长度猜宽度（每个 `$…$` 一律折 5 个半角宽），对数学公式完全失准：
+# `$\{x\mid x<-1\}\cup\{x\mid x>2\}$` 排出来近 5cm，源码里却只是个 `$…$`，
+# 于是被判成「短选项」→ 4 列 → C/D 在自己的格子里折行，卷面上就是
+# 「A B C D 挤一行，尾巴掉到下一行」（用户报的 2018 全国 I 卷（理）第 2 题）。
+#
+# 真实宽度**只有 TeX 自己量得准**，而 exam-zh 的 `choices` 本来就量：
+# 不给 `columns` 时它把每个选项排成 hbox 取自然宽度，再算一行摆几列
+# （`columns = 0` = 自动，见 `exam-zh-choices.sty` 的
+# `\__examzh_choices_calc_columns:`，最大列数 `max-columns` 默认 4，
+# 算出来比 4 小就 4→2→1 折半）。所以这里**只传 0**，让模板去量。
+#
+# `default_columns > 0` 才是"整份文档钉死列数"（调用方明确要求时才这么用）。
 
 
 _BLANK_ARG = re.compile(r"\\(?:fillin|paren)\s*\[")
 
 
+def _escaped_at(s: str, i: int) -> bool:
+    r"""`s[i]` 是否被反斜杠转义：看前面连续反斜杠的奇偶。
+
+    `\\$` 是换行命令 `\\` 后接数学定界符，不是 `\$`；只看紧邻一个字符
+    会把表格里的 `\\$(i)$` 判成转义美元符，进而把数学模式判反。
+    """
+    bs = 0
+    j = i - 1
+    while j >= 0 and s[j] == "\\":
+        bs += 1
+        j -= 1
+    return bs % 2 == 1
+
+
 def _dollars_odd(s: str) -> bool:
     """串里未转义的 `$` 是奇数个 ⇒ 这一段停在数学模式中间。"""
-    return len(re.findall(r"(?<!\\)\$", s)) % 2 == 1
+    return sum(1 for i, c in enumerate(s) if c == "$" and not _escaped_at(s, i)) % 2 == 1
 
 
 def _blank_arg_end(s: str, lb: int) -> int:
@@ -472,7 +619,7 @@ def map_text_mode(tex: str, fn) -> str:
 
     while i < n:
         c = tex[i]
-        if c == "$" and (i == 0 or tex[i - 1] != "\\"):
+        if c == "$" and not _escaped_at(tex, i):
             flush()
             dollar = not dollar
             out.append(c)
@@ -641,26 +788,27 @@ def guard_sheet_slots(tex: str) -> str:
     return "\n".join(lines)
 
 
-def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 4,
+def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 0,
            show_source: bool = True, with_solution: bool = True) -> str:
     r"""一道题的 LaTeX（三种卷型共用）。
 
     · **解析常驻源文件**，显不显示交给 `\examsetup{solution/show-solution}`——
       这是高考模板的做法：不用为了出学生版重写一遍源文件；
     · `show_source=True`（默认）时在题干**同一行**前面并上出处
-      `（2023新高考II卷 第22题）`，见 `_stem_with_source`；
+      `（2023新高考II卷）`，见 `_stem_with_source`；
     · 卷面上**不印难度**（用户要求）——难度只影响解答题留白。
+
+    `default_columns`：**0（默认）＝每题让 exam-zh 按实测宽度自动挑列数**；
+    给正数＝整份文档钉死这么多列。为什么不在 Python 里估算见上面那段长注释。
     """
-    # **选项列数按内容自适应。**
-    # exam-zh 默认 `choices/columns = 4`（一行四个），短选项很好看；
-    # 但选项一长（比如「样本 $x_1$ 的标准差」这种），四列会挤成一团、
-    # 或者自动折成两行且对不齐。所以按最长选项的长度挑列数：
-    #   ≤ 12 字  → 4 列（一行摆下）
-    #   ≤ 26 字  → 2 列（两行两列，高考卷最常见的排法）
-    #   更长     → 1 列（一行一个）
-    cols = choices_columns(q, default_columns)
-    tex = question_to_tex(q, with_solution=with_solution, with_source=False,
-                          choices_columns=cols)
+    cols = default_columns if default_columns > 0 else 0
+    # 行内 `（1）`/`(i)` 小问前补空行（排版用，数据不动）。
+    # 只改**题干**：答案/解析/选项里的 `(1)` 多是引用，补空行会把排版弄碎。
+    _qq = _copy.copy(q)
+    _qq.stem = lb.break_inline_parts(q.stem)
+    tex = question_to_tex(_qq, with_solution=with_solution, with_source=False,
+                          choices_columns=cols, skip_no_solution=True,
+                          skip_empty_choices=True)
     # 作答位里的多余 `]` 会把可选参数提前收尾（«extra }» 停编译）——出题时修，
     # 数据一个字不动。见 `fix_blank_brackets`。
     tex = fix_blank_brackets(tex)
@@ -714,9 +862,11 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                  title: str = "", subject: str = "数学", show_answers: bool = False,
                  answers_at_end: bool = False, show_source: bool = True,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
-                 columns: int = 4, graphicspath: str = "",
+                 columns: int = 0, graphicspath: str = "",
                  handout_font: str = HANDOUT_FONT_DEFAULT,
-                 qid_marks: bool = False) -> str:
+                 qid_marks: bool = False, answer_sheet: bool = False,
+                 detail_one_page: bool = True,
+                 score_box: bool = True, seal_line: bool = True) -> str:
     r"""渲染成完整的 exam-zh 文档。`mode` 取 `gaokao` / `test` / `handout`。
 
     `qid_marks=True` 时在每题前面加一行 `% AMTIKU-Q: <key>` 注释，
@@ -732,14 +882,14 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
 
     第三种才是真实高考卷的做法——卷子上只有题目，答案另附。
     `problem_blank_cm`：解答题留白。**留空（0）＝按难度自动**（3/5/8cm），
-    给正数则一律用它。
+    给正数则一律用它；**给负数 = 不留白**（界面的「紧凑版」）。
 
     `answers_at_end` 会把 `show_answers` 的效果**收起来**：
     括号不显示答案，题目后面不带 `solution` 环境，改成卷末一节。
 
     `show_source`（**默认开**）：每题题干前并上出处
-    `（2023新高考II卷 第22题）`。用户的要求——三种卷型都印，跟讲义一致；
-    关掉只是留给测试/特殊场合，界面上没有这个开关。
+    `（2023新高考II卷）`，**不带原卷题号**，跟讲义一致；界面上的「印出处」
+    开关可以整套关掉（有的卷子不需要出处）。
     """
     if mode == "handout":
         return _render_handout(questions, title=title, columns=columns,
@@ -764,12 +914,14 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                        columns=columns, graphicspath=_texpath(graphicspath),
                        bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
                        total_score=total_score, show_source=show_source,
-                       qid_marks=qid_marks)
+                       qid_marks=qid_marks, answer_sheet=answer_sheet,
+                       detail_one_page=detail_one_page,
+                       score_box=score_box, seal_line=seal_line)
 
 
 def _preamble(*, title: str = "", graphicspath: str = "",
               show_answers: bool = False, answers_at_end: bool = False,
-              bottom_sep: str = "0.6em", columns: int = 4,
+              bottom_sep: str = "0.6em", columns: int = 0,
               landscape: bool = False, big_font: bool = False,
               first_line: str = "", extra: list[str] | None = None) -> list[str]:
     r"""**全项目唯一产出导言区的地方。**
@@ -832,8 +984,10 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"\usepackage{lastpage}",
         # `\needspace`：题干和选项别被分页拆开
         r"\usepackage{needspace}",
-        # **调用方自带的导言片段**（按考点重排的讲义要在这儿补知识清单书那几个
-        # 自定义宏）。放在宏包之后、`\examsetup` 之前——它只补 `\newcommand`
+        # **品牌页眉页脚**（版式，不是水印）。放在 `extra` 之前：
+        # 调用方若要加自己的 `\AtBeginDocument`，注册得比这里晚，仍然能覆盖。
+        *_brand_page_style(BRAND_LABEL),
+        # **调用方自带的导言片段**（要补自己的自定义宏时用）。放在宏包之后、
         # 之类的定义，不碰版式开关。默认空，现有导出一个字节都不变。
         *(extra or []),
         (r"\graphicspath{" + "".join("{" + x + "/}" for x in (graphicspath,)) + "}"
@@ -856,6 +1010,9 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"  solution/label-indentation=false,",
         f"  question/bottom-sep = {bottom_sep},",
         f"  problem/bottom-sep = {bottom_sep},",
+        # 0 = **自动**：exam-zh 每个 `choices` 环境自己量选项宽度、自己定列数
+        # （`\begin{choices}` 会把全局值清成 0 再算，所以真正生效的是每题那份
+        # `[columns = N]`，见 `_q_tex`）。这里保持 0，别写成 4。
         f"  choices/columns = {columns},",
         r"}",
         "",
@@ -873,13 +1030,13 @@ def _preamble(*, title: str = "", graphicspath: str = "",
 def preamble(**kw) -> list[str]:
     r"""`_preamble` 的**公开入口**——外部模块要拼整份文档就从这儿拿导言区。
 
-    存在唯一理由：导言区只许有一份。按考点重排的讲义自己抄一份，就会重现
+    存在唯一理由：导言区只许有一份。外部模块自己抄一份，就会重现
     上面那条「漏装 `exam statistical histogram` 一编译就死」的坑。
     """
     return _preamble(**kw)
 
 
-def question_tex(q, *, show_answers: bool = True, columns: int = 4,
+def question_tex(q, *, show_answers: bool = True, columns: int = 0,
                  show_source: bool = False, with_solution: bool = True) -> str:
     r"""**出题用**的单题 LaTeX（走 `_q_tex`：嵌在题干里的 TikZ 换成预渲染图、
     答案标红、按需并上出处）。
@@ -888,8 +1045,7 @@ def question_tex(q, *, show_answers: bool = True, columns: int = 4,
     只许在出题时做。别处再抄一遍，就会出现「每次写库悄悄改题干」那种事故。
 
     `show_source` 这里**默认关**（与 `render_paper` 相反）：本函数的调用方是
-    考点本/脚本里的"分层训练"块（见 `pointbook.training_tex`），出处由那些
-    文档自己决定要不要；`render_paper` 那条卷子路径一律走默认开的开关。
+    脚本里的"分层训练"块，出处由那些文档自己决定要不要；`render_paper` 那条卷子路径一律走默认开的开关。
     """
     return _q_tex(q, show_answers, default_columns=columns,
                   show_source=show_source, with_solution=with_solution)
@@ -910,7 +1066,9 @@ def _paper_body(doc: list[str], questions: list[Question], *,
                 answers_at_end: bool, columns: int, graphicspath: str,
                 bottom_sep: str, problem_blank_cm: float,
                 total_score: int, show_source: bool = False,
-                qid_marks: bool = False) -> str:
+                qid_marks: bool = False, answer_sheet: bool = False,
+                detail_one_page: bool = True,
+                score_box: bool = True, seal_line: bool = True) -> str:
     r"""卷子正文（分节、出题、卷末答案册）。导言区由 `_preamble` 出。"""
     numbering: list[tuple[int, Question]] = []      # (卷面题号, 题)
     no = 0
@@ -924,6 +1082,10 @@ def _paper_body(doc: list[str], questions: list[Question], *,
         doc += _gaokao_head(questions, total_score)
     else:
         doc += _test_head(questions, subject=subject)
+    if score_box:
+        doc += _score_box()
+    if seal_line:
+        doc += _seal_line()
 
     # ── 分节 ──
     by_sec: dict[str, list[Question]] = {}
@@ -936,6 +1098,15 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             continue
         # `\section{}` 由 exam-zh 自动编号成「一、选择题：…」并加粗——
         # 早先手写 `\noindent{\bfseries 一、选择题…}`，编号要自己维护
+        # 解答题一页一题时，**分节标题也要跟第一题同页**：
+        # 先把新页开了，再写标题；否则标题在页底、题目被 `\newpage` 推到下一页，
+        # 就出现“二、解答题”孤零零挂在上一页底部（实测踩过）。
+        one_page_section = (t == "detailed_answer" and not show_answers
+                            and detail_one_page)
+        if one_page_section:
+            doc.append(r"\newpage")
+        # 小节标题不要孤零零掉在页底：下面至少留 12 行（标题 + 首题开头）
+        doc.append(r"\needspace{12\baselineskip}")
         if mode == "gaokao":
             doc.append(r"\section{" + _gaokao_section(t, len(items)) + "}")
         else:
@@ -951,6 +1122,7 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             if mode != "gaokao" and i == 0:
                 no = 1
             numbering.append((no, q))
+            idx = len(numbering)
             diff = position_difficulty(t, i, len(items))
             # ⚠️ **`\filbreak`：把「这道题 + 它的留白」绑成一块。**
             #
@@ -962,8 +1134,20 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             # `\filbreak` 是 LaTeX 里"这一块放不下就整块挪走"的老办法：
             # 从它到**下一个 `\filbreak`** 之间的内容视为一块。
             # 上面刚说过留白跟在题目后头，所以这一块正好是"题 + 留白"。
-            if i:
+            # 解答题“一页一题”：每道解答题从新页开始，题目后把余下版面填满，
+            # 学生直接在题目下面作答。老师版（带解析）不分页，否则解析也会被拆散。
+            one_page = (t == "detailed_answer" and not show_answers
+                        and detail_one_page)
+            if one_page and i:
+                doc.append(r"\newpage")
+            elif not one_page and i:
                 doc.append(r"\filbreak")
+            # 起始 label 必须在**分页之后**：解答题第二题起先 `\newpage`，
+            # 若 label 写在 newpage 前，会被记在上一页，误报“跨页”。
+            if qid_marks:
+                doc.append(f"\\label{{amtiq{idx}}}")
+                if t == "detailed_answer":
+                    doc.append(f"% AMTIKU-DETAIL: {idx}")
             # **题干和它的选项不许被分页拆开。**
             #
             # 不加这句时，一道题可以"题干在这页末尾、选项跑到下页开头"——
@@ -981,20 +1165,100 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             # 解答题留白：**必须 `\vspace*`**（带星号）——
             # 不带星号的 `\vspace` 在分页处会被丢弃，题目落在页底时留白凭空消失
             if t == "detailed_answer" and not show_answers:
-                cm = blank_for(diff, problem_blank_cm)
-                if cm > 0:
-                    doc.append(f"\\vspace*{{{cm:.2f}cm}}")
+                if one_page:
+                    # 填满本页剩余高度：题短就多留白，题长就自然少留
+                    doc.append(r"\vspace*{\fill}")
+                else:
+                    cm = blank_for(diff, problem_blank_cm)
+                    if cm > 0:
+                        doc.append(f"\\vspace*{{{cm:.2f}cm}}")
+            if qid_marks:
+                doc.append(f"\\label{{amtiqend{idx}}}")
             doc.append("")
 
     if answers_at_end and numbering:
         doc += _answers_section(numbering)
+    if answer_sheet:
+        doc += _answer_sheet(numbering)
 
     doc.append(r"\end{document}")
     return "\n".join(doc)
 
 
+def _score_box() -> list[str]:
+    r"""卷头**总分框**：题号 / 一、二、三、四 / 总分，老师批完填分用。"""
+    return [
+        r"\begin{center}",
+        r"\renewcommand{\arraystretch}{1.5}",
+        r"\begin{tabular}{|c|c|c|c|c|c|}",
+        r"\hline",
+        r"题号 & 一 & 二 & 三 & 四 & 总分 \\",
+        r"\hline",
+        r"得分 & & & & & \\",
+        r"\hline",
+        r"\end{tabular}",
+        r"\end{center}",
+        "",
+    ]
+
+
+def _seal_line() -> list[str]:
+    r"""第一页左侧**密封线**：竖线 + 旋转文字，装在页边距里，不压正文。"""
+    return [
+        r"\begin{tikzpicture}[remember picture, overlay]",
+        r"\draw[line width=0.4pt] "
+        r"([xshift=1.15cm]current page.north west) -- "
+        r"([xshift=1.15cm]current page.south west);",
+        r"\node[rotate=90, anchor=south, font=\small] at "
+        r"([xshift=0.55cm,yshift=3cm]current page.south west) "
+        r"{密封线内不要答题};",
+        r"\end{tikzpicture}",
+        "",
+    ]
+
+
+def _answer_sheet(numbering: list[tuple[int, Question]]) -> list[str]:
+    r"""卷末附一页**答题卡**：选择题填涂 + 填空题横线。
+
+    **不含解答题**：解答题已经“一页一题、题目下面填满空白”，
+    学生直接在卷面上作答；再给解答题留框纯属重复，还浪费纸。
+    """
+    if not numbering:
+        return []
+    out = [r"\newpage", r"\section*{答题卡}", ""]
+    out.append(r"\begin{center}")
+    out.append(r"姓名：\underline{\hspace{3.6cm}}\quad "
+               r"班级：\underline{\hspace{3.2cm}}\quad "
+               r"考号：\underline{\hspace{3.6cm}}")
+    out.append(r"\end{center}")
+    out.append("")
+
+    for title, types in (
+        ("一、选择题（在对应选项上打勾或涂黑）", ("single_choice", "multi_choice")),
+        ("二、填空题（把答案写在横线上）", ("fill_in_blank",)),
+    ):
+        items = [(i, q) for i, (_no, q) in enumerate(numbering, start=1)
+                 if q.type in types]
+        if not items:
+            continue
+        out.append(r"\noindent{\bfseries " + title + "}")
+        out.append("")
+        for i, q in items:
+            if q.type in ("single_choice", "multi_choice"):
+                opts = r"\quad ".join(r"$\square$ " + c for c in "ABCD"[:max(2, len(q.options))])
+                out.append(r"\noindent %d.\quad %s" % (i, opts))
+            elif q.type == "fill_in_blank":
+                out.append(r"\noindent %d.\quad "
+                           r"\underline{\hspace{0.82\linewidth}}" % i)
+            else:
+                continue
+            out.append(r"\vspace{0.35em}")
+        out.append("")
+    return out
+
+
 def _render_handout(questions: list[Question], *, title: str = "",
-                    columns: int = 4, graphicspath: str = "",
+                    columns: int = 0, graphicspath: str = "",
                     font: str = HANDOUT_FONT_DEFAULT,
                     qid_marks: bool = False, show_source: bool = True) -> str:
     r"""**讲义模式：一题一页，A4 横版，无答案。**
@@ -1050,6 +1314,8 @@ def _render_handout(questions: list[Question], *, title: str = "",
         r"\geometry{landscape, margin=1.7cm}",
         # 主色换成 AmTiKu 品牌色（elegantnote 的 \section、标题都用 ecolor）
         r"\definecolor{ecolor}{RGB}{206,51,138}",
+        # **品牌页眉页脚**：讲义也是 AmTiKu 出的，页码照样保留。
+        *_brand_page_style("高中数学讲义"),
         # 行内公式也用 displaystyle——iPad 上分数才看得清
         r"\everymath{\displaystyle}",
         "",
@@ -1110,7 +1376,9 @@ def _render_handout(questions: list[Question], *, title: str = "",
             doc.append(_qid_mark(q))
         # 题头：例 N（难度已不印，见模块开头）
         doc.append(r"\hwlabel{%d}" % i)
-        tex = question_to_tex(q, with_solution=False, with_source=False)
+        _qq = _copy.copy(q)
+        _qq.stem = lb.break_inline_parts(q.stem)
+        tex = question_to_tex(_qq, with_solution=False, with_source=False)
         # TikZ 换成预渲染的矢量图（同其他卷型，见 `_q_tex` 里的说明）
         from . import tikzfig as _tz
         tex, _n = _tz.to_image(tex, q.figures)
@@ -1142,7 +1410,8 @@ def _answers_section(numbering: list[tuple[int, Question]]) -> list[str]:
     out = [r"\filbreak", r"\section{参考答案与解析}", ""]
     for no_, q in numbering:
         ans = (q.answer or "").strip()
-        sol = (q.solution or "").strip()
+        # 「解析无」是占位符：答案册里不印这四个字（印了等于把"没有解析"当解析）
+        sol = (q.solution or "").strip() if q.has_solution else ""
         if not ans and not sol:
             continue
         # 解答题的答案本来就是"见解析"；这里再兜一次底，

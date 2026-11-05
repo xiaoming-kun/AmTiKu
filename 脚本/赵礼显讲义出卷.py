@@ -29,8 +29,8 @@ sys.path.insert(0, str(ROOT))
 
 from amti import latex_ir                                    # noqa: E402
 from amti.schema import Question                             # noqa: E402
-# ⚠️ 必须 `from amti import paper`：`paper.py` 里是相对导入（`from . import generate`），
-# 当顶层模块 import 会直接 ImportError。仓库根下那份 `paper.py` 是同一内容的副本。
+# ⚠️ 必须 `from amti import paper`：`amti/paper.py` 里是相对导入（`from . import generate`），
+# 当顶层模块 import 会直接 ImportError。仓库根下那份同名副本已删（2026-10-06）。
 from amti import paper as P                                  # noqa: E402
 
 # 这几个是**默认值**（赵礼显那一批）。别的批次用 `--work` 覆盖——

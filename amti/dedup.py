@@ -52,12 +52,55 @@ _BLANK_PAT = re.compile(
 _PUNCT = re.compile(r"[，。、；：？！,.;:?!\"'“”‘’（）()\[\]【】\s]+")
 
 
+def _strip_answer_cmds(s: str) -> str:
+    r"""把 `\paren[D]` / `\fillin[$...$]` 整段换成 `_`。
+
+    判重指纹**不看答案**（见 `ingest.dup_fingerprint` 的注释），但答案写在
+    题干里的 `\paren`/`\fillin` 参数中。只把这个命令本身抹掉、留下参数，
+    答案字母/值仍会进指纹（实测 `\paren[D]` 归一化后是 `_d`）；
+    这里按配对括号整段吃掉，才真正做到“答案不参与判重”。
+    """
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        if s[i] == "\\":
+            m = re.match(r"\\(paren|fillin)(?![A-Za-z])", s[i:])
+            if m:
+                j = i + m.end()
+                while j < n and s[j] in " \t\n":
+                    j += 1
+                if j < n and s[j] in "[{":
+                    pair = "]" if s[j] == "[" else "}"
+                    depth, k = 0, j
+                    while k < n:
+                        c = s[k]
+                        if c == "\\":
+                            k += 2
+                            continue
+                        if c == s[j]:
+                            depth += 1
+                        elif c == pair:
+                            depth -= 1
+                            if depth == 0:
+                                k += 1
+                                break
+                        k += 1
+                    j = k
+                out.append("_")
+                i = j
+                continue
+        out.append(s[i])
+        i += 1
+    return "".join(out)
+
+
 def norm_stem(stem: str) -> str:
     r"""题干归一化。**只做无争议的归一**，不做语义改写。
 
     归一过头会把「$a>0$」和「$a<0$」判成同一道题——那比不查重更糟。
+    答案槽（`\paren[D]` / `\fillin[$2$]`）整段抹掉，答案不参与判重。
     """
-    s = stem or ""
+    s = _strip_answer_cmds(stem or "")
     s = re.sub(r"(?<!\\)%[^\n]*", "", s)          # 注释
     for c in _STRIP_CMDS:
         s = s.replace(c, "")
@@ -178,15 +221,17 @@ class DedupIndex:
     #: 粗筛后进入精确比对的候选上限。调大更全但更慢。
     MAX_CANDIDATES = 60
 
-    def __init__(self, questions):
+    def __init__(self, questions, *, text_of=None, normalize=None):
         self.items: list[tuple[str, str, str]] = []      # (key, norm, title)
         self._inv: dict[str, list[int]] = {}
         self.total = 0                # 传进来多少道
         self.skipped: list[str] = []  # 归一化后为空、**没进索引**的那些 key
         self.last_truncated = False   # 上一次 find 有没有被 MAX_CANDIDATES 截断
+        self._text_of = text_of or (lambda q: getattr(q, "stem", ""))
+        self._norm_of = normalize or norm_stem
         for q in questions:
             self.total += 1
-            n = norm_stem(q.stem)
+            n = self._norm_of(self._text_of(q))
             if not n:
                 self.skipped.append(q.key)
                 continue
@@ -213,8 +258,17 @@ class DedupIndex:
         所以"没找到"可能是假的。调用方要么调大上限重查，要么在界面上
         明说"本次查重结果可能不完整"。
         """
+        return self.find_norm(self._norm_of(stem), threshold=threshold,
+                              top=top, exclude=exclude)
+
+    def find_norm(self, n: str, *, threshold: float = 0.80, top: int = 3,
+                  exclude: set[str] | None = None) -> tuple[list[dict], bool]:
+        r"""用**已经准备好**的文本查（如整题指纹）——不再做一次归一化。
+
+        手工录入的 95% 规则用的是 `dup_fingerprint`（题干+选项），
+        不能拿 `norm_stem` 再洗一遍；所以索引构造和查询都要能换文本/归一函数。
+        """
         self.last_truncated = False
-        n = norm_stem(stem)
         if not n:
             return [], True
         # 粗筛：三元组命中数排序，取前若干；三元组全落空的题不可能相似
@@ -272,6 +326,11 @@ class DedupIndex:
 # 不用相似度阈值——见文件头「为什么并入要求完全相同」。
 MERGE_SCORE = 1.0
 SUSPECT_SCORE = 0.80
+#: 手工录入的硬阈值：整题（题干+选项）相似度**超过** 95% 也不入库。
+#: 用户 2026-11-03 定。`same_key`（key/指纹完全相同）仍是 100% 的更硬判据；
+#: 超过 95% 的**整题相似**（题干+选项）也按用户口径跳过——包括语义变式
+#: （单调递增/递减、∪/∩ 等）；"变式"标签仍用于查重提示，但不再豁免阈值。
+NEAR_DUP_SCORE = 0.95
 
 
 def classify(score: float) -> str:
@@ -394,6 +453,16 @@ def _selftest() -> int:
     lib2 = [Question(key="m/1", type="single_choice", stem=a)]
     idx2 = DedupIndex(lib2)
     r = idx2.find(b, threshold=0.80)
+    # 答案不参与判重：`\paren[D]`/`\fillin[$2$]` 整段抹掉，只留空位。
+    _a = norm_stem(r"已知 $1+1=2$，则 $2+2$ 等于 \paren[B]")
+    _b = norm_stem(r"已知 $1+1=2$，则 $2+2$ 等于 \paren[C]")
+    _c = norm_stem(r"已知 $x>0$，则 $x+\frac1x$ 的最小值是 \fillin[$2$]")
+    _d = norm_stem(r"已知 $x>0$，则 $x+\frac1x$ 的最小值是 \fillin[$3$]")
+    _e = norm_stem(r"已知 $x>0$，则 $x+\frac1x$ 的最小值是 \fillin[$\sqrt[3]{\frac{3}{2}}$]")
+    check("答案不参与判重：\\paren[B] 与 \\paren[C] 指纹相同", _a == _b, repr((_a, _b)))
+    check("答案不参与判重：\\fillin[$2$] 与 \\fillin[$3$] 指纹相同", _c == _d, repr((_c, _d)))
+    check("\\fillin 里嵌套 \\sqrt[3] 也能整段吃掉", "_" in _e and "sqrt" not in _e, repr(_e))
+
     check("回归：排版不同但内容相同 → 相似度 1.0",
           r and r[0]["score"] == 1.0, str(r))
     r2 = idx2.find(c, threshold=0.80)      # c 是 A∩B，与库里的 A∪B 差一个符号

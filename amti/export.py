@@ -30,7 +30,9 @@ from . import store
 
 PKG = ROOT
 IMG_DIR = PKG / "图片"
-from .paths import OUT_DIR   # 导出位置**唯一来源**（可在 数据/导出位置.txt 里改）
+# 导出位置与分类子目录**唯一来源**（位置在 数据/导出位置.txt 里改，
+# 分类见 `amti/paths.py` 的 OUT_KINDS：试卷 / 测试卷 / 讲义）
+from .paths import OUT_KINDS, PREVIEW_DIR, kind_of, out_kind_dir, out_kind_label
 
 # 分节顺序（组卷时按这个排）
 SECTION_ORDER = ("single_choice", "multi_choice", "fill_in_blank", "detailed_answer")
@@ -47,9 +49,11 @@ SECTION_NAME = {
 def render_paper(questions: list[Question], *, title: str = "", show_answers: bool = False,
                  answers_at_end: bool = False, show_source: bool = True,
                  bottom_sep: str = "0.6em", problem_blank_cm: float = 0.0,
-                 columns: int = 4, mode: str = "gaokao",
+                 columns: int = 0, mode: str = "gaokao",
                  handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
-                 qid_marks: bool = False) -> str:
+                 qid_marks: bool = False, answer_sheet: bool = False,
+                 detail_one_page: bool = True,
+                 score_box: bool = True, seal_line: bool = True) -> str:
     """渲染成完整的 exam-zh 文档。**委托给 `paper.py`。**
 
     这里早先自己实现过一份，结果 `paper.py` 的两种卷型和「按位置定难度」
@@ -58,7 +62,7 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
     `handout`（讲义：一题一页 · A4 横版 · 无答案，给 iPad 讲课用）。
 
     `show_source` **默认开**：三种卷型每题题干前都印出处
-    （`（2023新高考II卷 第22题）`），跟讲义一致；卷面上不印难度。
+    （`（2023新高考II卷）`，**不印原卷题号**），跟讲义一致；卷面上不印难度。
 
     ⚠️ 这个包装函数**必须和 `paper.render_paper` 的参数保持同步**。
     实测踩过：给 `paper` 加了 `qid_marks` 却没加到这里，于是
@@ -70,7 +74,9 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
         answers_at_end=answers_at_end, show_source=show_source,
         bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
         columns=columns, graphicspath=str(IMG_DIR),
-        handout_font=handout_font, qid_marks=qid_marks)
+        handout_font=handout_font, qid_marks=qid_marks,
+        answer_sheet=answer_sheet, detail_one_page=detail_one_page,
+        score_box=score_box, seal_line=seal_line)
 
 
 # ── 编译 ──────────────────────────────────────────────────────────────
@@ -186,6 +192,14 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
         produced = build_dir / "main.pdf"
         if not produced.exists():
             return False, xe_hint + log
+        # 把 .aux 留在 PDF 旁边：导出后的排版体检要用它把
+        # `\label{amtiq…}` 的页码读出来（判断解答题有没有跨页）。
+        try:
+            aux = build_dir / "main.aux"
+            if aux.exists():
+                shutil.copy2(aux, tex_path.with_suffix(".aux"))
+        except OSError:
+            pass
         shutil.move(str(produced), str(tex_path.with_suffix(".pdf")))
         return True, log
     finally:
@@ -211,17 +225,33 @@ def export(keys: list[str], *, title: str = "", out: str = "",
            show_source: bool = True,
            bottom_sep: str = "0.6em",
            problem_blank_cm: float = 0.0, do_compile: bool = True,
-           mode: str = "gaokao", handout_font: str = _paper.HANDOUT_FONT_DEFAULT) -> dict:
+           mode: str = "gaokao", handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
+           kind: str = "", preview: bool = False,
+           answer_sheet: bool = False, detail_one_page: bool = True,
+           score_box: bool = True, seal_line: bool = True) -> dict:
     r"""按 key 列表导出。返回落盘位置（**必须回传，UI 要显示"存到哪了"**）。
 
     `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字）/
     `handout`（讲义，见 `paper._render_handout`）。
 
-    **三种卷型都印出处、都不印难度**（用户要求，见 `paper` 模块开头）；
-    `show_source=False` 只为测试与特殊场合留一条退路，界面上没有这个开关。
+    `kind` 是**分类子目录**（试卷 / 测试卷 / 讲义，见 `paths.OUT_KINDS`），
+    默认由卷型推出来；界面把「考点覆盖卷」归到 `试卷`（它渲染用的是
+    `test` 卷型），所以留了个显式指定的口子。**非法值直接拒绝**——
+    这个值会被拼进路径，不能让它带 `../`。
+
+    `preview=True` 是**只编译给人看**：产物落 `数据/预览/`，
+    **不写存档、不计使用频次**（使用频次由调用方 server 计）。
+    「编译预览」和「导出并保存」以前是同一个动作，点一次预览就在用户的
+    资料夹里留一份 PDF，还把题目的「用过 N 次」+1。
+
+    **三种卷型默认都印出处、都不印难度**（用户要求，见 `paper` 模块开头）；
+    `show_source=False` 是界面上的「印出处」开关（用户 2026-11-05 要求可关）。
     """
     if mode not in ("gaokao", "test", "handout"):
         return {"ok": False, "error": f"未知卷型 {mode!r}", "missing": []}
+    kind = kind or kind_of(mode)
+    if kind not in OUT_KINDS:
+        return {"ok": False, "error": f"未知导出分类 {kind!r}", "missing": []}
 
     qs: list[Question] = []
     missing: list[str] = []
@@ -240,8 +270,11 @@ def export(keys: list[str], *, title: str = "", out: str = "",
         out = f"{title.strip() or '试卷'}_{stamp}"
     name = re.sub(r"[^\w\u4e00-\u9fff\-]+", "_", out).strip("_") or "试卷"
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    tex_path = OUT_DIR / f"{name}.tex"
+    # 分类落盘：`<导出位置>/<分类>/`（试卷 / 测试卷 / 讲义，见 paths.py）。
+    # 预览放应用数据里，不污染用户的资料夹。
+    dest = PREVIEW_DIR if preview else out_kind_dir(kind)
+    dest.mkdir(parents=True, exist_ok=True)
+    tex_path = dest / f"{name}.tex"
     # `qid_marks=do_compile`：**要编译才写标记**。
     # 标记是每题前面一行 `% AMTIKU-Q: <key>` 注释（不上卷面），
     # 作用是编译失败时把 xelatex 给的行号翻成"是哪道题"（见 `amti/texdiag.py`）。
@@ -252,18 +285,32 @@ def export(keys: list[str], *, title: str = "", out: str = "",
                                      bottom_sep=bottom_sep, mode=mode,
                                      problem_blank_cm=problem_blank_cm,
                                      handout_font=handout_font,
-                                     qid_marks=do_compile),
+                                     qid_marks=do_compile,
+                                     answer_sheet=answer_sheet,
+                                     detail_one_page=detail_one_page,
+                                     score_box=score_box, seal_line=seal_line),
                         encoding="utf-8")
 
-    res = {"ok": True, "name": name, "questions": len(qs), "missing": missing,
-           "tex_abs": str(tex_path), "pdf_abs": None, "dir_abs": str(OUT_DIR),
-           "saved_hint": f"{name} 已保存到 {OUT_DIR.name}/",
-           "out_dir": str(OUT_DIR), "log": ""}
+    res = {"ok": True, "name": name, "kind": kind, "preview": preview,
+           "questions": len(qs), "missing": missing,
+           "tex_abs": str(tex_path), "pdf_abs": None, "pdf_rel": None,
+           "dir_abs": str(dest),
+           "saved_hint": (f"{name} 预览已生成（未保存、不计使用频次）" if preview
+                          else f"{name} 已保存到 {out_kind_label(kind)}/"),
+           "out_dir": str(dest), "log": ""}
     if do_compile:
         ok, log = compile_tex(tex_path)
         res["ok"] = ok
         if ok:
             res["pdf_abs"] = str(tex_path.with_suffix(".pdf"))
+            # 相对导出位置（或预览目录）的路径：前端预览 `/api/pdf?path=` 直接用它，
+            # 不用自己把「分类子目录」再拼一遍（那份拼法迟早和后端分叉）。
+            res["pdf_rel"] = (f"{name}.pdf" if preview else f"{kind}/{name}.pdf")
+            from . import pdfcheck as _pc
+            res.update(_pc.inspect(res["pdf_abs"], tex_path=tex_path,
+                                   aux_path=tex_path.with_suffix(".aux")))
+            if preview:
+                _prune_previews()
         else:
             # 挑出日志里的报错行；**一行都没挑到就把原文尾巴带上**——
             # 否则界面上只显示"导出失败："后面空着，连"找不到 xelatex"这种
@@ -284,19 +331,46 @@ def export(keys: list[str], *, title: str = "", out: str = "",
                 res["log"] += f"\n\n完整日志：{full_log}"
 
     # **存档**：出了什么卷、用了哪些题、什么参数。
-    # 不记的话「上次那套卷呢」只能去 试卷/ 翻文件名。
+    # 不记的话「上次那套卷呢」只能去导出文件夹里翻文件名（现在按分类分了子目录）。
     # 编译失败也存——题目选好了就是成果，编译是另一回事。
-    try:
-        from . import papers as _papers
-        _papers.add(name, [q.key for q in qs], title=title or name, mode=mode,
-                    params={"show_answers": show_answers, "bottom_sep": bottom_sep,
-                            "problem_blank_cm": problem_blank_cm, "mode": mode},
-                    kind="试卷")
-        res["archived"] = True
-    except Exception as e:
-        res["archived"] = False
-        res["archive_error"] = str(e)
+    # **预览不存档**：那是"看一眼排版"，不是一份要留的卷子。
+    if not preview:
+        try:
+            from . import papers as _papers
+            _papers.add(name, [q.key for q in qs], title=title or name, mode=mode,
+                        params={"show_answers": show_answers, "show_source": show_source,
+                                "bottom_sep": bottom_sep,
+                                "problem_blank_cm": problem_blank_cm, "mode": mode,
+                                "answers_at_end": answers_at_end,
+                                "answer_sheet": answer_sheet,
+                                "detail_one_page": detail_one_page,
+                                "score_box": score_box, "seal_line": seal_line},
+                        # 存进「存档」的分类跟着卷型走（以前恒写"试卷"，导一份
+                        # 讲义也在存档列表里显示成"试卷"）。
+                        kind=kind)
+            res["archived"] = True
+        except Exception as e:
+            res["archived"] = False
+            res["archive_error"] = str(e)
     return res
+
+
+def _prune_previews(keep: int = 20) -> None:
+    """预览目录只留最近 `keep` 份 PDF。
+
+    预览文件名带时间戳，不清理会一直堆；这些都是"看一眼"的产物，
+    没有保留价值（改走「导出并保存」才会进存档和资料夹）。
+    """
+    try:
+        files = sorted(PREVIEW_DIR.glob("*.pdf"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        for p in files[keep:]:
+            p.unlink(missing_ok=True)
+            # 同一份预览的 .tex/.log 一起清掉，别只留下源码
+            p.with_suffix(".tex").unlink(missing_ok=True)
+            p.with_suffix(".log").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

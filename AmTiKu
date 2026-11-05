@@ -45,7 +45,7 @@ c_ok()   { printf "  \033[32m✓\033[0m %s\n" "$1"; }
 c_bad()  { printf "  \033[31m✗\033[0m %s\n" "$1"; }
 c_info() { printf "    %s\n" "$1"; }
 
-web_up()   { pgrep -f "amti\.web\.server" >/dev/null; }
+web_up()   { curl -s --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/api/settings"; }
 lm_up()    { curl -s --max-time 2 -o /dev/null http://127.0.0.1:1234/v1/models; }
 solve_up() { pgrep -f "amti.solve" >/dev/null; }
 

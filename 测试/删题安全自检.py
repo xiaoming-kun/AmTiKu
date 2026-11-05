@@ -3,7 +3,7 @@ r"""删题安全自检 —— 危险操作，单独一层。
 删一道题会**重写整库**。逻辑再小心也可能有没预料到的分支，所以这里把
 "不该发生的事"逐条证一遍：
 
-  ① 口令不对       → 一道都不动
+  ① 原因不合法     → 一道都不动（删题**不再要口令**）
   ② 题号不存在     → 整批不执行（**绝不能删一半**）
   ③ 正常删除       → 只少这一道，**其余部分逐字节不变**
   ④ 恢复           → 内容一字不差，库指纹回到删除前
@@ -56,15 +56,16 @@ fp1 = lib_fingerprint(); n1 = len(store.load_all())
 print("\n【加入自检题后】%d 道（+%d）" % (n1, n1 - n0))
 
 try:
-    print("\n【1】口令不对：必须一道都不动")
-    r = trash.delete([K], password="0000")
-    check("拒绝执行", r["ok"] is False)
+    print("\n【1】删题不再要口令；原因不合法：必须一道都不动")
+    r = trash.delete([K], reason="接口测试乱填的原因")
+    check("没有口令也走到了原因校验（口令已删）",
+          r["ok"] is False and "原因" in r["error"], str(r))
     check("库指纹没变", lib_fingerprint() == fp1, lib_fingerprint())
     check("回收站没进东西", trash.count() == N_TRASH0,
           "%d → %d" % (N_TRASH0, trash.count()))
 
     print("\n【2】题号不存在：整批不执行，不能删一半")
-    r = trash.delete([K, "__不存在/9"], password="0808")
+    r = trash.delete([K, "__不存在/9"])
     check("拒绝执行", r["ok"] is False)
     check("自检题**还在**（没删一半）", store.find(K) is not None)
     check("库指纹没变", lib_fingerprint() == fp1)
@@ -72,7 +73,7 @@ try:
           "%d → %d" % (N_TRASH0, trash.count()))
 
     print("\n【3】正常删除：只少这一道，别的题一个字节都不能变")
-    r = trash.delete([K], reason="现在的高考不考了", password="0808")
+    r = trash.delete([K], reason="现在的高考不考了")
     check("删除成功", r["ok"], r.get("error"))
     check("库少一道", len(store.load_all()) == n1 - 1)
     check("这道题不在库里了", store.find(K) is None)
@@ -101,7 +102,7 @@ try:
           "%d → %d" % (N_TRASH0, trash.count()))
 
     print("\n【5】库里已有同号题时恢复：拒绝，不覆盖")
-    trash.delete([K], password="0808")
+    trash.delete([K])
     store.append([q])                       # 手工放一道同号的回去
     r = trash.restore([K])
     check("拒绝恢复", r["ok"] is False and r.get("clash") == [K], r)

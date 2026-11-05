@@ -9,28 +9,43 @@
  *  留在 App.tsx 里会让 App 多背四个 state。
  */
 import { useEffect, useRef, useState } from 'react'
-import { Search, Plus, ScanLine, X, ChevronDown, ShieldCheck, ShieldAlert, ClipboardList } from 'lucide-react'
+import { Search, Plus, X, ChevronDown, ShieldCheck, ShieldAlert, ClipboardList, History } from 'lucide-react'
 import type { Base } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
 import { BaseRow } from '@/app/ui'
 
 export default function TopBar({
-  q, onQ, inputRef, base, paperCount, onPaper, onExport, onIngest, onReload,
+  q, onQ, inputRef, base, paperCount, recent, onClearRecent, onPaper, onExport, onReload,
 }: {
   q: string
   onQ: (v: string) => void
   inputRef: React.RefObject<HTMLInputElement | null>
   base: Base | null
   paperCount: number
+  /** 最近搜过（localStorage，最多 8 条） */
+  recent?: string[]
+  onClearRecent?: () => void
   onPaper: () => void
   onExport: () => void
-  onIngest: () => void
   onReload: () => void
 }) {
   const [openBase, setOpenBase] = useState(false)
   const [sure, setSure] = useState(false)
   const [msg, setMsg] = useState('')
   const box = useRef<HTMLDivElement>(null)
+  const searchBox = useRef<HTMLDivElement>(null)
+  const [showRecent, setShowRecent] = useState(false)
+  const recents = recent || []
+
+  // 点搜索框外面收起「最近搜索」；和存量对账那个弹层同一套做法
+  useEffect(() => {
+    if (!showRecent) return
+    const h = (e: MouseEvent) => {
+      if (searchBox.current && !searchBox.current.contains(e.target as Node)) setShowRecent(false)
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [showRecent])
 
   // 点外面收起。不做成模态——对账时经常要一边点一边看列表
   useEffect(() => {
@@ -48,27 +63,60 @@ export default function TopBar({
     <header className="relative z-30 flex h-[56px] shrink-0 items-center gap-3 border-b border-border
                        bg-surface px-4">
       {/* ── 搜索：顶栏最宽的一格 ── */}
-      <div className="relative min-w-0 flex-1 max-w-[620px]">
+      <div ref={searchBox} className="relative min-w-0 flex-1 max-w-[620px]">
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
         <input
           ref={inputRef}
           value={q}
-          onChange={(e) => onQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') { onQ(''); (e.target as HTMLInputElement).blur() } }}
+          onChange={(e) => {
+            const v = e.target.value
+            onQ(v)
+            setShowRecent(!v && recents.length > 0)
+          }}
+          onFocus={() => { if (!q && recents.length) setShowRecent(true) }}
+          onClick={() => { if (!q && recents.length) setShowRecent(true) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { onQ(''); setShowRecent(false); (e.target as HTMLInputElement).blur() }
+          }}
           placeholder="搜索题目、答案、考点、出处…"
           className="h-[36px] w-full rounded-[10px] border border-border bg-bg pl-9 pr-16
                      text-[13px] outline-none transition-[border-color,background-color,box-shadow]
                      duration-150 placeholder:text-ink-faint
                      focus:border-brand-line focus:bg-surface focus:shadow-[0_0_0_3px_var(--color-brand-soft)]"
         />
+        {/* 最近搜索：输入框空着、聚焦时才出现；点一条直接回填 */}
+        {showRecent && !q && recents.length > 0 && (
+          <div className="absolute left-0 right-0 top-[40px] z-40 overflow-hidden rounded-xl
+                          border border-border bg-surface shadow-[var(--shadow-pop)]">
+            <div className="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5
+                            text-[10.5px] text-ink-faint">
+              <History size={11} />最近搜索
+              <button onClick={() => { onClearRecent?.(); setShowRecent(false) }}
+                className="ml-auto text-[10.5px] text-brand-ink hover:underline">清空</button>
+            </div>
+            <div className="max-h-[260px] overflow-y-auto p-1">
+              {recents.map((s) => (
+                <button key={s} onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { onQ(s); setShowRecent(false) }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-[5px] text-left
+                             text-[12px] text-ink-soft hover:bg-muted hover:text-ink">
+                  <Search size={11} className="shrink-0 text-ink-faint" />
+                  <span className="min-w-0 flex-1 truncate">{s}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {q ? (
-          <button onClick={() => onQ('')} title="清空"
+          <button onClick={() => { onQ(''); if (recents.length) setShowRecent(true) }}
+            title="清空"
             className="icon-btn absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2">
             <X size={14} />
           </button>
         ) : (
-          <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border
-                          border-border bg-surface-2 px-1.5 text-[10.5px] leading-[17px] text-ink-faint">
+          <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded
+                          border border-border bg-surface-2 px-1.5 text-[10.5px] leading-[17px]
+                          text-ink-faint sm:block">
             /
           </kbd>
         )}
@@ -88,7 +136,7 @@ export default function TopBar({
                             ? 'border-warn-line bg-warn-soft text-warn hover:brightness-[.98]'
                             : 'border-has-line bg-has-soft text-has hover:brightness-[.98]'}`}>
               {dirty ? <ShieldAlert size={13} /> : <ShieldCheck size={13} />}
-              <span className="font-medium">
+              <span className="hidden font-medium sm:inline">
                 {dirty ? `存量有 ${base.内容变化} 处异常` : '存量未改动'}
               </span>
               <ChevronDown size={12} className={`transition-transform duration-200 ${openBase ? 'rotate-180' : ''}`} />
@@ -162,12 +210,6 @@ export default function TopBar({
           <span className="hidden lg:inline">题</span>
         </button>
 
-        <button onClick={onIngest} title="粘贴 LaTeX 录入新题（I）"
-          className="press hidden h-[30px] items-center gap-1.5 rounded-lg border border-border
-                     bg-surface px-2.5 text-[12.5px] text-ink-soft transition-colors
-                     hover:border-border-strong hover:text-ink sm:flex">
-          <ScanLine size={14} />录入
-        </button>
 
         {/* 主按钮：全屏只有一个，就是它 */}
         <button onClick={onExport} title="组卷并导出（B）"
@@ -175,7 +217,7 @@ export default function TopBar({
                      font-medium text-white shadow-[var(--shadow-brand)]
                      transition-[filter] hover:brightness-105">
           <Plus size={15} strokeWidth={2.4} />
-          新建试卷
+          <span className="hidden sm:inline">新建试卷</span>
         </button>
       </div>
     </header>

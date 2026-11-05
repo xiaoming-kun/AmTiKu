@@ -47,7 +47,10 @@ c_ok()   { printf "  \033[32m✓\033[0m %s\n" "$1"; }
 c_bad()  { printf "  \033[31m✗\033[0m %s\n" "$1"; }
 c_info() { printf "    %s\n" "$1"; }
 
-web_up()   { pgrep -f "amti\.web\.server" >/dev/null; }
+# **必须探 HTTP，不能只 pgrep**：关浏览器后服务还有 30 秒退出窗口，
+# 这期间进程还在、端口却快死了；只 pgrep 会误判“已在跑”，打开一个
+# 马上断线的页面，用户看到的就是“再打开打不开”。
+web_up()   { curl -s --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/api/settings"; }
 lm_up()    { curl -s --max-time 2 -o /dev/null http://127.0.0.1:1234/v1/models; }
 solve_up() { pgrep -f "amti.solve" >/dev/null; }
 vision_up() { curl -s --max-time 2 -o /dev/null http://127.0.0.1:1235/v1/models; }
@@ -65,7 +68,7 @@ start_lm() {
 }
 
 # `AMTI_HEADLESS=1` 时不自动开浏览器、也不随页面退出——
-# 给脚本/后台用。默认是**窗口模式**：开浏览器，关浏览器就退出。
+# 给脚本/后台用。默认是**窗口模式**：开浏览器，关浏览器 30 秒后退出。
 start_web() {
   if web_up; then
     c_ok "题库服务已在跑"
@@ -76,6 +79,24 @@ start_web() {
       open "http://127.0.0.1:$PORT" 2>/dev/null && c_ok "已打开浏览器"
     fi
     return
+  fi
+  # 进程还在但 HTTP 不通：通常是上一个页面刚关、服务正在 30 秒退出窗口里。
+  # 先等它自己退；如果一直不退（真卡死），再清掉重开。
+  if pgrep -f "amti\.web\.server" >/dev/null; then
+    c_info "检测到上一个题库服务没有响应，等它退出…"
+    for _ in $(seq 1 20); do
+      web_up && break
+      sleep 0.5
+    done
+    if web_up; then
+      c_ok "题库服务已在跑"
+      if [ -z "$AMTI_HEADLESS" ]; then
+        open "http://127.0.0.1:$PORT" 2>/dev/null && c_ok "已打开浏览器"
+      fi
+      return
+    fi
+    pkill -f "amti\.web\.server" 2>/dev/null || true
+    sleep 1
   fi
   # 端口可能被上一个还没退干净的进程占着，等一等
   for _ in $(seq 1 20); do
@@ -93,6 +114,11 @@ PY
   if [ -n "$AMTI_HEADLESS" ]; then
     nohup "$PY" -u -m amti.web.server --port $PORT >> /tmp/amti_web.log 2>&1 &
     c_info "无头模式（不会自动开浏览器，也不会随页面退出）"
+  elif [ -n "$AMTI_KEEP_ALIVE" ]; then
+    # 关浏览器也不退出：下次打开同一个地址直接能用。
+    nohup "$PY" -u -m amti.web.server --port $PORT --open \
+      >> /tmp/amti_web.log 2>&1 &
+    c_info "保活模式（关掉页面服务也不退出）"
   else
     # `-u` 必须加：输出重定向到文件时 Python 会缓冲，
     # 不加的话日志要等进程结束才出现，等于实时看不了。
@@ -108,7 +134,11 @@ PY
   if web_up; then
     c_ok "题库服务已启动"
     c_info "浏览器打开：http://127.0.0.1:$PORT"
-    [ -z "$AMTI_HEADLESS" ] && c_info "关掉页面，服务会自动退出"
+    if [ -n "$AMTI_KEEP_ALIVE" ]; then
+      c_info "服务会一直运行；不用时 ./启动.sh stop 停掉"
+    elif [ -z "$AMTI_HEADLESS" ]; then
+      c_info "关掉页面 30 秒后服务自动退出；再开请双击启动脚本"
+    fi
   else
     c_bad "题库服务起不来，看日志 /tmp/amti_web.log"
     tail -5 /tmp/amti_web.log | sed 's/^/      /'

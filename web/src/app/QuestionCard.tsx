@@ -14,11 +14,11 @@
  *     展开才去拉全量（答案与解析的块 IR 列表接口不带，见 server.py 的说明）
  */
 import { useEffect, useRef, useState } from 'react'
-import { Plus, BookPlus, Check, ChevronDown, Flame, TriangleAlert, Loader2, Maximize2 } from 'lucide-react'
+import { Plus, Check, ChevronDown, Flame, TriangleAlert, Loader2, Maximize2 } from 'lucide-react'
 import type { Q } from '@/lib/types'
-import { renderBlocks } from '@/lib/render'
+import { Highlight, renderBlocks } from '@/lib/render'
 import { api, reportErr } from '@/lib/api'
-import { DIFF_STARS } from '@/lib/display'
+import { DIFF_STARS, hasImageOptions, optionRange, starsLabel } from '@/lib/display'
 import { Flags } from '@/app/ui'
 
 /** 题干到底有没有被截断。
@@ -65,16 +65,22 @@ function answerPreview(ans: string): string {
 }
 
 export default function Card({
-  q, active, inPaper, inHandout, selectMode, checked, dense,
-  onOpen, onDetail, onAdd, onAddHandout, onToggle,
+  q, active, inPaper, selectMode, checked, dense, maskAns, kw,
+  onOpen, onDetail, onAdd, onToggle,
 }: {
-  q: Q; active: boolean; inPaper: boolean; inHandout: boolean
+  q: Q; active: boolean; inPaper: boolean
+  /** 答案是否遮住（「显示」菜单里可统一切换） */
+  maskAns: boolean
   selectMode: boolean; checked: boolean
   /** 紧凑模式：题干一行、不要选项预览、内边距收小。
    *  挑题时要的是"一屏多扫几道"，读题时才需要宽松（Notion/Linear 同款开关）。 */
   dense?: boolean
   onOpen: () => void; onDetail: () => void
-  onAdd: () => void; onAddHandout: () => void; onToggle: () => void
+  onAdd: () => void
+  /** `shift` 为真时从上次勾选的那道连选过来 */
+  onToggle: (shift?: boolean) => void
+  /** 搜索词：命中高亮 + 标出「出处/考点命中」 */
+  kw?: string
 }) {
   const [open, setOpen] = useState(false)
   const [full, setFull] = useState<Q | null>(null)
@@ -89,21 +95,25 @@ export default function Card({
   }, [open, full, q.key])
 
   // 换了一道题，展开状态跟着重置
-  useEffect(() => { setFull(null); setOpen(false) }, [q.key])
+  useEffect(() => { setFull(null); setOpen(false); setPeek(false) }, [q.key])
 
   /**
-   * 点卡片：**详情永远跟着走**，选定模式下再顺带勾选。
+   * 点卡片 = **只看**（详情跟着换）。
    *
-   * 早先是 `selectMode ? onToggle : onOpen` —— 选定模式一开（现在是默认），
-   * 点卡片就只切勾选、右侧详情纹丝不动，看起来像"点了没反应"。
-   * 勾选和看题是两件事，不该互斥。
+   * 之前是"打开详情 + 顺手勾选"，于是列表里看过的每一道都被记成"已选"，
+   * 表头那个「已选 N 道」记录的其实是浏览历史；这时候点「加入卷子」，
+   * 一堆没打算要的题就进去了。**看题和挑题是两件事**，勾选只走左边的方框、
+   * 空格键，或 Shift 连选。
    */
-  const pick = () => { onOpen(); if (selectMode) onToggle() }
+  const pick = () => onOpen()
 
   /** 题干「展开全文」。截断是为了能扫，但**解答题常常有两问**，
    *  只给两行会把第二问整个吃掉——所以给一个随时能看全的出口。
    *  换一道题就自动收起来（不然翻页时一路都是展开的）。 */
   const [stemOpen, setStemOpen] = useState(false)
+  /** 答案**遮罩**：列表常常是投屏给学生看的，答案直接摊在每一行底部，
+   *  看一眼这道题就废了。点「显示」或展开才给。 */
+  const [peek, setPeek] = useState(false)
   useEffect(() => { setStemOpen(false) }, [q.key])
   const [clampRef, over] = useClamped([q.key, dense, stemOpen])
   const clamped = over && !stemOpen
@@ -114,7 +124,21 @@ export default function Card({
   const stars = DIFF_STARS[q.difficulty] || q.stars || 0
   const src = q.meta?.source_label || q.meta?.book || ''
   const year = q.meta?.year || ''
+  const region = q.meta?.region || ({
+    multi: '跨省联考', book: '专题书', unknown: '地区未知',
+  } as Record<string, string>)[q.meta?.region_scope] || ''
+  const sourceRegion = q.meta?.source_region || ''
   const multi = q.options && q.options.length > 1
+  const imgOpts = hasImageOptions(q)
+  const kwl = (kw || '').trim().toLowerCase()
+  const stemHit = !!kwl && (q.stem || '').toLowerCase().includes(kwl)
+  const srcHit = !!kwl && [q.meta?.book, q.meta?.source_label, q.meta?.region, q.key]
+    .some((x) => String(x || '').toLowerCase().includes(kwl))
+  const ptHit = !!kwl && (q.point_titles || [])
+    .some((t) => String(t || '').toLowerCase().includes(kwl))
+  const hitBadge = kwl && !stemHit && (srcHit || ptHit)
+    ? (srcHit && ptHit ? '出处/考点命中' : srcHit ? '出处命中' : '考点命中')
+    : ''
 
   return (
     <article
@@ -125,7 +149,7 @@ export default function Card({
          不是看窗口多宽（列表栏宽度会被筛选面板/详情抽屉改来改去）。
          以前用 `sm:grid-cols-2`（视口断点），栏很窄时两列挤成一团、
          栏很宽时两列又离得老远。 */
-      className={`@container card-lift group cursor-pointer overflow-hidden rounded-[var(--radius-card)]
+      className={`@container q-card card-lift group cursor-pointer overflow-hidden rounded-[var(--radius-card)]
                   border bg-surface shadow-[var(--shadow-card)] ${
         checked ? 'border-brand-line ring-2 ring-brand/25'
         : active ? 'border-brand-line'
@@ -134,12 +158,18 @@ export default function Card({
       {/* ── ① 元信息 + 动作 ── */}
       <div className={`flex items-start gap-3 ${dense ? 'px-3.5 pt-2.5' : 'px-4 pt-3'}`}>
         {selectMode && (
-          <span
-            className={`mt-[3px] grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[5px]
-                        border transition-all duration-150 ${
-              checked ? 'border-brand bg-brand text-white' : 'border-border-strong bg-surface text-transparent'}`}>
-            <Check size={11} strokeWidth={3} className={checked ? 'anim-check' : ''} />
-          </span>
+          /* 独立按钮 + 独立点击：点它**不该**带动详情，点卡片也不该带动它。
+             `p-1` 把 16px 的方框撑到 24px，手指/鼠标好按。 */
+          <button type="button" role="checkbox" aria-checked={checked}
+            aria-label="勾选（Shift 连选）" title="勾选（Shift 连选）"
+            onClick={(e) => { e.stopPropagation(); onToggle(e.shiftKey) }}
+            className="-ml-1 mt-0 shrink-0 rounded-md p-1 hover:bg-muted">
+            <span className={`grid h-[16px] w-[16px] place-items-center rounded-[5px]
+                              border transition-all duration-150 ${
+                checked ? 'border-brand bg-brand text-white' : 'border-border-strong bg-surface text-transparent'}`}>
+              <Check size={11} strokeWidth={3} className={checked ? 'anim-check' : ''} />
+            </span>
+          </button>
         )}
         {/* 元信息行。
             **考点全部列出来**，样式与详情抽屉里那排**完全一致**
@@ -158,7 +188,7 @@ export default function Card({
                 className={`shrink-0 rounded-full px-1.5 py-[1px] text-[11px] font-medium ${
                   i === 0 ? 'bg-brand-soft text-brand-ink' : 'bg-muted text-ink-soft'}`}>
                 {i === 0 && <span className="mr-0.5 text-[9.5px] font-normal opacity-70">主</span>}
-                {t}
+                <Highlight text={t} kw={kw} />
               </span>
             ))
           ) : (
@@ -166,7 +196,13 @@ export default function Card({
                              font-medium text-warn">无考点</span>
           )}
           {src && (
-            <span className="min-w-0 truncate text-ink-faint" title={src}>{src}</span>
+            <span className="min-w-0 truncate text-ink-faint" title={src}>
+              <Highlight text={src} kw={kw} />
+            </span>
+          )}
+          {hitBadge && (
+            <span className="shrink-0 rounded-full bg-warn-soft px-1.5 py-[1px]
+                             text-[10px] font-medium text-warn">{hitBadge}</span>
           )}
           {!!year && !src.includes(String(year)) && (
             <span className="shrink-0 text-ink-faint">{year} 年</span>
@@ -186,22 +222,13 @@ export default function Card({
               卡片本身点一下是"移光标 / 勾选"，多选模式下不该把抽屉也拽出来；
               要看全文、改答案、改考点，就点这颗。 */}
           <button onClick={(e) => { e.stopPropagation(); onDetail() }}
-            title="打开详情（看全文 / 改答案 / 改考点 / 源码）"
+            title="打开详情（看全文 / 改答案 / 改考点）"
             className="press icon-btn h-[26px] w-[26px] shrink-0 border border-border
                        text-ink-faint hover:border-brand-line hover:text-brand-ink">
             <Maximize2 size={12} />
           </button>
-          <button onClick={(e) => { e.stopPropagation(); onAddHandout() }}
-            title={inHandout ? '已在讲义里' : '加入讲义'}
-            className={`press flex h-[26px] items-center gap-1 rounded-lg border px-2 text-[11.5px]
-                        font-medium transition-colors ${inHandout
-                          ? 'border-brand-line bg-brand-soft text-brand-ink'
-                          : 'border-border bg-surface text-ink-faint hover:border-brand-line hover:text-brand-ink'}`}>
-            {inHandout ? <Check size={12} strokeWidth={2.6} /> : <BookPlus size={12} />}
-            <span className="hidden xl:inline">{inHandout ? '已入讲义' : '讲义'}</span>
-          </button>
           <button onClick={(e) => { e.stopPropagation(); onAdd() }}
-            title={inPaper ? '已在卷子里' : '加入卷子（Enter）'}
+            title={inPaper ? '已在卷子里' : '加入卷子（⌘↵）'}
             className={`press flex h-[26px] items-center gap-1 rounded-lg border px-2.5 text-[11.5px]
                         font-medium transition-colors ${inPaper
                           ? 'border-has-line bg-has-soft text-has'
@@ -216,14 +243,23 @@ export default function Card({
       <div className={`flex flex-wrap items-center gap-1.5 ${dense ? 'px-3.5 pt-1.5' : 'px-4 pt-2'}`}>
         <Tag>{q.type_label}</Tag>
         <Tag>{q.kind}题</Tag>
-        {stars > 0 && (
-          <Tag title={`难度：${q.difficulty}`}>
-            <span className="tracking-tight text-warn">{'★'.repeat(stars)}</span>
-            <span className="ml-0.5">{q.difficulty?.replace('题', '')}</span>
-          </Tag>
+        {region && <Tag title="地区/来源类型">{region}</Tag>}
+        {sourceRegion && <Tag title="题目原卷来源省份">源·{sourceRegion}</Tag>}
+        {q.meta?.paper_complete === false && (
+          <Tag title={`该卷仅录入 ${q.meta?.paper_size ?? '?'} 题，按节选处理`}>试卷节选</Tag>
         )}
+        {q.meta?.duplicate_group && <Tag title="与另一题逐字重复">重复题</Tag>}
+        {q.meta?.figure_low_res && <Tag title="配图宽度小于 400px">低清图</Tag>}
+        <Tag title={stars > 0 ? `难度：${q.difficulty}` : '星级未评级'}>
+          <span className={`tracking-tight ${stars > 0 ? 'text-warn' : 'text-ink-faint'}`}>
+            {starsLabel(stars)}
+          </span>
+          {stars > 0 && (
+            <span className="ml-0.5">{q.difficulty?.replace('题', '')}</span>
+          )}
+        </Tag>
         {/* 完整度：这里是**列表**，只报缺什么。齐全就什么都不说。 */}
-        <Flags flags={q.flags} />
+        <Flags flags={q.flags} type={q.type} />
         {/* 求解自相矛盾（解析说 D、答案写 C）：这个必须在列表上就跳出来 */}
         {q.flags['存疑'] && (
           <span className="inline-flex items-center gap-0.5 rounded-md bg-warn-soft px-1.5 py-[1px]
@@ -238,7 +274,7 @@ export default function Card({
         <div className="q-stem q-compact text-[14.5px] text-ink">
           <div ref={clampRef} data-over={clamped ? '1' : '0'}
             className={`q-clamp ${stemOpen ? '' : dense ? 'max-h-[1.7em]' : 'max-h-[10em]'}`}>
-            {renderBlocks(q.blocks?.stem)}
+            {renderBlocks(q.blocks?.stem, kw)}
           </div>
           {/* 封顶高度是**折中**：不封顶的话一道三页的题就占满整屏。
               实测 10em（约 5~6 行）能完整放下 87% 的题干，平均每张卡只比
@@ -252,13 +288,19 @@ export default function Card({
           )}
         </div>
 
-        {multi && !dense && (
+        {imgOpts && !dense && (
+          <div className="mt-1.5 text-[11.5px] text-ink-faint">
+            选项见图（{optionRange(q)}）
+          </div>
+        )}
+
+        {multi && !dense && !imgOpts && (
           <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-0.5 @[600px]:grid-cols-2">
             {q.options.slice(0, 6).map((o, i) => (
               <div key={o.label} className="q-options flex min-w-0 gap-1.5 text-[13.5px]">
                 <span className="lbl shrink-0">{o.label}.</span>
                 <span className="line-clamp-1 min-w-0 text-ink-soft">
-                  {renderBlocks(q.blocks?.options?.[i])}
+                  {renderBlocks(q.blocks?.options?.[i], kw)}
                 </span>
               </div>
             ))}
@@ -266,18 +308,34 @@ export default function Card({
         )}
       </div>
 
-      {/* ── ④ 答案与解析 ── */}
+      {/* ── ④ 答案与解析 ──
+          **答案默认遮住**：这一栏在投屏、或者自己还没决定要不要露答案时，
+          直接摊着等于把题废掉。点「显示」只看答案，点「展开」连解析一起。 */}
       <div className="mt-2.5 border-t border-border/70">
-        <button
-          onClick={(e) => { e.stopPropagation(); setOpen((v) => !v) }}
-          className={`flex w-full items-center gap-2 text-left text-[12px] transition-colors
-                      hover:bg-muted/60 ${dense ? 'px-3.5 py-1.5' : 'px-4 py-2'}`}>
+        <div
+          onClick={(e) => {
+            // 点空白处 = 展开；点里面的按钮由按钮自己处理，不叠加
+            if ((e.target as HTMLElement).closest('button')) return
+            e.stopPropagation(); setPeek(true); setOpen((v) => !v)
+          }}
+          className={`flex w-full cursor-pointer items-center gap-2 text-left text-[12px]
+                      transition-colors hover:bg-muted/60 ${dense ? 'px-3.5 py-1.5' : 'px-4 py-2'}`}>
           <span className="shrink-0 font-semibold text-ink-faint">答案</span>
           {hasAns ? (
-            ans
-              ? <span className="rounded bg-has-soft px-1.5 py-[1px] font-mono text-[12px]
-                               font-semibold text-has">{ans}</span>
-              : <span className="text-[11.5px] text-ink-faint">含公式，展开看</span>
+            ans ? (
+              (peek || !maskAns) ? (
+                <span className="rounded bg-has-soft px-1.5 py-[1px] font-mono text-[12px]
+                                 font-semibold text-has">{ans}</span>
+              ) : (
+                <button type="button" title="点击显示答案"
+                  onClick={(e) => { e.stopPropagation(); setPeek(true) }}
+                  className="press rounded border border-dashed border-border-strong bg-muted
+                             px-1.5 py-[1px] text-[11px] font-medium text-ink-faint
+                             transition-colors hover:border-brand-line hover:text-brand-ink">
+                  显示
+                </button>
+              )
+            ) : <span className="text-[11.5px] text-ink-faint">含公式，展开看</span>
           ) : (
             <span className="rounded bg-warn-soft px-1.5 py-[1px] text-[11px] font-medium text-warn">缺答案</span>
           )}
@@ -287,11 +345,13 @@ export default function Card({
             {hasSol ? '已收录，展开阅读' : <span className="font-medium text-warn">这题还没有解析</span>}
           </span>
 
-          <span className="flex shrink-0 items-center gap-1 text-[11.5px] text-ink-faint">
+          <button type="button"
+            onClick={(e) => { e.stopPropagation(); setPeek(true); setOpen((v) => !v) }}
+            className="press flex shrink-0 items-center gap-1 text-[11.5px] text-ink-faint hover:text-ink">
             {open ? '收起' : '展开'}
             <ChevronDown size={13} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-          </span>
-        </button>
+          </button>
+        </div>
 
         {open && (
           <div className="reveal" onClick={(e) => e.stopPropagation()}>

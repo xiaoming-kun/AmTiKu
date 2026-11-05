@@ -183,8 +183,10 @@ def main() -> int:
 
     def pdf_download():
         for key, label in (("paper", "试卷"), ("handout", "讲义")):
-            # 文件名是中文，必须 URL 编码（不编码 urllib 直接抛 UnicodeEncodeError）
-            name = urllib.parse.quote(st[key]["name"] + ".pdf")
+            # 文件名是中文，必须 URL 编码（不编码 urllib 直接抛 UnicodeEncodeError）。
+            # 用后端给的 `pdf_rel`（含分类子目录 `试卷/…`），别自己拿 name 拼。
+            rel = st[key].get("pdf_rel") or (st[key]["name"] + ".pdf")
+            name = urllib.parse.quote(rel)
             stt, body, _ = req(base, f"/api/pdf?path={name}")
             assert stt == 200 and body[:4] == b"%PDF", f"{label} PDF 取回来不对"
         return "试卷 + 讲义都能下载，PDF 头正确"

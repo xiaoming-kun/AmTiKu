@@ -97,24 +97,6 @@
   --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
 }
 
-/* ══ 大类的分类色（知识链路图）═════════════════════════════════════
-   知识链路那 10 个章节各一种颜色，而且是**当文字用的**（章节标题就填这个色）。
-   所以它不能是一组写死的 hex：同一组色在明暗两套底上没法都好读。
-   浅色底要够深，暗色底要够亮 —— 这里两套都按 4.6:1 解出来。
-   见 app/Chain.tsx 的 TOPIC_COLORS。 */
-:root {
-  --tc-1: oklch(0.563 0.159 250);
-  --tc-2: oklch(0.584 0.220 285);
-  --tc-3: oklch(0.552 0.094 200);
-  --tc-4: oklch(0.548 0.128 158);
-  --tc-5: oklch(0.569 0.123 70);
-  --tc-6: oklch(0.590 0.220 25);
-  --tc-7: oklch(0.592 0.220 340);
-  --tc-8: oklch(0.555 0.132 120);
-  --tc-9: oklch(0.575 0.220 265);
-  --tc-10: oklch(0.551 0.095 190);
-}
-
 /* ══ 暗色 ═══════════════════════════════════════════════════════════
    只重赋变量，不动组件。这些值不是"把浅色调暗"调出来的，是按对比度
    解出来的：正文 ≥14:1、次级 ≥8:1、三级 ≥4.5:1，
@@ -176,18 +158,6 @@
   --shadow-card:  0 1px 2px oklch(0 0 0 / .30);
   --shadow-hover: 0 4px 14px -4px oklch(0 0 0 / .45), 0 1px 3px oklch(0 0 0 / .30);
   --shadow-pop:   0 12px 32px -10px oklch(0 0 0 / .60), 0 2px 8px oklch(0 0 0 / .35);
-
-  /* 分类色翻转取值：同色相、更高亮度，压在暗底上仍是 4.6:1 */
-  --tc-1: oklch(0.616 0.175 250);
-  --tc-2: oklch(0.634 0.206 285);
-  --tc-3: oklch(0.605 0.103 200);
-  --tc-4: oklch(0.599 0.140 158);
-  --tc-5: oklch(0.623 0.135 70);
-  --tc-6: oklch(0.643 0.220 25);
-  --tc-7: oklch(0.645 0.220 340);
-  --tc-8: oklch(0.608 0.144 120);
-  --tc-9: oklch(0.625 0.201 265);
-  --tc-10: oklch(0.603 0.104 190);
 
   /* 让浏览器知道该用暗色的滚动条 / 表单控件 / 默认背景 */
   color-scheme: dark;
@@ -318,6 +288,21 @@ body {
 
 /* ── 题目排版 ─────────────────────────────────────── */
 
+/* 密排一行（CompactRow）：把段落/行间公式压回行内，超出省略。
+   图和表在 34px 的行里没有意义，直接不显示——标题里仍有完整信息。 */
+/* **固定一行高**：行内公式（嵌套分数、根式）能把行盒撑到 86px，
+   把上下两道题顶穿——截图里那种"文字叠在一起"就是它。裁掉多余部分，
+   完整内容在详情里看。 */
+.q-line { display: block; height: 19px; line-height: 19px; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis; }
+/* 渲染器产出的段落是 `.q-p`（不是 `<p>`），行间公式是 `.q-math`——
+   都得压回行内，否则 still 会各占一行、在 34px 的行里叠成一坨。 */
+.q-line .q-p, .q-line .q-math, .q-line .q-list,
+.q-line .katex-display { display: inline; margin: 0; padding: 0; }
+.q-line .q-list { list-style: none; }
+.q-line .q-fig, .q-line .q-table-wrap, .q-line .q-raw { display: none; }
+.q-line .katex { font-size: 0.92em; }
+
 .q-stem { font-size: 15px; line-height: 1.8; }
 .q-options { font-size: 14px; line-height: 1.85; }
 .q-options li { list-style: none; display: flex; gap: 8px; }
@@ -363,6 +348,32 @@ body {
 .q-list li > .q-p { margin: 0; }
 .q-list > li::marker { color: var(--color-ink-faint); }
 
+/* 列表编号：Tailwind preflight 把 `ol` 的 marker 清成了 none，题干里的
+   enumerate 在详情/卡片上**一直没有可见编号**——小问从 (1)(2) 变成纯缩进。
+   这里用计数器补回项目约定（与讲义/试卷一致）：
+     第 1 层 （1）（2）…；第 2 层 ① ② ③…
+   只作用于 `.q-stem`：单行预览（`.q-line`）不显示编号，别把一行撑乱。 */
+.q-stem .q-list { counter-reset: qpart; padding-left: 0; }
+.q-stem .q-list > li { position: relative; padding-left: 2.3em; counter-increment: qpart; }
+.q-stem .q-list > li::before {
+  content: "（" counter(qpart) "）";
+  position: absolute; left: 0;
+  color: var(--color-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.q-stem .q-list .q-list { counter-reset: qsub; }
+.q-stem .q-list .q-list > li { padding-left: 1.9em; counter-increment: qsub; }
+.q-stem .q-list .q-list > li::before { content: "①"; }
+.q-stem .q-list .q-list > li:nth-child(2)::before { content: "②"; }
+.q-stem .q-list .q-list > li:nth-child(3)::before { content: "③"; }
+.q-stem .q-list .q-list > li:nth-child(4)::before { content: "④"; }
+.q-stem .q-list .q-list > li:nth-child(5)::before { content: "⑤"; }
+.q-stem .q-list .q-list > li:nth-child(6)::before { content: "⑥"; }
+.q-stem .q-list .q-list > li:nth-child(7)::before { content: "⑦"; }
+.q-stem .q-list .q-list > li:nth-child(8)::before { content: "⑧"; }
+.q-stem .q-list .q-list > li:nth-child(9)::before { content: "⑨"; }
+.q-stem .q-list .q-list > li:nth-child(10)::before { content: "⑩"; }
+
 /* 表格：外层容器负责横向滚动，宽对数表不会把栏撑开 */
 .q-table-wrap { margin: 0.7em 0; overflow-x: auto; }
 .q-table {
@@ -378,21 +389,6 @@ body {
 
 .q-box { margin: 0.6em 0; }
 .q-center, .q-figure, .q-table-env { text-align: center; }
-
-/* ── 知识清单讲解块（`.kl-body`）────────────────────────────────
-   书的表格/盒子与题库的**不是一回事**，这里把口径拉回与导出一致
-   （另一条路径是后端 `slidev_handout._ir_table` / `ir_blocks`）。
-   ① 题库表格用 `white-space:nowrap` + 横向滚动 —— 那是对付"数阵"的，
-      一行十几个数不能折行。书的表格是**文字表**（一格一句话），
-      nowrap 会让它比纸还宽、只能横着拖，而导出那边是 `width:100%` 排好的 ——
-      这就是"预览要横着拖、PDF 是排好的"那种前后端分叉。
-   ② 同理补 width:100%。
-   ③ 书的 notebox 导出时左框描边，预览也要有同一个标记。 */
-.kl-body .q-table { width: 100%; }
-.kl-body .q-table td { white-space: normal; }
-.kl-body .q-quote {
-  border-left: 3px solid #c9a227; padding: 2px 12px; margin: 0.6em 0;
-}
 
 /* 题图 */
 .q-fig { margin: 0.7em 0; text-align: center; }
@@ -475,6 +471,9 @@ body {
 @keyframes bump       { 0% { transform: scale(1); } 38% { transform: scale(1.14); } 100% { transform: scale(1); } }
 /* 高亮闪一下：内容被程序改动时用（比 toast 轻） */
 @keyframes flash      { from { background-color: var(--color-brand-soft); } to { background-color: transparent; } }
+/* 标签保存成功：抽屉外圈扩一下。**不用 `both`** —— 动画结束要回到
+   原本的卡片阴影，不能把 `shadow-card` 永久盖成透明。 */
+@keyframes saved-ring { 0% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 4px var(--color-brand-soft); } 100% { box-shadow: 0 0 0 0 transparent; } }
 /* 提示条的倒计时细线。时长由 JS 传进来（见 app/Toast.tsx），
    用 `animation-play-state` 做鼠标悬停暂停。 */
 @keyframes toast-bar  { from { transform: scaleX(1); } to { transform: scaleX(0); } }
@@ -497,6 +496,7 @@ body {
 /* 横条生长：`transform: scaleX` 而不是 width —— 只走合成层，不触发重排 */
 .bar-grow { transform-origin: left; animation: grow-x 420ms var(--ease-soft) both; }
 .anim-flash    { animation: flash 900ms ease-out both; }
+.anim-saved-ring { animation: saved-ring 800ms var(--ease-soft); }
 
 /* 折叠区展开。外层给 `.reveal`，内层必须是唯一子元素且 overflow:hidden */
 .reveal { display: grid; animation: reveal 220ms var(--ease-soft) both; }
@@ -543,6 +543,19 @@ body {
                      border-color 140ms ease-out, color 140ms ease-out; }
 .press:active { transform: scale(.975); }
 
+/* 长列表：一屏 100 张卡片，每张都要跑 KaTeX。
+   `content-visibility: auto` 让浏览器跳过**屏外卡片**的布局与绘制；
+   `contain-intrinsic-size` 给个估算高度，滚动条不会因此跳。
+   这是成熟列表（Linear/Notion）在没有虚拟滚动时的第一层优化。 */
+.q-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 210px;
+}
+.list-scroll {
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
 /* 卡片：悬停只做一件事——抬起 1px + 描边变深。不缩放，不换底色 */
 .card-lift {
   transition: box-shadow 170ms var(--ease-soft), border-color 170ms var(--ease-soft),
@@ -581,7 +594,7 @@ body {
   .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r,
   .anim-slide-d, .anim-pulse, .anim-bump, .anim-flash,
   .anim-fade-out, .anim-pop-out, .anim-slide-r-out, .anim-toast-out,
-  .anim-check, .bar-grow,
+  .anim-check, .anim-saved-ring, .bar-grow,
   .anim-stagger > *, .skeleton, .progress-track::after, .pop, .pop-c, .reveal {
     animation: none !important;
   }
