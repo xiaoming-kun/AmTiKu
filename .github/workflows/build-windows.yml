@@ -216,17 +216,23 @@ jobs:
               Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
               Start-Sleep -Milliseconds 500
               Write-Host "──── $tag 的服务输出 ────"
-              Get-Content $o -Tail 25 -ErrorAction SilentlyContinue
-              Get-Content $e -Tail 25 -ErrorAction SilentlyContinue
+              # ⚠️ 同样要 `| Out-Host`：`Get-Content` 默认把每一行写进**管道**，
+              #     也就是函数的返回值 —— 上一步只治了 python 那处，这里又把
+              #     $c1 污染成数组，"全过"仍然报失败。函数的返回值只该是退出码。
+              Get-Content $o -Tail 25 -ErrorAction SilentlyContinue | Out-Host
+              Get-Content $e -Tail 25 -ErrorAction SilentlyContinue | Out-Host
             }
             return $code
           }
 
-          $c1 = Invoke-Smoke "dist\AmTiKu" "原位（ASCII 路径）" 8951
+          # 双保险：万一将来又有人在函数里往管道写东西，取最后一个元素（退出码）。
+          function CodeOf($r) { return [int](@($r)[-1]) }
+
+          $c1 = CodeOf (Invoke-Smoke "dist\AmTiKu" "原位（ASCII 路径）" 8951)
           $dir = "D:\冒烟 测试\AmTiKu"
           New-Item -ItemType Directory -Force -Path (Split-Path $dir) | Out-Null
           Copy-Item dist\AmTiKu $dir -Recurse -Force
-          $c2 = Invoke-Smoke $dir "中文+空格路径" 8952
+          $c2 = CodeOf (Invoke-Smoke $dir "中文+空格路径" 8952)
 
           Write-Host "结果：原位 exit=$c1 ｜ 中文空格 exit=$c2"
           if ($c1 -ne 0 -or $c2 -ne 0) { throw "接口冒烟失败（上面有具体哪一项）" }
