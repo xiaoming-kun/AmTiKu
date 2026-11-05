@@ -109,11 +109,18 @@ def _setup_tex(root: Path) -> None:
                 print("    1) 把整个文件夹移到纯英文路径，例如 D:\\AmTiKu；")
                 print("    2) 自行安装 TeX Live（见《TeXLive安装.md》），它会装在英文路径下。")
             os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
-            os.environ.setdefault("TEXMFCNF", str(tex / "texmf-dist" / "web2c"))
-            os.environ.setdefault("TEXMFROOT", str(tex))
-            os.environ.setdefault("TEXMFDIST", str(tex / "texmf-dist"))
-            os.environ.setdefault("TEXMFVAR", str(tex / "texmf-var"))
-            os.environ.setdefault("TEXMFSYSVAR", str(tex / "texmf-var"))
+            if not any(ord(c) > 127 for c in str(tex)):
+                # 纯 ASCII 路径：显式钉住各棵树，免得被机器上别的 TeX 抢走。
+                #
+                # ⚠️ 路径含非 ASCII 时**一个都不能设**：kpathsea 读到这些变量会走
+                #    runscript.tlu 的 os.setenv，而 os.setenv 处理不了非 ASCII ——
+                #    于是"明明已经从 ASCII 目录联接启动了引擎"仍然失败（CI 实测过）。
+                #    不设的话，引擎会按自身位置（那条联接）推 SELFAUTOPARENT，正好是 ASCII。
+                os.environ.setdefault("TEXMFCNF", str(tex / "texmf-dist" / "web2c"))
+                os.environ.setdefault("TEXMFROOT", str(tex))
+                os.environ.setdefault("TEXMFDIST", str(tex / "texmf-dist"))
+                os.environ.setdefault("TEXMFVAR", str(tex / "texmf-var"))
+                os.environ.setdefault("TEXMFSYSVAR", str(tex / "texmf-var"))
             print("已加载内置 LaTeX:", d.name)
             return
 

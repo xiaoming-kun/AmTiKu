@@ -223,6 +223,16 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
     #    从联接里启动引擎即可（见 `ascii_engine`）。绕不了才回落到那句提示。
     xe = shutil.which("xelatex") or "xelatex"
     xe_run, link = ascii_engine(xe)
+    # 引擎换成 ASCII 联接后，**环境里指向原中文路径的变量必须一起改**：
+    # 只换可执行文件不够——TEXMF* 和 PATH 里还是 `D:\冒烟 测试\...`，
+    # kpathsea 一读就走到 runscript.tlu 的 os.setenv，照样炸。
+    env = None
+    if link:
+        old_root = str(Path(xe).resolve().parent.parent.parent)
+        env = dict(os.environ)
+        for k in list(env):
+            if k == "PATH" or k.startswith("TEXMF"):
+                env[k] = env[k].replace(old_root, link)
     xe_hint = ""
     if link:
         xe_hint = ("检测到内置 LaTeX 在含中文/非 ASCII 的路径下：\n"
@@ -250,6 +260,7 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
                  "-file-line-error",
                  build_tex.name],
                 cwd=build_dir, capture_output=True, text=True,
+                env=env,                      # None=继承；走联接时是改写过的副本
                 # 显式指定 UTF-8：默认按系统 locale 解码（英文 Windows 是 cp1252），
                 # 而 xelatex 的输出里有中文（标题、路径、题目），strict 解码直接抛
                 # UnicodeDecodeError，把"导出失败"变成一段看不懂的异常。
