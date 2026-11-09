@@ -129,6 +129,11 @@ python3 -m amti.content_store clear    # 删掉，下次读自动重建
   点开用现有 `pageView` 对照原页。
 - `GET /api/ingest/jobs` / `GET /api/ingest/jobs/{id}` 支持“继续最近任务”；
   任务只保存源材料和派生件，不保存题库正文。
+- 本地读图成功后写 `ocr.json`；继续 PDF 任务优先用缓存，不再重跑模型。
+- 默认只保留最近 50 个任务（`AMTIKU_INGEST_KEEP` 可调），
+  `POST /api/ingest/jobs/prune` 手动清理，`DELETE /api/ingest/jobs/{id}` 删单个。
+- 界面三段在 `web/src/app/ingest/IngestStages.tsx`：Source/Review 是阶段边界，
+  CommitBar 已独立；状态仍由 `IngestDrawer` 持有，下一步再搬 context。
 
 
 ## 三·五、开源素材与小初章节讲义

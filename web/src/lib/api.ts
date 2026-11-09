@@ -151,6 +151,12 @@ export const api = {
   exportDocx: (body: any) => send('/api/export/docx', 'POST', body),
   ingestJobs: () => send('/api/ingest/jobs?limit=6', 'GET'),
   ingestJob: (id: string) => send(`/api/ingest/jobs/${encodeURIComponent(id)}`, 'GET'),
+  ingestJobSaveOcr: (id: string, body: any) =>
+    send(`/api/ingest/jobs/${encodeURIComponent(id)}/ocr`, 'POST', body),
+  ingestJobsPrune: (keep = 50) =>
+    send(`/api/ingest/jobs/prune?keep=${Math.round(keep)}`, 'POST'),
+  ingestJobDelete: (id: string) =>
+    send(`/api/ingest/jobs/${encodeURIComponent(id)}`, 'DELETE'),
   /** 源文件准备：DOCX 转 PDF、TEX/MD/TXT 读文本；只准备，不入库。 */
   ingestPrepare: async (file: File): Promise<any> => {
     const r = await fetch(`/api/ingest/prepare?name=${encodeURIComponent(file.name)}`, {

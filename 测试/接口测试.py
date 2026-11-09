@@ -2142,6 +2142,24 @@ def test_ingest_job_list_and_resume():
     assert client.get("/api/ingest/jobs/no-such-job").status_code == 404
 
 
+def test_ingest_job_ocr_cache_and_prune():
+    """OCR 结果缓存进任务；继续任务不再依赖模型；清理接口只保留最近 N 个。"""
+    r = client.post("/api/ingest/prepare", params={"name": "缓存.tex"},
+                    content=r"\begin{question}缓存题干\end{question}".encode())
+    assert r.status_code == 200
+    jid = r.json()["job_id"]
+    s = client.post(f"/api/ingest/jobs/{jid}/ocr", json={
+        "latex": r"\begin{question}缓存后的题干\end{question}",
+        "model": "test", "pages": 1, "seconds": 0.1,
+    })
+    assert s.status_code == 200, s.text
+    d = client.get(f"/api/ingest/jobs/{jid}").json()
+    assert "缓存后的题干" in d.get("ocr_text", "")
+    assert d["ocr"]["model"] == "test"
+    pr = client.post("/api/ingest/jobs/prune?keep=50")
+    assert pr.status_code == 200 and pr.json()["ok"]
+
+
 def test_share_pack_export_and_dry_import():
     """分享包：导出 zip、manifest 完整；同 key 导入 dry-run 只跳过不写。"""
     keys = [q["key"] for q in client.get("/api/questions?limit=2").json()["items"]]

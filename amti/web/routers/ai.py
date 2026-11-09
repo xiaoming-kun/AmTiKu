@@ -406,6 +406,40 @@ def ingest_jobs(limit: int = 20) -> dict:
     return {"items": items}
 
 
+class OcrCacheBody(BaseModel):
+    latex: str = ""
+    model: str = ""
+    pages: int = 0
+    seconds: float = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+@router.post("/ingest/jobs/{job_id}/ocr")
+def ingest_job_save_ocr(job_id: str, body: OcrCacheBody) -> dict:
+    """缓存本地读图结果；继续任务时不再重跑模型。"""
+    from amti import source_import
+    try:
+        return source_import.save_ocr(job_id, body.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/ingest/jobs/prune")
+def ingest_jobs_prune(keep: int = 50) -> dict:
+    """手动清理：只保留最近 keep 个任务。"""
+    from amti import source_import
+    return source_import.prune_jobs(keep)
+
+
+@router.delete("/ingest/jobs/{job_id}")
+def ingest_job_delete(job_id: str) -> dict:
+    from amti import source_import
+    try:
+        return source_import.delete_job(job_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
 @router.get("/ingest/jobs/{job_id}")
 def ingest_job(job_id: str) -> dict:
     """取任务的可继续材料（文本或 PDF + 源页），不写题库。"""

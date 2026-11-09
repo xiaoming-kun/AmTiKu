@@ -18,6 +18,7 @@ import { renderBlocks } from '@/lib/render'
 import { api } from '@/lib/api'
 import { Flags, Report, INGEST_SAMPLE, CloseBtn } from '@/app/ui'
 import { PointPicker, DiffPills } from '@/app/IngestControls'
+import { SourceStage, ReviewStage, CommitBar } from '@/app/ingest/IngestStages'
 
 /** 输入框的统一样式（左侧「源材料」一栏里共用）。 */
 const FIELD = `h-[32px] rounded-lg border border-border bg-bg px-2.5 text-[12.5px] outline-none
@@ -234,7 +235,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
   }
 
   /** 图片 / PDF → LaTeX，只填进输入框；**不写库**。 */
-  const ocrFile = (f: File) => {
+  const ocrFile = (f: File, jobId = '') => {
     setBusy(true); setErr(''); setMsg(`正在识别 ${f.name} …（首次要等模型加载）`)
     const r = new FileReader()
     r.onload = async () => {
@@ -242,6 +243,13 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
         const b64 = String(r.result || '').split(',')[1] || ''
         const res: any = await api.vlmExtract(b64, f.name)
         changeText(res.latex || '')
+        if (jobId && res.latex) {
+          // 缓存识别结果：继续任务时不再重跑本地模型
+          api.ingestJobSaveOcr(jobId, {
+            latex: res.latex, model: res.model, pages: res.pages,
+            seconds: res.seconds, warnings: res.warnings || [],
+          }).catch(() => { /* 缓存失败不挡录入 */ })
+        }
         setVlmReady(true)
         setMsg(`识别完成（${res.model}，${res.pages} 页，${res.seconds} 秒）`
                + (res.warnings?.length ? ' ⚠ ' + res.warnings.join('；') : '')
@@ -261,8 +269,10 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
       const r: any = await api.ingestPrepare(f)
       if (r.kind === 'text') {
         changeText(String(r.text || ''))
+        setSourcePages([]); setSourceDir(''); setSourceJob(r.job_id || '')
         setMsg(`已读入 ${r.chars || 0} 字（任务 ${r.job_id}）—— 核对后点「解析成题」`)
         setBusy(false)
+        api.ingestJobs().then((d: any) => setRecentJobs(d.items || [])).catch(() => {})
         return
       }
       if (r.kind === 'pdf' && r.pdf_b64) {
@@ -274,7 +284,8 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                              { type: 'application/pdf' })
         setMsg(`已准备 PDF（任务 ${r.job_id}），开始本地读图…`)
         setBusy(false)
-        ocrFile(pdf)          // 由 ocrFile 接管 busy/错误
+        api.ingestJobs().then((d: any) => setRecentJobs(d.items || [])).catch(() => {})
+        ocrFile(pdf, r.job_id || '')   // 由 ocrFile 接管 busy/错误
         return
       }
       setErr('这个文件没有可读内容'); setBusy(false)
@@ -296,6 +307,12 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
         return
       }
       if (r.kind === 'pdf' && r.pdf_b64) {
+        if (r.ocr_text) {
+          changeText(String(r.ocr_text))
+          setMsg(`已载入缓存的识别结果（任务 ${job.id}）—— 核对后点「解析成题」`)
+          setBusy(false)
+          return
+        }
         const bin = atob(String(r.pdf_b64))
         const arr = new Uint8Array(bin.length)
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
@@ -303,13 +320,24 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                              { type: 'application/pdf' })
         setMsg(`已打开「${job.source_name}」，开始本地读图…`)
         setBusy(false)
-        ocrFile(pdf)
+        ocrFile(pdf, job.id)
         return
       }
       setErr('这个任务没有可继续的文本/PDF'); setBusy(false)
     } catch (e) {
       setErr(String((e as any)?.message || e)); setBusy(false)
     }
+  }
+
+  /** 手动清理旧任务：只保留最近 50 个源文件/派生件。 */
+  async function pruneJobs() {
+    if (!window.confirm('只保留最近 50 个录入任务？更早的源文件、源页和 OCR 缓存会删除。')) return
+    try {
+      const r: any = await api.ingestJobsPrune(50)
+      const d: any = await api.ingestJobs()
+      setRecentJobs(d.items || [])
+      setMsg(`已清理 ${r.removed?.length || 0} 个旧任务`)
+    } catch (e) { setErr(String((e as any)?.message || e)) }
   }
 
   /* ══ AI 读整份资料 ══════════════════════════════════════════════════
@@ -1139,8 +1167,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
         </header>
 
         <div className="flex min-h-0 flex-1">
-          {/* 左：源材料。出处 / 批量 / LaTeX 三块。 */}
-          <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+          <SourceStage>
 
             {/* ── 大模型录题：第一屏只做一件事——选资料 ──
                 之前把 AI 藏进「录入题目」的工具条里，小白根本找不到。
@@ -1588,6 +1615,11 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
               {recentJobs.length > 0 && (
                 <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-ink-faint">
                   <span className="shrink-0">最近任务</span>
+                  <button onClick={() => void pruneJobs()} disabled={busy}
+                    title="只保留最近 50 个任务"
+                    className="press rounded-full border border-border bg-surface px-1.5 py-[1px]
+                               text-[10px] text-ink-faint hover:border-brand-line hover:text-ink-soft
+                               disabled:opacity-40">清理</button>
                   {recentJobs.slice(0, 4).map((j: any) => (
                     <button key={j.id} onClick={() => resumeJob(j)}
                       disabled={busy}
@@ -1675,11 +1707,9 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                 {busy && <div className="progress-track" />}
               </div>
             </section>
-          </div>
+          </SourceStage>
 
-          {/* 右：逐题确认。 */}
-          <div className="flex w-[min(880px,62vw)] min-w-[520px] shrink-0 flex-col border-l
-                          border-border bg-bg">
+          <ReviewStage>
             <div className="flex min-h-[52px] shrink-0 flex-wrap items-center gap-2 border-b
                             border-border bg-surface px-4 py-2">
               <span className="text-[13px] font-semibold tracking-tight">逐题确认</span>
@@ -2451,51 +2481,15 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
               </>)}
             </div>
 
-            {!report && <div className="shrink-0 border-t border-border bg-surface px-4 py-3">
-              {pv && (
-                <div className="mb-2 rounded-lg border border-border bg-bg px-2.5 py-2
-                                text-[11px] leading-relaxed text-ink-faint">
-                  {backfill
-                    ? <>规则：<b className="font-medium text-ink-soft">补旧题模式</b>
-                        → 只更新已有题的空考点/空难度，不新增、不改答案/解析/已有考点。</>
-                    : <>规则：库里已有同题，或整题相似 <b className="font-medium text-ink-soft">
-                        &gt;{nearThreshold}%</b> → 整题跳过，不新增、不更新（不补解析、不改答案、不并考点）。</>}
-                </div>
-              )}
-              {err && pv && (
-                <div className="mb-2 flex items-start gap-1.5 rounded-lg border border-warn-line
-                                bg-warn-soft px-2.5 py-2 text-[11px] text-warn">
-                  <X size={12} className="mt-[1px] shrink-0" />{err}
-                </div>
-              )}
-              {msg && pv && (
-                <div className="mb-2 flex items-start gap-1.5 rounded-lg border border-has-line
-                                bg-has-soft px-2.5 py-2 text-[11px] text-has">
-                  <Check size={12} className="mt-[1px] shrink-0" />{msg}
-                </div>
-              )}
-              <button onClick={doCommit}
-                disabled={busy || tagging || !pv || !selected.length || badSelected.length > 0}
-                title={badSelected.length ? '勾选的题里还有不能入库的'
-                       : (!selected.length
-                          ? (pv?.items.some((it: any) => it.same_key || it.near_dup)
-                             ? '库里已有或高度相似，按规则整题跳过' : '先勾选题目')
-                          : '')}
-                className="press flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand
-                           px-4 py-2.5 text-[13px] font-semibold text-white
-                           shadow-[var(--shadow-brand)] hover:brightness-105 disabled:opacity-40">
-                <Upload size={13} className="shrink-0" />
-                {backfill
-                  ? (selected.length ? `补标签选中（${selected.length} 道）` : '没有可补的已有题')
-                  : (selected.length ? `确认入库选中（${selected.length} 道）` : '没有可入库的新题')}
-              </button>
-              <div className="mt-1.5 text-center text-[10px] text-ink-faint">
-                {backfill
-                  ? '补旧题模式 · 只更新已有题的空考点/难度 · 新题不新增、正文不改'
-                  : `只写入勾选的题 · 缺答案/解析/图的不让入库 · 已有/相似 >${nearThreshold}% 不更新`}
-              </div>
-            </div>}
-          </div>
+            {!report && (
+              <CommitBar
+                pv={pv} backfill={backfill} nearThreshold={nearThreshold}
+                err={err} msg={msg} busy={busy} tagging={tagging}
+                selectedCount={selected.length} badCount={badSelected.length}
+                onCommit={doCommit}
+              />
+            )}
+          </ReviewStage>
         </div>
       </div>
 

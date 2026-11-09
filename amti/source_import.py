@@ -30,6 +30,7 @@ TASK_DIR = ROOT / "数据" / "录题" / "任务"
 MAX_BYTES = 120 * 1024 * 1024
 MAX_PAGES = 80
 PAGE_DPI = 110
+MAX_OCR_CHARS = 4 * 1024 * 1024
 TEXT_EXT = {".tex", ".txt", ".md", ".markdown"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 
@@ -113,6 +114,10 @@ def load_job_payload(job_id: str, *, base_dir: Path | None = None) -> dict:
     out: dict = {"ok": True, "job": m, "kind": m.get("kind") or "",
                  "pages": m.get("pages") or [],
                  "page_dir": str((jd / "pages").resolve())}
+    ocr = _ocr_of(job_id, base_dir)
+    if ocr:
+        out["ocr_text"] = ocr.get("latex") or ""
+        out["ocr"] = {k: ocr.get(k) for k in ("model", "pages", "seconds", "saved_at")}
     ext = str(m.get("source_ext") or "")
     src = jd / ("source" + ext)
     if m.get("kind") == "text" and src.is_file():
@@ -219,6 +224,11 @@ def prepare(name: str, data: bytes, *, base_dir: Path | None = None) -> dict:
         out.update({"kind": "image"})
 
     _write_manifest(jd, man)
+    try:
+        pr = prune_jobs(_keep_default(), base_dir=base_dir)
+        out["pruned"] = len(pr.get("removed") or [])
+    except Exception:
+        out["pruned"] = 0
     out["warnings"] = man["warnings"]
     return out
 
@@ -235,6 +245,94 @@ def pdf_path(job_id: str, *, base_dir: Path | None = None) -> Path | None:
         if p.is_file():
             return p
     return None
+
+
+def save_ocr(job_id: str, payload: dict, *, base_dir: Path | None = None) -> dict:
+    """把一次本地读图/OCR 的结果缓存进任务，继续任务时不再重跑模型。"""
+    m = load_job(job_id, base_dir=base_dir)
+    if not m:
+        raise ValueError("任务不存在")
+    jd = _job_dir(job_id, base_dir)
+    latex = str((payload or {}).get("latex") or "")
+    if not latex.strip():
+        raise ValueError("OCR 结果是空的")
+    if len(latex) > MAX_OCR_CHARS:
+        raise ValueError("OCR 结果过大")
+    rec = {
+        "latex": latex,
+        "model": str((payload or {}).get("model") or "")[:120],
+        "pages": int((payload or {}).get("pages") or 0),
+        "seconds": float((payload or {}).get("seconds") or 0),
+        "warnings": [str(x)[:300] for x in ((payload or {}).get("warnings") or [])][:20],
+        "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    (jd / "ocr.json").write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+    m["ocr"] = {k: rec[k] for k in ("model", "pages", "seconds", "saved_at")}
+    m["ocr"]["chars"] = len(latex)
+    m["status"] = "ocr"
+    _write_manifest(jd, m)
+    return {"ok": True, "job_id": job_id, "chars": len(latex),
+            "model": rec["model"], "pages": rec["pages"]}
+
+
+def _ocr_of(job_id: str, base_dir: Path | None = None) -> dict | None:
+    try:
+        p = _job_dir(job_id, base_dir) / "ocr.json"
+        if not p.is_file():
+            return None
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _all_jobs(base_dir: Path | None = None) -> list[tuple[float, dict]]:
+    root = (base_dir or TASK_DIR)
+    out: list[tuple[float, dict]] = []
+    if not root.is_dir():
+        return out
+    for p in root.glob("*/manifest.json"):
+        try:
+            m = json.loads(p.read_text(encoding="utf-8"))
+            out.append((p.stat().st_mtime, m))
+        except Exception:
+            continue
+    out.sort(key=lambda x: x[0], reverse=True)
+    return out
+
+
+def prune_jobs(keep: int = 50, *, base_dir: Path | None = None) -> dict:
+    """只保留最近 `keep` 个任务；更老的整个任务目录删掉。"""
+    keep = max(1, min(500, int(keep or 50)))
+    jobs = _all_jobs(base_dir)
+    removed: list[str] = []
+    for _mtime, m in jobs[keep:]:
+        jid = str(m.get("id") or "")
+        if not jid:
+            continue
+        try:
+            jd = _job_dir(jid, base_dir)
+            if jd.is_dir():
+                shutil.rmtree(jd)
+                removed.append(jid)
+        except Exception:
+            continue
+    return {"ok": True, "removed": removed, "kept": min(len(jobs), keep)}
+
+
+def delete_job(job_id: str, *, base_dir: Path | None = None) -> dict:
+    jd = _job_dir(job_id, base_dir)
+    if not (jd / "manifest.json").is_file():
+        raise ValueError("任务不存在")
+    shutil.rmtree(jd)
+    return {"ok": True, "removed": job_id}
+
+
+def _keep_default() -> int:
+    try:
+        import os
+        return max(5, min(500, int(os.environ.get("AMTIKU_INGEST_KEEP", "50"))))
+    except Exception:
+        return 50
 
 
 def _selftest() -> int:
@@ -267,6 +365,14 @@ def _selftest() -> int:
         except (ValueError, subprocess.SubprocessError):
             ok = True
         check("坏 DOCX 明确报错", ok)
+        r2 = prepare("第二份.md", b"# test", base_dir=base)
+        r3 = prepare("第三份.md", b"# test3", base_dir=base)
+        save_ocr(r2["job_id"], {"latex": r"\begin{question}缓存\end{question}",
+                                "model": "test", "pages": 1}, base_dir=base)
+        pl = load_job_payload(r2["job_id"], base_dir=base)
+        check("OCR 缓存可读", "缓存" in (pl.get("ocr_text") or ""))
+        pr = prune_jobs(2, base_dir=base)
+        check("任务保留策略", len(pr["removed"]) >= 1 and len(list_jobs(10, base_dir=base)) == 2)
     print("source_import 自检 %s（%d 项失败）"
           % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0
