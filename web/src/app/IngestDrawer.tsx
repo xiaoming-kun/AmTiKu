@@ -176,6 +176,11 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
   const [aiCards, setAiCards] = useState<Record<number, any>>({})
   const [aiPageDir, setAiPageDir] = useState('')
   const [pageView, setPageView] = useState<{ dir: string; name: string; title: string } | null>(null)
+  /** 最近任务的源页：准备/继续后显示，点开用现有 pageView 看原页。 */
+  const [sourcePages, setSourcePages] = useState<string[]>([])
+  const [sourceDir, setSourceDir] = useState('')
+  const [sourceJob, setSourceJob] = useState('')
+  const [recentJobs, setRecentJobs] = useState<any[]>([])
   /** 高级设置：模型 / 接口地址 / 每批页数 / 并发。 */
   const [aiModel, setAiModel] = useState('')
   const [aiBase, setAiBase] = useState('')
@@ -220,9 +225,9 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
   const readFile = (f: File) => {
     const isImg = f.type.startsWith('image/')
     const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
-    if (isImg || isPdf) { ocrFile(f); return }
-    // Word 先转 PDF，再走现有本地读图；不直接解析 DOCX
-    if (/\.docx$/i.test(f.name)) { void prepareSource(f); return }
+    // 图片直接读；PDF/Word 先登记任务并渲源页，再走本地读图
+    if (isImg) { ocrFile(f); return }
+    if (isPdf || /\.docx$/i.test(f.name)) { void prepareSource(f); return }
     const r = new FileReader()
     r.onload = () => { changeText(String(r.result || '')) }
     r.readAsText(f, 'utf-8')
@@ -251,7 +256,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
 
   /** DOCX → 后端转 PDF → 本地读图。只填编辑器，不写库；失败不静默。 */
   async function prepareSource(f: File) {
-    setBusy(true); setErr(''); setMsg(`正在准备 ${f.name}…（Word 会先转 PDF）`)
+    setBusy(true); setErr(''); setMsg(`正在准备 ${f.name}…`)
     try {
       const r: any = await api.ingestPrepare(f)
       if (r.kind === 'text') {
@@ -261,17 +266,47 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
         return
       }
       if (r.kind === 'pdf' && r.pdf_b64) {
+        setSourcePages(r.pages || []); setSourceDir(r.page_dir || ''); setSourceJob(r.job_id || '')
         const bin = atob(String(r.pdf_b64))
         const arr = new Uint8Array(bin.length)
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
         const pdf = new File([arr], f.name.replace(/\.docx$/i, '.pdf'),
                              { type: 'application/pdf' })
-        setMsg(`已转 PDF（任务 ${r.job_id}），开始本地读图…`)
+        setMsg(`已准备 PDF（任务 ${r.job_id}），开始本地读图…`)
         setBusy(false)
         ocrFile(pdf)          // 由 ocrFile 接管 busy/错误
         return
       }
       setErr('这个文件没有可读内容'); setBusy(false)
+    } catch (e) {
+      setErr(String((e as any)?.message || e)); setBusy(false)
+    }
+  }
+
+  /** 继续最近任务：文本直接载入；PDF 重新走本地读图（原任务不重复转换）。 */
+  async function resumeJob(job: any) {
+    setBusy(true); setErr(''); setMsg(`正在打开 ${job.source_name || job.id}…`)
+    try {
+      const r: any = await api.ingestJob(job.id)
+      setSourcePages(r.pages || []); setSourceDir(r.page_dir || ''); setSourceJob(job.id)
+      if (r.kind === 'text') {
+        changeText(String(r.text || ''))
+        setMsg(`已继续「${job.source_name}」（任务 ${job.id}）`)
+        setBusy(false)
+        return
+      }
+      if (r.kind === 'pdf' && r.pdf_b64) {
+        const bin = atob(String(r.pdf_b64))
+        const arr = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+        const pdf = new File([arr], `${job.source_name || 'source'}.pdf`,
+                             { type: 'application/pdf' })
+        setMsg(`已打开「${job.source_name}」，开始本地读图…`)
+        setBusy(false)
+        ocrFile(pdf)
+        return
+      }
+      setErr('这个任务没有可继续的文本/PDF'); setBusy(false)
     } catch (e) {
       setErr(String((e as any)?.message || e)); setBusy(false)
     }
@@ -293,6 +328,9 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
     } catch { /* 状态拿不到不挡录入 */ }
   }
   useEffect(() => { void aiRefresh() }, [])
+  useEffect(() => {
+    api.ingestJobs().then((d: any) => setRecentJobs(d.items || [])).catch(() => {})
+  }, [])
 
   const aiSaveKey = async () => {
     setAiErr(''); setAiTesting(true)
@@ -1547,6 +1585,38 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                 </button>
                 </div>
               </div>
+              {recentJobs.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-ink-faint">
+                  <span className="shrink-0">最近任务</span>
+                  {recentJobs.slice(0, 4).map((j: any) => (
+                    <button key={j.id} onClick={() => resumeJob(j)}
+                      disabled={busy}
+                      title={`${j.source_name} · ${j.created_at || ''} · ${j.status || ''}`}
+                      className="press max-w-[170px] truncate rounded-full border border-border
+                                 bg-surface px-2 py-[2px] text-[10.5px] text-ink-soft
+                                 hover:border-brand-line hover:text-brand-ink disabled:opacity-40">
+                      {j.source_name} · {String(j.created_at || '').slice(5, 16)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {sourcePages.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] text-ink-faint">
+                  <span className="shrink-0">源页</span>
+                  {sourcePages.slice(0, 10).map((name, i) => (
+                    <button key={name} onClick={() => setPageView({
+                      dir: sourceDir, name, title: `源文件第 ${i + 1} 页`,
+                    })}
+                      className="press grid h-6 min-w-6 place-items-center rounded-md border border-border
+                                 bg-surface px-1.5 text-[10.5px] text-ink-soft
+                                 hover:border-brand-line hover:text-brand-ink">
+                      {i + 1}
+                    </button>
+                  ))}
+                  {sourcePages.length > 10 && <span>… 共 {sourcePages.length} 页</span>}
+                  {sourceJob && <span className="ml-auto truncate">任务 {sourceJob}</span>}
+                </div>
+              )}
               <div className="relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-card)]
                               border border-border bg-surface-2
                               focus-within:border-brand-line

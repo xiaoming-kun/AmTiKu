@@ -28,6 +28,8 @@ from .paths import ROOT
 
 TASK_DIR = ROOT / "数据" / "录题" / "任务"
 MAX_BYTES = 120 * 1024 * 1024
+MAX_PAGES = 80
+PAGE_DPI = 110
 TEXT_EXT = {".tex", ".txt", ".md", ".markdown"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 
@@ -61,6 +63,67 @@ def _job_dir(job_id: str, base_dir: Path | None = None) -> Path:
     if root not in p.parents and p != root:
         raise ValueError("非法任务目录")
     return p
+
+
+def _render_pages(pdf: Path, jd: Path) -> tuple[list[str], str]:
+    """把 PDF 渲成源页 PNG；返回 `(names, warning)`。失败不阻断准备。"""
+    try:
+        try:
+            import pymupdf as fitz
+        except ImportError:                       # 旧依赖名
+            import fitz
+        page_dir = jd / "pages"
+        page_dir.mkdir(parents=True, exist_ok=True)
+        names: list[str] = []
+        with fitz.open(str(pdf)) as doc:
+            for i, page in enumerate(doc):
+                if i >= MAX_PAGES:
+                    return names, "源文件超过 %d 页，只渲了前 %d 页" % (len(doc), MAX_PAGES)
+                name = "p-%03d.png" % (i + 1)
+                page.get_pixmap(dpi=PAGE_DPI).save(str(page_dir / name))
+                names.append(name)
+        return names, ""
+    except Exception as e:
+        return [], "源页预览生成失败：%s" % e
+
+
+def list_jobs(limit: int = 20, *, base_dir: Path | None = None) -> list[dict]:
+    """最近准备过的源文件（manifest）；按修改时间倒序。"""
+    root = (base_dir or TASK_DIR)
+    out: list[dict] = []
+    if not root.is_dir():
+        return out
+    for p in root.glob("*/manifest.json"):
+        try:
+            m = json.loads(p.read_text(encoding="utf-8"))
+            m["_mtime"] = p.stat().st_mtime
+            out.append(m)
+        except Exception:
+            continue
+    out.sort(key=lambda x: x.get("_mtime", 0), reverse=True)
+    return out[:max(1, min(100, int(limit or 20)))]
+
+
+def load_job_payload(job_id: str, *, base_dir: Path | None = None) -> dict:
+    """取任务的可继续材料：文本或 PDF；不重新转换，不写题库。"""
+    m = load_job(job_id, base_dir=base_dir)
+    if not m:
+        raise ValueError("任务不存在")
+    jd = _job_dir(job_id, base_dir)
+    out: dict = {"ok": True, "job": m, "kind": m.get("kind") or "",
+                 "pages": m.get("pages") or [],
+                 "page_dir": str((jd / "pages").resolve())}
+    ext = str(m.get("source_ext") or "")
+    src = jd / ("source" + ext)
+    if m.get("kind") == "text" and src.is_file():
+        text, enc = _decode(src.read_bytes())
+        out.update({"text": text, "chars": len(text), "encoding": enc})
+    elif m.get("kind") == "pdf":
+        pdf = pdf_path(job_id, base_dir=base_dir)
+        if not pdf or not pdf.is_file():
+            raise ValueError("任务没有 PDF")
+        out["pdf_b64"] = base64.b64encode(pdf.read_bytes()).decode("ascii")
+    return out
 
 
 def load_job(job_id: str, *, base_dir: Path | None = None) -> dict | None:
@@ -116,7 +179,13 @@ def prepare(name: str, data: bytes, *, base_dir: Path | None = None) -> dict:
             man["warnings"].append("Markdown 只作为原文载入；题目结构仍由现有解析/AI 处理")
     elif ext == ".pdf":
         man["kind"] = "pdf"
-        out.update({"kind": "pdf", "pdf_b64": base64.b64encode(data).decode("ascii")})
+        pages, warn = _render_pages(src, jd)
+        man["pages"] = pages
+        man["page_count"] = len(pages)
+        if warn:
+            man["warnings"].append(warn)
+        out.update({"kind": "pdf", "pdf_b64": base64.b64encode(data).decode("ascii"),
+                    "pages": pages, "page_dir": str((jd / "pages").resolve())})
     elif ext == ".docx":
         pandoc = shutil.which("pandoc")
         if not pandoc:
@@ -138,7 +207,13 @@ def prepare(name: str, data: bytes, *, base_dir: Path | None = None) -> dict:
             raise ValueError("Word 转 PDF 失败：%s" % man["error"][:300])
         man["kind"] = "pdf"
         man["derived_pdf"] = pdf.name
-        out.update({"kind": "pdf", "pdf_b64": base64.b64encode(pdf.read_bytes()).decode("ascii")})
+        pages, warn = _render_pages(pdf, jd)
+        man["pages"] = pages
+        man["page_count"] = len(pages)
+        if warn:
+            man["warnings"].append(warn)
+        out.update({"kind": "pdf", "pdf_b64": base64.b64encode(pdf.read_bytes()).decode("ascii"),
+                    "pages": pages, "page_dir": str((jd / "pages").resolve())})
     else:
         man["kind"] = "image"
         out.update({"kind": "image"})

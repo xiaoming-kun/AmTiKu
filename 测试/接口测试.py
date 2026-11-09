@@ -2127,6 +2127,21 @@ def test_ingest_prepare_text_source():
     assert man and man["status"] == "prepared" and man["sha256"]
 
 
+def test_ingest_job_list_and_resume():
+    """最近任务：列表能查到刚准备的 tex；按 id 能取回原文。"""
+    r = client.post("/api/ingest/prepare", params={"name": "继续.tex"},
+                    content=r"\begin{question}继续题干\end{question}".encode())
+    assert r.status_code == 200
+    jid = r.json()["job_id"]
+    jobs = client.get("/api/ingest/jobs?limit=10").json()["items"]
+    assert any(j["id"] == jid for j in jobs)
+    got = client.get(f"/api/ingest/jobs/{jid}")
+    assert got.status_code == 200, got.text
+    d = got.json()
+    assert d["kind"] == "text" and "继续题干" in d["text"]
+    assert client.get("/api/ingest/jobs/no-such-job").status_code == 404
+
+
 def test_share_pack_export_and_dry_import():
     """分享包：导出 zip、manifest 完整；同 key 导入 dry-run 只跳过不写。"""
     keys = [q["key"] for q in client.get("/api/questions?limit=2").json()["items"]]

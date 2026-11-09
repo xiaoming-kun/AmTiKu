@@ -125,6 +125,10 @@ python3 -m amti.content_store clear    # 删掉，下次读自动重建
   类型、派生 PDF、时间、状态），方便回查来源。
 - Word 转出的 PDF 交给现有 VLM/AI 读题，文本交给编辑器；之后仍然只走
   `ingest.preview()` → `ingest.commit()`。**不是第二套录入管线。**
+- PDF/Word 准备时渲 `pages/p-001.png` 源页；录入抽屉显示“源页 1/2/3…”，
+  点开用现有 `pageView` 对照原页。
+- `GET /api/ingest/jobs` / `GET /api/ingest/jobs/{id}` 支持“继续最近任务”；
+  任务只保存源材料和派生件，不保存题库正文。
 
 
 ## 三·五、开源素材与小初章节讲义

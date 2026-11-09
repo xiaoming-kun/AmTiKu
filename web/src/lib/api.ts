@@ -149,6 +149,8 @@ export const api = {
   }) => send('/api/review/decision', 'POST', body),
   export: (body: any) => send('/api/export', 'POST', body),
   exportDocx: (body: any) => send('/api/export/docx', 'POST', body),
+  ingestJobs: () => send('/api/ingest/jobs?limit=6', 'GET'),
+  ingestJob: (id: string) => send(`/api/ingest/jobs/${encodeURIComponent(id)}`, 'GET'),
   /** 源文件准备：DOCX 转 PDF、TEX/MD/TXT 读文本；只准备，不入库。 */
   ingestPrepare: async (file: File): Promise<any> => {
     const r = await fetch(`/api/ingest/prepare?name=${encodeURIComponent(file.name)}`, {

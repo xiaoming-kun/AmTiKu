@@ -396,6 +396,26 @@ class IngestSourceBody(BaseModel):
     text: str = ""
 
 
+@router.get("/ingest/jobs")
+def ingest_jobs(limit: int = 20) -> dict:
+    """最近准备过的源文件，供“继续上次录入”。"""
+    from amti import source_import
+    items = source_import.list_jobs(limit)
+    for it in items:
+        it.pop("_mtime", None)
+    return {"items": items}
+
+
+@router.get("/ingest/jobs/{job_id}")
+def ingest_job(job_id: str) -> dict:
+    """取任务的可继续材料（文本或 PDF + 源页），不写题库。"""
+    from amti import source_import
+    try:
+        return source_import.load_job_payload(job_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
 @router.post("/ingest/prepare")
 async def ingest_prepare(request: Request, name: str = "") -> dict:
     r"""源文件准备：DOCX→PDF、PDF 原样、TEX/MD/TXT 读出文本。
