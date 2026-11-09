@@ -44,6 +44,8 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | `amti/similar.py` | 相似题（派生索引） | 同考点 / 公式 / 题型；按卷签名缓存，真相仍是 `题目/*.tex` |
 | `amti/duplicates.py` | 重复题标注（派生分组） | 复用 `dedup` 指纹；只提示不合并，真相仍是 `题目/*.tex` |
 | `amti/query_syntax.py` | 搜索框语法 | 字段/排除词只解析一次；列表与组卷共用，显式参数优先 |
+| `amti/sharepack.py` | 分享包 | 只读打包；导入同 key 跳过、图片哈希校验；不覆盖真相 |
+| `amti/docx_export.py` | Word 导出 | 块 IR→Markdown→Pandoc；PDF 仍走 exam-zh，不是第二套解析器 |
 | `amti/search.py` | 相关度打分 + 公式等价写法 | `math_forms()` 是查询扩展；新增写法规则只改这里 |
 | `amti/web/query.py` | 题目筛选条件（列表与组卷共用） | 两边各写一套 → 列表筛到的和组卷池子不是同一批题；改筛选口径只改这里 |
 | `amti/review.py` | 审阅状态、风险队列、分层抽样、Wilson CI | 另写一套复核口径 → 体检页数字再次失真；`reviewed_at` 不得再兼作“编辑过” |
@@ -102,6 +104,17 @@ python3 -m amti.content_store clear    # 删掉，下次读自动重建
 
 前端最近 8 条搜索存 `localStorage` 的 `amtiku.search.history.v1`，输入框聚焦
 时下拉，Enter / 失焦记录。
+
+### 导出与分享
+
+- **PDF** 仍走 `paper.py`（exam-zh）；**Word** 走 `docx_export.py`：
+  `latex_blocks` 块 IR → Markdown → Pandoc → DOCX，公式是 OMML，图片走
+  `--resource-path 图片/`。TikZ 不渲染，Word 里显示占位文字；复杂版式以 PDF 为准。
+- Word 导出依赖本机 **Pandoc**（`brew install pandoc` / `choco install pandoc`），
+  没装会明确报错；安装包暂未内置。
+- **分享包** `sharepack.py`：zip 内 `manifest.json` + 原题块 + 内容寻址图片；
+  导入同 key **跳过不覆盖**，图片校验 sha256，包内路径拒绝 `..`/绝对路径。
+  导入最终走 `store.append()`，不另写一套入库。
 
 
 ## 三·五、开源素材与小初章节讲义

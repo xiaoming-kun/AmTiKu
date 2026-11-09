@@ -148,6 +148,34 @@ export const api = {
     batch_id?: string
   }) => send('/api/review/decision', 'POST', body),
   export: (body: any) => send('/api/export', 'POST', body),
+  exportDocx: (body: any) => send('/api/export/docx', 'POST', body),
+  /** 分享包：返回 zip Blob（用原生 fetch，不走 JSON 的 request 包装）。 */
+  shareExport: async (keys: string[], name: string): Promise<Blob> => {
+    const r = await fetch('/api/share/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys, name }),
+    })
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`
+      try { const j = await r.json(); msg = j.detail || msg } catch { /* ignore */ }
+      throw new Error(msg)
+    }
+    return r.blob()
+  },
+  shareImport: async (file: File): Promise<any> => {
+    const r = await fetch('/api/share/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: file,
+    })
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`
+      try { const j = await r.json(); msg = j.detail || msg } catch { /* ignore */ }
+      throw new Error(msg)
+    }
+    return r.json()
+  },
   generate: (body: any) => send('/api/generate', 'POST', body),
   /** 单题换题：同题型/同板块/同难度的候选（只读，不写库）。 */
   replaceCandidates: (body: any) => send('/api/generate/replace', 'POST', body),

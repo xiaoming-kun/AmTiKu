@@ -49,6 +49,7 @@ from amti.web.routers.questions import router as questions_router  # noqa: E402
 from amti.web.routers.insights import router as insights_router  # noqa: E402
 from amti.web.routers.generate import router as generate_router  # noqa: E402
 from amti.web.routers.exporting import router as exporting_router  # noqa: E402
+from amti.web.routers.share import router as share_router  # noqa: E402
 from amti.web.routers.ai import (router as ai_router,        # noqa: E402
                                  _AI_JOBS, _AI_CANCELS)
 
@@ -78,6 +79,7 @@ app.include_router(questions_router)
 app.include_router(insights_router)
 app.include_router(generate_router)
 app.include_router(exporting_router)
+app.include_router(share_router)
 app.include_router(ai_router)
 
 

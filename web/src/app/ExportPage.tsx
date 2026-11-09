@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   AlertTriangle, Check, ChevronDown, ChevronUp, Copy, Download, ExternalLink, Eye,
-  FileText, Loader2, Plus, RefreshCw, Save, Shuffle, Trash2, X,
+  FileText, Loader2, Plus, RefreshCw, Save, Share2, Shuffle, Trash2, X,
 } from 'lucide-react'
 import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
@@ -408,6 +408,40 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
     } finally {
       setBusyKind('none')
     }
+  }
+
+  /** 导出可编辑 Word：走后端 Markdown → Pandoc，公式为 OMML。
+   *  和 PDF 是两条渲染路径；TikZ/复杂版式不保证，界面要讲清楚。 */
+  const runWord = async () => {
+    if (!list.length) return
+    setBusyKind('compile'); setBusySince(Date.now()); setErr(''); setGenMsg('')
+    const base = outEdited ? out : defaultOut(title, mode)
+    try {
+      const d: any = await api.exportDocx(makeBody(base, false))
+      if (d?.detail) throw new Error(String(d.detail))
+      setGenMsg(`Word 已导出：${d.docx_rel || d.docx_abs || '已生成'}`
+        + (d.warnings ? '（有转换提示，复杂公式建议对 PDF）' : ''))
+    } catch (e) {
+      setErr(String((e as any)?.message || e))
+    } finally { setBusyKind('none') }
+  }
+
+  /** 当前卷直接导出分享包（题目 + 图片 + manifest），不用先存档。 */
+  const shareCurrent = async () => {
+    if (!list.length) return
+    setBusyKind('compile'); setErr(''); setGenMsg('')
+    try {
+      const blob = await api.shareExport(list.map((q) => q.key), title || '分享包')
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(title || '分享包').replace(/[\\/:*?"<>|]/g, '_')}.amti-pack.zip`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setGenMsg(`分享包已导出 · ${list.length} 道（题目 + 图片）`)
+    } catch (e) {
+      setErr(String((e as any)?.message || e))
+    } finally { setBusyKind('none') }
   }
 
   // 这里以前挂着一个 800ms 防抖的自动重编 effect：只要 `compiled` 为真，
@@ -955,6 +989,14 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                                disabled:opacity-40">
                     <Copy size={12} />方案
                   </button>
+                  <button onClick={shareCurrent} disabled={busy || !list.length}
+                    title="导出分享包（题目 + 图片）"
+                    className="press inline-flex shrink-0 items-center gap-1 rounded-lg border
+                               border-border bg-surface px-2.5 text-[11.5px] text-ink-soft
+                               transition-colors hover:border-brand-line hover:text-brand-ink
+                               disabled:opacity-40">
+                    <Share2 size={12} />分享包
+                  </button>
                 </div>
                 {saved.length > 0 && (
                   <div className="anim-fade-in max-h-[190px] space-y-1 overflow-y-auto pt-0.5">
@@ -1012,6 +1054,17 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                   <FileText size={13} />三连导出（学生版 / 教师版 / 答案册）
                 </button>
               )}
+              <button onClick={runWord} disabled={busy || !list.length}
+                title="导出可编辑 Word（Pandoc；公式为 OMML，TikZ 图不渲染）"
+                className="press flex w-full items-center justify-center gap-1.5 rounded-lg
+                           border border-border bg-surface px-3 py-2 text-[12px]
+                           font-medium text-ink-soft hover:border-brand-line hover:text-brand-ink
+                           disabled:opacity-40">
+                <FileText size={13} />导出 Word（可编辑）
+              </button>
+              <div className="text-[10px] leading-relaxed text-ink-faint">
+                Word 走 Pandoc，公式为可编辑 OMML；TikZ 几何图不渲染，复杂版式请用 PDF。
+              </div>
 
               {err && (
                 <div className="flex items-start gap-1.5 rounded-lg border border-warn-line

@@ -5,6 +5,26 @@
 
 ---
 
+## 未发布 · 导出与分享包（2026-11-09）
+
+### 新增
+
+* `amti/sharepack.py`：分享包导出/导入；manifest + 原题块 + 图片 SHA-256；
+  导入同 key 跳过、不覆盖，路径穿越防护。
+* `amti/docx_export.py`：Word（DOCX）导出；块级 IR → Markdown → Pandoc，
+  公式转 OMML，图片自动嵌入；TikZ 显示占位。
+* `/api/share/export`、`/api/share/import`（原始 zip body）；`/api/export/docx`、
+  `/api/docx`。
+* 前端：试卷库“分享包”/“导入分享包”，导出页“导出 Word（可编辑）”与当前卷分享。
+* 接口回归新增分享包 roundtrip、Word 导出（Pandoc 存在时）用例（99/99）。
+
+### 注意
+
+* Word 导出需要本机 Pandoc；安装包暂未内置，未装时按钮会明确报错。
+* Word 不是第二条 LaTeX 解析路径：正文仍由 `latex_blocks` 解析；PDF 仍走 exam-zh。
+
+---
+
 ## 未发布 · 搜索语法与历史（2026-11-09）
 
 ### 新增

@@ -3,10 +3,10 @@
  *  旧界面把「试卷管理」做成导航里的一个入口，点进去却是题库栏切到卷子视图——
  *  名不副实。现在它是一页真正的档案：按时间倒序、能搜、能载入回卷子、能删。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight, CalendarDays, FileStack, FolderOpen, Loader2, Plus, Search,
-  Trash2, X,
+  Share2, Trash2, Upload, X,
 } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
@@ -66,6 +66,42 @@ export default function PapersPage({ onLoad, onPaper }: {
     } catch (e) { reportErr(e) }
   }
 
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  /** 分享包：只打包题块 + 图片，不复制整库；下载走 Blob。 */
+  const share = async (p: PaperItem) => {
+    if (!p.keys?.length) { toast('这份存档没有题号', { tone: 'warn' }); return }
+    setBusy('share:' + p.name)
+    try {
+      const blob = await api.shareExport(p.keys, p.title || p.name)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(p.title || p.name).replace(/[\\/:*?"<>|]/g, '_')}.amti-pack.zip`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast(`已导出分享包 · ${p.keys.length} 道`)
+    } catch (e) { reportErr(e) } finally { setBusy('') }
+  }
+
+  const importPack = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setBusy('import')
+    try {
+      const r: any = await api.shareImport(f)
+      if (!r?.ok) {
+        toast((r?.errors || ['导入失败']).slice(0, 3).join('；'), { tone: 'warn' })
+      } else {
+        toast(`导入 ${r.imported} 道，跳过 ${r.skipped?.length || 0} 道`
+          + (r.images?.length ? `，图片 ${r.images.length} 张` : ''))
+      }
+    } catch (err) { reportErr(err) } finally {
+      setBusy('')
+      e.target.value = ''
+    }
+  }
+
   return (
     <div className="b-scroll h-full overflow-y-auto">
       <div className="b-page">
@@ -79,9 +115,19 @@ export default function PapersPage({ onLoad, onPaper }: {
               每次导出都会自动存档；载入后回到组卷工作区，可以继续换题、改版式、重导。
             </p>
           </div>
-          <button onClick={onPaper} className="b-btn b-btn-primary">
-            <Plus size={14} />新建组卷
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={fileRef} type="file" accept=".zip,.amti-pack.zip"
+              onChange={importPack} className="hidden" />
+            <button onClick={() => fileRef.current?.click()} disabled={busy === 'import'}
+              className="b-btn b-btn-secondary">
+              {busy === 'import'
+                ? <><Loader2 size={14} className="animate-spin" />导入中</>
+                : <><Upload size={14} />导入分享包</>}
+            </button>
+            <button onClick={onPaper} className="b-btn b-btn-primary">
+              <Plus size={14} />新建组卷
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -158,6 +204,13 @@ export default function PapersPage({ onLoad, onPaper }: {
                           {busy === p.name
                             ? <><Loader2 size={12} className="animate-spin" />载入中</>
                             : <><ArrowRight size={12} />载入</>}
+                        </button>
+                        <button onClick={() => share(p)} disabled={!!busy}
+                          title="导出分享包（题目 + 图片）"
+                          className="icon-btn h-7 w-7 text-ink-faint hover:text-brand-ink disabled:opacity-40">
+                          {busy === 'share:' + p.name
+                            ? <Loader2 size={13} className="animate-spin" />
+                            : <Share2 size={13} />}
                         </button>
                         <button onClick={() => setDrop(p)} title="删除存档"
                           className="icon-btn h-7 w-7 text-ink-faint hover:text-warn">

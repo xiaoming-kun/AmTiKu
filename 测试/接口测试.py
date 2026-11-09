@@ -17,6 +17,10 @@
 
 from __future__ import annotations
 
+import io
+import shutil
+import zipfile
+
 import sys
 import urllib.parse
 from pathlib import Path
@@ -2107,6 +2111,43 @@ def test_query_syntax_fields():
     base = client.get("/api/questions", params={"q": "三角形", "limit": 1}).json()
     neg = client.get("/api/questions", params={"q": "三角形 -外接圆", "limit": 1}).json()
     assert neg["total"] < base["total"], (base["total"], neg["total"])
+
+
+def test_share_pack_export_and_dry_import():
+    """分享包：导出 zip、manifest 完整；同 key 导入 dry-run 只跳过不写。"""
+    keys = [q["key"] for q in client.get("/api/questions?limit=2").json()["items"]]
+    r = client.post("/api/share/export", json={"name": "接口分享", "keys": keys})
+    assert r.status_code == 200, r.text
+    assert r.content[:2] == b"PK"
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    names = z.namelist()
+    assert "manifest.json" in names
+    assert any(n.startswith("questions/") for n in names)
+    r2 = client.post("/api/share/import?dry_run=1", content=r.content,
+                     headers={"Content-Type": "application/zip"})
+    assert r2.status_code == 200, r2.text
+    d = r2.json()
+    assert d["ok"] and d["imported"] == 0
+    assert set(d["skipped"]) == set(keys)
+
+
+def test_docx_export_roundtrip():
+    """Word 导出：Pandoc 存在时产出可打开的 docx；没有就跳过。"""
+    if not shutil.which("pandoc"):
+        return
+    keys = [q["key"] for q in client.get("/api/questions?limit=2").json()["items"]]
+    r = client.post("/api/export/docx", json={
+        "keys": keys, "title": "接口 Word", "show_answers": True,
+        "answers_at_end": True,
+    })
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["ok"] and d["docx_url"]
+    g = client.get(d["docx_url"])
+    assert g.status_code == 200
+    assert g.content[:2] == b"PK"
+    z = zipfile.ZipFile(io.BytesIO(g.content))
+    assert "word/document.xml" in z.namelist()
 
 
 def test_similar_questions_ready():

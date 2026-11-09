@@ -210,6 +210,45 @@ def export(body: ExportBody) -> dict:
     return r
 
 
+class DocxBody(BaseModel):
+    keys: list[str] = []
+    title: str = ""
+    show_answers: bool = False
+    answers_at_end: bool = False
+    show_source: bool = True
+
+
+@router.post("/export/docx")
+@_serialized_export
+def export_docx(body: DocxBody) -> dict:
+    r"""导出可编辑 Word。走 Markdown → Pandoc，公式为 OMML。
+
+    和 PDF 是两条渲染路径（PDF 仍走 exam-zh）；Word 里不保证 TikZ/复杂
+    版式，但题干、选项、答案、解析和图片都有。Pandoc 没装就明确报错。
+    """
+    from amti import docx_export
+    r = docx_export.export_docx(
+        body.keys, title=body.title, show_answers=body.show_answers,
+        answers_at_end=body.answers_at_end, show_source=body.show_source)
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("error") or "Word 导出失败")
+    _usage_bump(body.keys)
+    from urllib.parse import quote as _q
+    r["docx_url"] = "/api/docx?path=" + _q(r["docx_rel"])
+    return r
+
+
+@router.get("/docx")
+def docx(path: str):
+    """把导出的 DOCX 发出去；只允许导出目录内。"""
+    base = OUT_DIR.resolve()
+    p = (base / path).resolve()
+    if (base not in p.parents and p != base) or not p.is_file():
+        raise HTTPException(404, f"没有这个文件：{path}")
+    return FileResponse(
+        p, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
 @router.get("/pdf")
 def pdf(path: str, root: str = "out"):
     r"""预览用：把 PDF 发出去。
