@@ -5,6 +5,26 @@
 
 ---
 
+## 未发布 · 搜索语法与历史（2026-11-09）
+
+### 新增
+
+* `amti/query_syntax.py`：`考点:` / `年份:` / `类型:` / `难度:` / `出处:` /
+  `地区:`、`-词` 排除、引号并空格。
+* 列表 `/api/questions` 与组卷 `/api/generate` 共用同一份解析；
+  显式筛选参数优先，语法字段合并进 `QuestionFilter`。
+* `QuestionFilter.exclude_terms`：排除词同时作用于列表与组卷。
+* 前端搜索历史：最近 8 条，`localStorage`，聚焦下拉、Enter/失焦记录、可清空。
+* 接口回归新增字段过滤与 `-词` 用例（97/97）。
+
+### 验证
+
+* `python3 -m amti.query_syntax` 自检通过。
+* `python3 测试/接口测试.py`：97/97。
+* `cd web && npx tsc --noEmit ... && npm run build`：通过。
+
+---
+
 ## v3.0.0 · 内容库 / 检索与学段工作台（2026-11-09）
 
 本版汇总此前未发布的**学段工作台、讲义、审阅、AI 录题**等改动，以及本轮

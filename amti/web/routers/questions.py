@@ -19,6 +19,7 @@ from amti import fts as fulltext
 from amti import knowledge
 from amti import latex_blocks as lb
 from amti import readmodel
+from amti.query_syntax import parse as parse_query
 from amti.recall import recall as _recall
 from amti import review as review_mod
 from amti import store
@@ -109,6 +110,7 @@ def list_questions(
     difficulty: str = "",     # 难度，逗号分隔
     year: str = "",           # 年份，逗号分隔
     source: str = "",         # 卷别，逗号分隔
+    region: str = "",         # 地区（meta.region），逗号分隔
     region_scope: str = "",   # single/multi/unknown/book
     paper_state: str = "",    # complete/partial
     star_state: str = "",     # rated/unrated
@@ -143,18 +145,36 @@ def list_questions(
     # 列表是打开应用的第一个请求：顺手让内容库在后台建起来（非阻塞）。
     # 这样用户点开第一道题时，详情多半已经命中 1–3ms 的主键查询。
     content_store.ensure()
-    kw = q.strip()
+    # 搜索框语法（考点:三角 年份:2024 ... -导数）在**列表与组卷共用**；
+    # 显式筛选参数优先于语法字段，避免两个入口互相覆盖。
+    pq = parse_query(q)
+    kw = pq.keyword
     rec = _recall(kw) if kw else None
     cands = frozenset(rec["keys"]) if rec and rec["keys"] else None
+    qtype = type or pq.type
+    difficulty_v = difficulty or pq.difficulty
+    year_v = year or pq.year
+    source_v = source or pq.source
+    region_v = region or pq.region
+    point_ids = set(_csv_set(point))
+    if pq.point and not point:
+        for part in _csv_set(pq.point):
+            got = _tag_ids_matching(part)
+            if got:
+                point_ids |= got
+            else:
+                # 语法写了考点但解析不到：必须是 0 结果，不能退化成“不筛”。
+                point_ids.add("__none__")
     stage_set = _stage_set(stage)
     # 筛选口径**只此一份**，见 amti/web/query.py。列表与组卷共用它。
     flt = QuestionFilter(
-        qtype=type, kind=kind,
-        points=_csv_set(point),
-        difficulties=_csv_set(difficulty),
-        years=_csv_set(year),
-        sources=_csv_set(source),
+        qtype=qtype, kind=kind,
+        points=frozenset(point_ids),
+        difficulties=_csv_set(difficulty_v),
+        years=_csv_set(year_v),
+        sources=_csv_set(source_v),
         scopes=_csv_set(region_scope),
+        regions=_csv_set(region_v),
         paper_states=_csv_set(paper_state),
         star_states=_csv_set(star_state),
         qualities=_csv_set(quality),
@@ -169,6 +189,7 @@ def list_questions(
         deep_keyword=True,
         candidates=cands,
         candidate_only=bool(rec and rec["mode"] in ("math", "mixed") and cands),
+        exclude_terms=pq.exclude,
     )
 
     key_list = [x.strip() for x in keys.split(",") if x.strip()]
@@ -177,7 +198,7 @@ def list_questions(
     # `has/missing` 含读模型不认识的 flag（小问/存疑）时也必须回退：
     # 否则 SQL 里没有这个条件，筛选会被静默忽略，和组卷的池子对不上。
     use_readmodel = (
-        rm and not kw and not key_list
+        rm and not kw and not key_list and not pq.exclude and not region_v
         and flt.has <= _READMODEL_FLAGS and flt.missing <= _READMODEL_FLAGS
     )
     if use_readmodel:

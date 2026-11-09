@@ -145,6 +145,8 @@ function ThemeControl({ collapsed }: { collapsed: boolean }) {
   )
 }
 
+const SEARCH_HISTORY_KEY = 'amtiku.search.history.v1'
+
 export default function Shell({
   stage, onStage, page, onPage, data, paperCount,
   query, onQuery, onPalette, onPaper, onIngest, onHelp, searchRef, zen, onZen, detailOpen,
@@ -182,6 +184,30 @@ export default function Shell({
   const shut = (v: boolean) => {
     setCollapsed(v)
     try { localStorage.setItem('amtiku.nav.shut', v ? '1' : '0') } catch { /* ignore */ }
+  }
+
+  const [histOpen, setHistOpen] = useState(false)
+  const [hist, setHist] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(SEARCH_HISTORY_KEY)
+      const v = raw ? JSON.parse(raw) : []
+      return Array.isArray(v)
+        ? v.filter((x): x is string => typeof x === 'string').slice(0, 8)
+        : []
+    } catch { return [] }
+  })
+  const rememberSearch = (v: string) => {
+    const s = v.trim()
+    if (!s) return
+    setHist((cur) => {
+      const next = [s, ...cur.filter((x) => x !== s)].slice(0, 8)
+      try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+  const clearSearchHist = () => {
+    setHist([])
+    try { localStorage.removeItem(SEARCH_HISTORY_KEY) } catch { /* ignore */ }
   }
 
   const count = data?.stages.find((s) => s.key === stage)
@@ -392,8 +418,21 @@ export default function Shell({
                 ref={searchRef}
                 value={query}
                 onChange={(e) => onQuery(e.target.value)}
+                onFocus={() => setHistOpen(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setHistOpen(false), 140)
+                  if (query.trim()) rememberSearch(query)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    rememberSearch(query); setHistOpen(false)
+                    ;(e.currentTarget as HTMLInputElement).blur()
+                  } else if (e.key === 'Escape') {
+                    onQuery(''); setHistOpen(false)
+                  }
+                }}
                 placeholder="搜索题目、答案、考点、出处、公式…"
-                title="公式可以直接写：cosB、cosB=3/4、3/4、x^2"
+                title="公式：cosB、3/4、x^2；字段：考点:三角 年份:2024 类型:多选 难度:中档 出处:…；-词 排除"
                 className="h-10 w-full rounded-full border border-border/80 bg-surface-2/60 pl-10 pr-16
                            text-[12.5px] text-ink outline-none backdrop-blur-xl transition-all
                            placeholder:text-ink-faint focus:border-brand-line focus:bg-surface
@@ -408,6 +447,29 @@ export default function Shell({
                 <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2
                                 rounded border border-border bg-surface px-1.5 text-[10px]
                                 leading-[17px] text-ink-faint sm:block">/</kbd>
+              )}
+              {histOpen && hist.length > 0 && (
+                <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 overflow-hidden
+                                rounded-xl border border-border bg-surface py-1
+                                shadow-[var(--shadow-pop)]">
+                  <div className="flex items-center px-3 py-1.5 text-[10.5px] text-ink-faint">
+                    <span>最近搜索</span>
+                    <button onMouseDown={(e) => e.preventDefault()} onClick={clearSearchHist}
+                      className="ml-auto text-ink-faint transition-colors hover:text-ink">清空</button>
+                  </div>
+                  {hist.map((h) => (
+                    <button key={h} onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => { onQuery(h); rememberSearch(h); setHistOpen(false) }}
+                      className="block w-full truncate px-3 py-1.5 text-left text-[12px] text-ink-soft
+                                 transition-colors hover:bg-brand-soft/50 hover:text-brand-ink">
+                      {h}
+                    </button>
+                  ))}
+                  <div className="mt-1 border-t border-border/60 px-3 py-1.5 text-[10.5px]
+                                  leading-relaxed text-ink-faint">
+                    语法：考点:三角 · 年份:2024 · 类型:多选 · 难度:中档 · -词 排除
+                  </div>
+                </div>
               )}
             </div>
 

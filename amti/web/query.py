@@ -165,6 +165,8 @@ class QuestionFilter:
     #: True = 命中由候选集负责，不再用原文 `kw_hit` 二次筛。
     #: 公式查询必须这样：`cosB` 在原文里是 `\cos B`，二次筛会全刷掉。
     candidate_only: bool = False
+    #: 搜索语法里的 `-词`：命中任一排除词就丢掉。列表与组卷同用。
+    exclude_terms: tuple[str, ...] = ()
 
     def matches(self, item: Question) -> bool:
         if self.candidates is not None and item.key not in self.candidates:
@@ -225,6 +227,9 @@ class QuestionFilter:
                 and not kw_hit(item, self.keyword, self.tag_ids,
                                deep=self.deep_keyword)):
             return False
+        for term in self.exclude_terms:
+            if kw_hit(item, term, frozenset(), deep=self.deep_keyword):
+                return False
         if self.has or self.missing:
             f = flags_of(item)
             if self.has and not all(f.get(k) for k in self.has):

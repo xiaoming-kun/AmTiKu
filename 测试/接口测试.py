@@ -2084,6 +2084,31 @@ def test_ai_config_rejects_bad_url_without_writing():
     assert after["configured"] == before["configured"]
 
 
+def test_query_syntax_fields():
+    """搜索语法：年份/类型/难度字段生效；-词 能减少结果。"""
+    r = client.get("/api/questions", params={"q": "年份:2024", "limit": 5})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["total"] > 0
+    assert all(str(it["meta"].get("year")) == "2024" for it in d["items"])
+
+    r = client.get("/api/questions", params={"q": "类型:多选", "limit": 5})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["total"] > 0
+    assert all(it["type"] == "multi_choice" for it in d["items"])
+
+    r = client.get("/api/questions", params={"q": "难度:中档", "limit": 5})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["total"] > 0
+    assert all(it["difficulty"] == "中档题" for it in d["items"])
+
+    base = client.get("/api/questions", params={"q": "三角形", "limit": 1}).json()
+    neg = client.get("/api/questions", params={"q": "三角形 -外接圆", "limit": 1}).json()
+    assert neg["total"] < base["total"], (base["total"], neg["total"])
+
+
 def test_similar_questions_ready():
     """相似题：不返回自身，按相似度降序；内容库没建好时跳过。"""
     from amti import content_store

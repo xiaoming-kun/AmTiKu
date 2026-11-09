@@ -43,6 +43,7 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | `amti/recall.py` | 检索召回（中文 FTS / 公式） | 列表与组卷共用；在路由里各写一套 → 两边搜到的不是同一批题 |
 | `amti/similar.py` | 相似题（派生索引） | 同考点 / 公式 / 题型；按卷签名缓存，真相仍是 `题目/*.tex` |
 | `amti/duplicates.py` | 重复题标注（派生分组） | 复用 `dedup` 指纹；只提示不合并，真相仍是 `题目/*.tex` |
+| `amti/query_syntax.py` | 搜索框语法 | 字段/排除词只解析一次；列表与组卷共用，显式参数优先 |
 | `amti/search.py` | 相关度打分 + 公式等价写法 | `math_forms()` 是查询扩展；新增写法规则只改这里 |
 | `amti/web/query.py` | 题目筛选条件（列表与组卷共用） | 两边各写一套 → 列表筛到的和组卷池子不是同一批题；改筛选口径只改这里 |
 | `amti/review.py` | 审阅状态、风险队列、分层抽样、Wilson CI | 另写一套复核口径 → 体检页数字再次失真；`reviewed_at` 不得再兼作“编辑过” |
@@ -92,6 +93,15 @@ python3 -m amti.content_store clear    # 删掉，下次读自动重建
 `duplicate_group` / `dup_of` / 完全同指纹三路，只提示，**绝不自动合并**。
 实测 8,005 道 / 3,141 组；首次建组约 2.6s，之后 0.28s。没有组返回
 `n=0, items=[]`，不编造。
+
+### 搜索语法 / 历史
+
+搜索框支持 `考点:三角 年份:2024 类型:多选 难度:中档 出处:… 地区:…`、
+`-词` 排除、引号把空格并进一个字段值。解析在 `amti/query_syntax.py`，
+列表与组卷都先 `parse()` 再交给同一个 `QuestionFilter`；**显式筛选参数优先**。
+
+前端最近 8 条搜索存 `localStorage` 的 `amtiku.search.history.v1`，输入框聚焦
+时下拉，Enter / 失焦记录。
 
 
 ## 三·五、开源素材与小初章节讲义

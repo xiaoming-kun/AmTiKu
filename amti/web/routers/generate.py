@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from amti import store
+from amti.query_syntax import parse as parse_query
 from amti.recall import recall as _recall
 from amti.web.core import _usage
 from amti.web.present import brief as _brief
@@ -86,17 +87,32 @@ def api_generate(body: GenerateBody) -> dict:
     规则见 `amti/generate.py`：分值结构、解答题板块顺序、小题章节上限。
     """
     from amti import generate as _gen
-    kw = body.q.strip()
+    # 与列表共用搜索框语法；显式参数优先。
+    pq = parse_query(body.q)
+    kw = pq.keyword
     rec = _recall(kw) if kw else None
     cands = frozenset(rec["keys"]) if rec and rec["keys"] else None
+    qtype = body.type or pq.type
+    difficulty_v = body.difficulty or pq.difficulty
+    year_v = body.year or pq.year
+    source_v = body.source or pq.source
+    region_v = body.region or pq.region
+    point_ids = set(_csv_set(body.point))
+    if pq.point and not body.point:
+        for part in _csv_set(pq.point):
+            got = _tag_ids_matching(part)
+            if got:
+                point_ids |= got
+            else:
+                point_ids.add("__none__")
     # **同一个 QuestionFilter**：列表筛到什么，组卷就从什么里挑。
     # `regions` 以前只解析没使用（region 选择器形同虚设），一并接上。
     flt = QuestionFilter(
-        qtype=body.type, kind=body.kind,
-        points=_csv_set(body.point),
-        difficulties=_csv_set(body.difficulty),
-        years=_csv_set(body.year),
-        sources=_csv_set(body.source),
+        qtype=qtype, kind=body.kind,
+        points=frozenset(point_ids),
+        difficulties=_csv_set(difficulty_v),
+        years=_csv_set(year_v),
+        sources=_csv_set(source_v),
         scopes=_csv_set(body.region_scope),
         paper_states=_csv_set(body.paper_state),
         star_states=_csv_set(body.star_state),
@@ -108,9 +124,10 @@ def api_generate(body: GenerateBody) -> dict:
         tag_ids=frozenset(_tag_ids_matching(kw) if kw else ()),
         # 组卷选池**不搜解析**：题干没提导数、解析里提一句的题不该进导数卷。
         deep_keyword=False,
-        regions=_csv_set(body.region),
+        regions=_csv_set(region_v),
         candidates=cands,
         candidate_only=bool(rec and rec["mode"] in ("math", "mixed") and cands),
+        exclude_terms=pq.exclude,
     )
     pool = [item for item in store.load_cached() if flt.matches(item)]
 
