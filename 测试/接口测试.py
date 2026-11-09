@@ -2113,6 +2113,20 @@ def test_query_syntax_fields():
     assert neg["total"] < base["total"], (base["total"], neg["total"])
 
 
+def test_ingest_prepare_text_source():
+    """源文件准备：.tex/.md 读出文本并留任务清单，不写题库。"""
+    r = client.post("/api/ingest/prepare", params={"name": "例题.tex"},
+                    content=r"\title{测试}" "\n" r"\begin{question}题干\end{question}".encode())
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["ok"] and d["kind"] == "text"
+    assert "题干" in d["text"] and d["job_id"]
+    # 同一个 task 的 manifest 必须落盘，且状态是 prepared
+    from amti import source_import
+    man = source_import.load_job(d["job_id"])
+    assert man and man["status"] == "prepared" and man["sha256"]
+
+
 def test_share_pack_export_and_dry_import():
     """分享包：导出 zip、manifest 完整；同 key 导入 dry-run 只跳过不写。"""
     keys = [q["key"] for q in client.get("/api/questions?limit=2").json()["items"]]

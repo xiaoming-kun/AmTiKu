@@ -494,7 +494,8 @@ def cmd_accept(_a) -> int:
     # import 一下什么都不执行，那一层就成了摆设（实测踩过）。
     for m in ("schema", "latex_blocks", "render_tex", "images", "dedup",
               "ingest", "generate", "normalize", "query_syntax", "search",
-              "similar", "duplicates", "sharepack", "docx_export", "fts",
+              "similar", "duplicates", "sharepack", "docx_export",
+              "source_import", "fts",
               "knowledge_map", "topics", "review"):
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
     # 存储层：**缩卷**（题数跨过每卷 5000 的边界）时，多余的旧卷必须先删再回读。

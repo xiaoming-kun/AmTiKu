@@ -149,6 +149,20 @@ export const api = {
   }) => send('/api/review/decision', 'POST', body),
   export: (body: any) => send('/api/export', 'POST', body),
   exportDocx: (body: any) => send('/api/export/docx', 'POST', body),
+  /** 源文件准备：DOCX 转 PDF、TEX/MD/TXT 读文本；只准备，不入库。 */
+  ingestPrepare: async (file: File): Promise<any> => {
+    const r = await fetch(`/api/ingest/prepare?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    })
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`
+      try { const j = await r.json(); msg = j.detail || msg } catch { /* ignore */ }
+      throw new Error(msg)
+    }
+    return r.json()
+  },
   /** 分享包：返回 zip Blob（用原生 fetch，不走 JSON 的 request 包装）。 */
   shareExport: async (keys: string[], name: string): Promise<Blob> => {
     const r = await fetch('/api/share/export', {

@@ -9,7 +9,7 @@ from __future__ import annotations
 import threading
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from amti import fts as fulltext
@@ -18,6 +18,7 @@ from amti import store
 from amti.logutil import get_logger
 from amti.web.core import _rm_apply
 from amti.web.runtime import INFLIGHT as _INFLIGHT
+from starlette.concurrency import run_in_threadpool
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["ai"])
@@ -393,6 +394,30 @@ def ingest_commit(body: IngestBody) -> dict:
 
 class IngestSourceBody(BaseModel):
     text: str = ""
+
+
+@router.post("/ingest/prepare")
+async def ingest_prepare(request: Request, name: str = "") -> dict:
+    r"""源文件准备：DOCX→PDF、PDF 原样、TEX/MD/TXT 读出文本。
+
+    **不解析题目、不写题库**；返回的 PDF 交给现有读图/AI，文本交给编辑器，
+    之后仍然走 `/api/ingest/preview` → `/api/ingest/commit`。
+    """
+    from amti import source_import
+    data = await request.body()
+    if not data:
+        raise HTTPException(400, "文件是空的")
+    if len(data) > source_import.MAX_BYTES:
+        raise HTTPException(413, "文件超过 120MB")
+    if not name:
+        import urllib.parse
+        name = urllib.parse.unquote(request.headers.get("x-filename", ""))
+    if not name:
+        raise HTTPException(400, "缺少文件名")
+    try:
+        return await run_in_threadpool(source_import.prepare, name, data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/ingest/source")

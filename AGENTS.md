@@ -46,6 +46,7 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | `amti/query_syntax.py` | 搜索框语法 | 字段/排除词只解析一次；列表与组卷共用，显式参数优先 |
 | `amti/sharepack.py` | 分享包 | 只读打包；导入同 key 跳过、图片哈希校验；不覆盖真相 |
 | `amti/docx_export.py` | Word 导出 | 块 IR→Markdown→Pandoc；PDF 仍走 exam-zh，不是第二套解析器 |
+| `amti/source_import.py` | 源文件适配 | DOCX→PDF、PDF/图片/文本准备；只准备，不解析不写库 |
 | `amti/search.py` | 相关度打分 + 公式等价写法 | `math_forms()` 是查询扩展；新增写法规则只改这里 |
 | `amti/web/query.py` | 题目筛选条件（列表与组卷共用） | 两边各写一套 → 列表筛到的和组卷池子不是同一批题；改筛选口径只改这里 |
 | `amti/review.py` | 审阅状态、风险队列、分层抽样、Wilson CI | 另写一套复核口径 → 体检页数字再次失真；`reviewed_at` 不得再兼作“编辑过” |
@@ -115,6 +116,15 @@ python3 -m amti.content_store clear    # 删掉，下次读自动重建
 - **分享包** `sharepack.py`：zip 内 `manifest.json` + 原题块 + 内容寻址图片；
   导入同 key **跳过不覆盖**，图片校验 sha256，包内路径拒绝 `..`/绝对路径。
   导入最终走 `store.append()`，不另写一套入库。
+
+### 识题源文件
+
+- `amti/source_import.py` 只做“源 → 可读材料”，**不解析题目、不写题库**：
+  `.docx` → Pandoc → PDF；`.pdf` 原样；`.tex/.txt/.md` 读出文本；图片原样。
+- 每次准备在 `数据/录题/任务/<id>/` 留 `manifest.json`（源文件名、sha256、
+  类型、派生 PDF、时间、状态），方便回查来源。
+- Word 转出的 PDF 交给现有 VLM/AI 读题，文本交给编辑器；之后仍然只走
+  `ingest.preview()` → `ingest.commit()`。**不是第二套录入管线。**
 
 
 ## 三·五、开源素材与小初章节讲义

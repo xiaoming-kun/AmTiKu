@@ -221,6 +221,8 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
     const isImg = f.type.startsWith('image/')
     const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
     if (isImg || isPdf) { ocrFile(f); return }
+    // Word 先转 PDF，再走现有本地读图；不直接解析 DOCX
+    if (/\.docx$/i.test(f.name)) { void prepareSource(f); return }
     const r = new FileReader()
     r.onload = () => { changeText(String(r.result || '')) }
     r.readAsText(f, 'utf-8')
@@ -245,6 +247,34 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
     }
     r.onerror = () => { setErr('读不出这个文件'); setBusy(false) }
     r.readAsDataURL(f)
+  }
+
+  /** DOCX → 后端转 PDF → 本地读图。只填编辑器，不写库；失败不静默。 */
+  async function prepareSource(f: File) {
+    setBusy(true); setErr(''); setMsg(`正在准备 ${f.name}…（Word 会先转 PDF）`)
+    try {
+      const r: any = await api.ingestPrepare(f)
+      if (r.kind === 'text') {
+        changeText(String(r.text || ''))
+        setMsg(`已读入 ${r.chars || 0} 字（任务 ${r.job_id}）—— 核对后点「解析成题」`)
+        setBusy(false)
+        return
+      }
+      if (r.kind === 'pdf' && r.pdf_b64) {
+        const bin = atob(String(r.pdf_b64))
+        const arr = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+        const pdf = new File([arr], f.name.replace(/\.docx$/i, '.pdf'),
+                             { type: 'application/pdf' })
+        setMsg(`已转 PDF（任务 ${r.job_id}），开始本地读图…`)
+        setBusy(false)
+        ocrFile(pdf)          // 由 ocrFile 接管 busy/错误
+        return
+      }
+      setErr('这个文件没有可读内容'); setBusy(false)
+    } catch (e) {
+      setErr(String((e as any)?.message || e)); setBusy(false)
+    }
   }
 
   /* ══ AI 读整份资料 ══════════════════════════════════════════════════
@@ -420,7 +450,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
     const isPdf = /\.pdf$/i.test(f.name) || f.type === 'application/pdf'
     const isImg = f.type.startsWith('image/')
     if (!isPdf && !isImg) {
-      setAiErr('只吃 PDF 和图片。Word 文件请在 Word 里「文件 → 另存为 → PDF」，再把 PDF 拖进来')
+      setAiErr('AI 整份读只吃 PDF 和图片；Word 可直接拖到上方输入框，会先转 PDF 再本地读图')
       return
     }
     // **换卷必须清掉旧答案册**。否则模型会把上一份卷子的答案按题号抄到
@@ -1113,7 +1143,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                       {aiBusy ? '正在读，别关窗口…' : '把 PDF 拖到这里，或点一下选文件'}
                     </span>
                     <span className="text-[11.5px] leading-relaxed text-ink-faint">
-                      照片也行（一页一张）；Word 请先在 Word 里「文件 → 另存为 → PDF」
+                      照片也行（一页一张）；Word 可直接拖到上方输入框（会先转 PDF 本地读图）
                     </span>
                     <span className="text-[10.5px] text-ink-faint">
                       按页计费：100 页约几毛钱 · 读完自动切到逐题核对
@@ -1468,7 +1498,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                                   px-2 text-[11.5px] text-ink-soft
                                   hover:border-brand-line hover:text-brand-ink">
                   <Upload size={12} />选文件…
-                  <input type="file" accept=".tex,.txt" className="hidden"
+                  <input type="file" accept=".tex,.txt,.md,.docx" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f) }} />
                 </label>
                 <label title={vlmReady
@@ -1481,8 +1511,11 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                   大模型读图…
                   <span className={`ml-0.5 h-1.5 w-1.5 rounded-full ${
                     vlmReady ? 'bg-has' : 'bg-ink-faint'}`} />
-                  <input type="file" accept="image/*,.pdf" className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) ocrFile(f) }} />
+                  <input type="file" accept="image/*,.pdf,.docx" className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) { if (/\.docx$/i.test(f.name)) readFile(f); else ocrFile(f) }
+                    }} />
                 </label>
 
                 {/* AI 读整份资料：第一次先填 key；之后选文件 → 后台读 → 自动解析。
@@ -1528,7 +1561,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                 <textarea value={text}
                   onChange={(e) => changeText(e.target.value)}
                   spellCheck={false}
-                  placeholder={'粘贴整份试卷（exam-zh 格式）；\n或把 .tex 文件拖进来；\n或把题目截图 / PDF 拖进来 —— 由本地大模型识别成 LaTeX：\n\n\\title{2025年长沙市高三调研}\n\\begin{question}\n…\n\\end{question}\n\\begin{solution}\n…\n\\end{solution}'}
+                  placeholder={'粘贴整份试卷（exam-zh 格式）；\n或把 .tex / .md / Word 文件拖进来；\n或把题目截图 / PDF 拖进来 —— 由本地大模型识别成 LaTeX：\n\n\\title{2025年长沙市高三调研}\n\\begin{question}\n…\n\\end{question}\n\\begin{solution}\n…\n\\end{solution}'}
                   className="h-full w-full resize-none bg-transparent px-4 py-3.5 font-mono
                              text-[12.5px] leading-relaxed outline-none placeholder:text-ink-faint" />
                 {drag && (
@@ -1536,7 +1569,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing, ai = fa
                                   justify-center gap-2 rounded-[var(--radius-card)] border-2 border-dashed
                                   border-brand-line bg-brand-soft/70 text-[12.5px] font-medium text-brand-ink">
                     <Upload size={20} />
-                    松手就读 · 图片 / PDF 交给大模型识别
+                    松手就读 · 图片 / PDF / Word 交给大模型识别
                   </div>
                 )}
               </div>
