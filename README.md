@@ -78,3 +78,5 @@ python3 amti.py 网页        # 起服务 + 打开浏览器
 - **考点大纲**（`demo数据/知识点.json`）：课标结构，随 MIT 一并提供
 - **小初章节讲义**：AmTiKu 自编；其中参考开源内容的章节保留原作者与许可
   （MIT / LPPL-1.3c），来源与许可见 `数据/开源讲义/README.md`，应用内每章也标了作者与链接
+- **界面动效组件**：`web/src/app/reactbits/` 下的 SpotlightCard 来自 React Bits，
+  按 MIT + Commons Clause 使用（见该目录 `LICENSE.md`），不适用本仓库的 MIT 许可

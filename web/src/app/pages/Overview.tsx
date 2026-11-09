@@ -11,7 +11,9 @@ import {
 } from 'lucide-react'
 import type { Overview } from '@/lib/types'
 import { STAGES, STAGE_BY_KEY, type Stage } from '@/lib/stage'
+import { effectiveDark, useTheme } from '@/lib/theme'
 import type { PageKey } from '@/app/Shell'
+import SpotlightCard from '@/app/reactbits/SpotlightCard'
 
 function pct(n: number, d: number) {
   if (!d) return 0
@@ -63,6 +65,8 @@ function StageCard({ s, active, data, onClick }: {
 function Pipeline({ data, onPage, onPaper }: {
   data: Overview | null; onPage: (p: PageKey) => void; onPaper: () => void
 }) {
+  const { mode } = useTheme()
+  const dark = effectiveDark(mode)
   if (!data) {
     return (
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -113,7 +117,21 @@ function Pipeline({ data, onPage, onPaper }: {
       {cols.map((x) => {
         const Icon = x.icon
         return (
-          <div key={x.key} className="glass-card sheen group flex flex-col p-4">
+          <SpotlightCard
+            key={x.key}
+            theme={dark ? 'dark' : 'light'}
+            spotlightColor={x.tone}
+            intensity={dark ? 0.16 : 0.36}
+            spotlightSize={220}
+            softness={0.8}
+            borderGlow={0.35}
+            proximity={0}
+            smoothing={0.35}
+            flare={false}
+            grain={0}
+            ambient={false}
+            className="glass-card group flex flex-col p-4"
+          >
             <div className="flex items-center gap-2.5">
               <span className="grid h-9 w-9 place-items-center rounded-[11px]"
                 style={{ background: `color-mix(in srgb, ${x.tone} 13%, var(--color-surface))`, color: x.tone }}>
@@ -144,7 +162,7 @@ function Pipeline({ data, onPage, onPaper }: {
                 {x.action} →
               </button>
             </div>
-          </div>
+          </SpotlightCard>
         )
       })}
     </div>
