@@ -1,28 +1,9 @@
-/** 录入抽屉的三个阶段容器。
+/** 录入抽屉的提交条。
  *
- *  Source / Review 目前是**边界组件**：布局和滚动各归各，状态仍由
- *  `IngestDrawer` 持有（一次搬 80 个 state 风险太大，分两步走）。
- *  Commit 已经独立成组件，提交按钮/禁用规则/规则说明只在这里维护。
+ *  Source/Review 已各自独立；这里只剩 CommitBar：提交按钮、禁用规则、
+ *  规则说明只维护一份。
  */
-import type { ReactNode } from 'react'
 import { Check, Upload, X } from 'lucide-react'
-
-export function SourceStage({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
-      {children}
-    </div>
-  )
-}
-
-export function ReviewStage({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex w-[min(880px,62vw)] min-w-[520px] shrink-0 flex-col border-l
-                    border-border bg-bg">
-      {children}
-    </div>
-  )
-}
 
 export function CommitBar({
   pv, backfill, nearThreshold, err, msg, busy, tagging,

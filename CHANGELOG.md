@@ -22,8 +22,8 @@
 * 本地读图结果缓存到任务 `ocr.json`；继续 PDF 任务优先读缓存，不再重跑模型。
 * 任务保留策略：默认最近 50 个（`AMTIKU_INGEST_KEEP` 可调），
   `POST /api/ingest/jobs/prune` 手动清理，`DELETE /api/ingest/jobs/{id}` 删单个。
-* 界面抽出 `web/src/app/ingest/IngestStages.tsx`：Source/Review 阶段边界 +
-  独立 `CommitBar`；状态仍在 `IngestDrawer`，下一步再搬 context。
+* 录入抽屉真拆分：`useIngest.tsx` 管状态/handlers，Source/Review 通过
+  `IngestContext` 取字段，`CommitBar` 独立；`IngestDrawer` 只剩 69 行壳。
 * 接口回归新增源文件准备/最近任务/OCR 缓存用例（102/102）。
 
 ### 注意
