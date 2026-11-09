@@ -28,29 +28,32 @@ const SCOPE_LABEL: Record<string, string> = {
 }
 const PAPER_LABEL: Record<string, string> = { complete: '完整卷', partial: '试卷节选' }
 const STAR_LABEL: Record<string, string> = { rated: '已评级', unrated: '未评级' }
-const QUALITY_LABEL: Record<string, string> = { dup: '重复题', lowres: '低清图' }
+const QUALITY_LABEL: Record<string, string> = { dup: '同型/重复题', lowres: '低清图' }
 const ASRC_LABEL: Record<string, string> = {
   human: '人工改过', workbuddy: '模型生成', legacy: '历史存量', 无: '未登记',
 }
-const REVIEW_LABEL: Record<string, string> = { yes: '已复核', no: '未复核' }
+const REVIEW_LABEL: Record<string, string> = { yes: '已审', no: '未审' }
 
 const SORTS: [string, string][] = [
   ['used', '频次 高→低'],
   ['year', '年份 新→旧'], ['year2', '年份 旧→新'],
   ['diff', '易 → 难'], ['diff2', '难 → 易'],
-  ['', '题库原序'], ['new', '最新录入'], ['old', '最早录入'], ['solved', '刚解出的'],
+  ['raw', '题库原序'], ['new', '最新录入'], ['old', '最早录入'], ['solved', '刚解出的'],
 ]
 
-export default function FilterPanel({ L, onClose }: { L: L; onClose?: () => void }) {
+export default function FilterPanel({ L, onClose, onMap, onClearAll }: {
+  L: L; onClose?: () => void; onMap?: () => void
+  /** 清除全部筛选。**必须由 App 传入**：这里再抄一份的话，新增筛选维度
+   *  时就会漏（`answer_source`/`reviewed` 就这么漏过一次）。 */
+  onClearAll: () => void
+}) {
   const {
     facets, q, setQ, type, setType, kind, setKind,
-    has, setHas, missing, setMissing, points, setPoints, diffs, setDiffs,
+    has, missing, points, setPoints, diffs, setDiffs,
     sources, setSources,
     years, setYears, sort, setSort, openTopics, setOpenTopics,
-    scopes, setScopes, paperStates, setPaperStates,
-    starStates, setStarStates, qualities, setQualities,
+    scopes, paperStates, starStates, qualities,
     answerSources, toggleAnswerSource, reviewed, setReviewed,
-    setPointSource,
     toggleYear, toggleHas, toggleMissing, togglePoint, toggleDiff,
     toggleSource,
     toggleScope, togglePaper, toggleStar, toggleQuality,
@@ -113,10 +116,15 @@ export default function FilterPanel({ L, onClose }: { L: L; onClose?: () => void
 
   const tree = groupTree(facets?.points || [])
   const allIds = (facets?.points || []).map((p) => p.value)
+  // 有搜索词时，`used` 在后端走的是**相关度**（BM25 + 字段权重），
+  // 不是频次。标签得说真话，否则用户以为自己在按“常用”排。
+  const sortOptions: [string, string][] = SORTS.map(([v, label]) => [
+    v, v === 'used' && q.trim() ? '相关度（搜索）' : label,
+  ])
 
   return (
     <aside style={{ width: FILTER_W }}
-      className="flex shrink-0 flex-col border-r border-border bg-surface">
+      className="flex shrink-0 flex-col border-r border-border/70 bg-[color-mix(in_srgb,var(--color-surface)_80%,transparent)] backdrop-blur-2xl">
       {/* ── 面板头 ── */}
       <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
         <ListFilter size={15} className="shrink-0 text-brand" />
@@ -304,6 +312,15 @@ export default function FilterPanel({ L, onClose }: { L: L; onClose?: () => void
               )
             })}
           </div>
+          {onMap && (
+            <button onClick={onMap}
+              className="mt-2 flex w-full items-center gap-1 rounded-lg border border-dashed
+                         border-border px-2 py-1.5 text-[10.5px] text-ink-faint
+                         hover:border-brand-line hover:text-brand-ink">
+              小学—高中 · 按教材顺序的知识地图
+              <ChevronRight size={11} className="ml-auto" />
+            </button>
+          )}
         </Section>
 
         {/* ── 题型 ── */}
@@ -461,7 +478,7 @@ export default function FilterPanel({ L, onClose }: { L: L; onClose?: () => void
         {/* ── 排序 ── */}
         <Section title="排序" open={open.sort} onToggle={() => flip('sort')}>
           <div className="flex flex-wrap gap-1.5">
-            {SORTS.map(([v, label]) => (
+            {sortOptions.map(([v, label]) => (
               <Chip key={v || 'raw'} size="sm" on={sort === v} onClick={() => setSort(v as any)}>{label}</Chip>
             ))}
           </div>
@@ -512,12 +529,7 @@ export default function FilterPanel({ L, onClose }: { L: L; onClose?: () => void
       {/* ── 清空：常驻在底部，不跟着滚动跑掉 ── */}
       {activeFilters > 0 && (
         <div className="anim-fade-up shrink-0 border-t border-border p-2.5">
-          <button onClick={() => {
-              setHas([]); setMissing([]); setPoints([]); setDiffs([])
-              setType(''); setKind(''); setYears([]); setSources([])
-              setPointSource('')
-              setScopes([]); setPaperStates([]); setStarStates([]); setQualities([])
-            }}
+          <button onClick={onClearAll}
             className="press w-full rounded-lg border border-border bg-bg py-1.5 text-[12px]
                        text-ink-soft transition-colors hover:border-warn-line hover:bg-warn-soft hover:text-warn">
             清除全部筛选（{activeFilters}）

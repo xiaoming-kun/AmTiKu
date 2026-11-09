@@ -173,6 +173,258 @@ def fillin_answers(stem: str) -> list[str]:
             if a.strip():
                 out.append(a.strip())
     return out
+
+
+# ── 搜索用的数学文本归一化（**有损，只服务于检索**） ─────────────
+#
+# 这不是第二套结构解析：`parse_question` 仍然是题目字段的唯一来源。
+# 这里只把 LaTeX 压成“人会在搜索框里写”的扁平文本，供内容库建索引、
+# 供 search 生成等价写法。两列：
+#
+#   严格：保留空格/`^`/`_`，用于精确优先
+#   宽松：去空格、去 `^_`、去单 token 括号，用于容错召回
+#
+#   \cos B          -> cos b          / cosb
+#   \frac{3}{4}     -> 3/4            / 3/4
+#   \dfrac{\pi}{4}  -> pi/4           / pi/4   （宽松去括号）
+#   \sqrt{3}        -> sqrt(3)        / sqrt3
+#   x^{2}           -> x^2            / x2
+#   \sin^2 A        -> sin^2 a        / sin2a
+#   \triangle ABC   -> triangle abc   / triangleabc
+
+_FRAC_CMD_RE = re.compile(r"\\(?:d|t)?frac(?![a-zA-Z])")
+_SQRT_CMD_RE = re.compile(r"\\sqrt(?![a-zA-Z])")
+_SLOT_CMD_RE = re.compile(r"\\(?:paren|fillin)(?![a-zA-Z])")
+_KEEP_ARG_CMD_RE = re.compile(
+    r"\\(?:text|mathrm|mathbf|mathit|mathbb|mathcal|mathsf|textbf|textit|"
+    r"mbox|operatorname)(?![a-zA-Z])")
+_DROP_ARG_CMD_RE = re.compile(
+    r"\\(?:includegraphics|fig|label|ref|eqref|hspace|vspace)(?![a-zA-Z])")
+_BEGIN_END_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}")
+_MATH_CMD_RE = re.compile(r"\\([a-zA-Z]+)\*?")
+
+#: 命令名 → 搜索文本。函数名保留，公式才有意义；运算符统一成 ASCII。
+_MATH_CMD = {
+    "cdot": "*", "times": "*", "div": "/", "ast": "*",
+    "le": "<=", "leq": "<=", "leqslant": "<=",
+    "ge": ">=", "geq": ">=", "geqslant": ">=",
+    "ne": "!=", "neq": "!=", "approx": "~=",
+    "to": "->", "rightarrow": "->", "leftarrow": "<-",
+    "Rightarrow": "=>", "Leftrightarrow": "<=>",
+    "pm": "+-", "mp": "-+",
+    "pi": "pi", "alpha": "alpha", "beta": "beta", "gamma": "gamma",
+    "delta": "delta", "epsilon": "epsilon", "varepsilon": "epsilon",
+    "theta": "theta", "lambda": "lambda", "mu": "mu", "nu": "nu",
+    "xi": "xi", "rho": "rho", "sigma": "sigma", "tau": "tau",
+    "phi": "phi", "varphi": "phi", "chi": "chi", "psi": "psi",
+    "omega": "omega", "Gamma": "gamma", "Delta": "delta",
+    "Theta": "theta", "Lambda": "lambda", "Pi": "pi", "Sigma": "sigma",
+    "Phi": "phi", "Psi": "psi", "Omega": "omega",
+    "sin": "sin", "cos": "cos", "tan": "tan", "cot": "cot",
+    "sec": "sec", "csc": "csc", "arcsin": "arcsin", "arccos": "arccos",
+    "arctan": "arctan", "log": "log", "ln": "ln", "lg": "lg",
+    "lim": "lim", "sum": "sum", "prod": "prod", "int": "int",
+    "triangle": "triangle", "angle": "angle", "parallel": "//",
+    "perp": "perp", "circ": "deg", "degree": "deg",
+    "infty": "inf", "inf": "inf",
+}
+
+#: 整条丢掉（排版命令/环境名/图片引用），不进入搜索文本。
+_DROP_CMD = {
+    "left", "right", "middle", "big", "Big", "bigg", "Bigg",
+    "bigl", "Bigl", "biggl", "Biggl", "bigr", "Bigr", "biggr", "Biggr",
+    "displaystyle", "textstyle", "scriptstyle", "limits", "nolimits",
+    "quad", "qquad", "enspace", "thinspace", "medspace", "thickspace",
+    "hfill", "vfill", "newline", "linebreak", "item", "caption",
+    "centering", "begin", "end", "label", "ref", "eqref",
+}
+
+#: Unicode 数学符号 → ASCII（老师从 Word/网页粘过来的常见写法）。
+_MATH_TRANS = str.maketrans({
+    "×": "*", "·": "*", "÷": "/", "≤": "<=", "≥": ">=",
+    "≠": "!=", "≈": "~=", "π": "pi", "△": "triangle",
+    "∠": "angle", "°": "deg", "√": "sqrt", "±": "+-",
+    "∞": "inf", "∈": "in", "∪": "union", "∩": "intersect",
+    "→": "->", "⇒": "=>", "⇔": "<=>", "％": "%",
+})
+
+
+def _math_arg(s: str, i: int) -> tuple[str, int]:
+    r"""读一个 `{…}` 或单字符参数（`\frac12` 这种也认）。"""
+    n = len(s)
+    while i < n and s[i] in " \t\n":
+        i += 1
+    if i >= n:
+        return "", i
+    if s[i] == "{":
+        depth, j = 0, i
+        while j < n:
+            if s[j] == "\\":
+                j += 2
+                continue
+            if s[j] == "{":
+                depth += 1
+            elif s[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    return s[i + 1:j], j + 1
+            j += 1
+        return s[i + 1:], n
+    if s[i] == "\\" and i + 1 < n:
+        return s[i:i + 2], i + 2
+    return s[i], i + 1
+
+
+def _expand_math_cmds(s: str) -> str:
+    r"""先把 `\frac`/`\sqrt`/`\text`/`\paren` 这些**带参数**的命令摊平。
+
+    只递归展开这一层；剩下不认识的反斜杠命令交给后面的正则映射。
+    """
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        if s[i] != "\\":
+            out.append(s[i])
+            i += 1
+            continue
+
+        m = _FRAC_CMD_RE.match(s, i)
+        if m:
+            a, j = _math_arg(s, m.end())
+            b, j2 = _math_arg(s, j)
+            out.append("(%s)/(%s)" % (_expand_math_cmds(a),
+                                      _expand_math_cmds(b)))
+            i = j2
+            continue
+
+        m = _SQRT_CMD_RE.match(s, i)
+        if m:
+            j = m.end()
+            k = j
+            while k < n and s[k] in " \t":
+                k += 1
+            idx = ""
+            if k < n and s[k] == "[":
+                val, k2 = bracket_arg(s, k)
+                if val is not None:
+                    idx, j = val, k2
+            a, j2 = _math_arg(s, j)
+            if idx:
+                out.append("root(%s,%s)" % (_expand_math_cmds(idx).strip(),
+                                            _expand_math_cmds(a)))
+            else:
+                out.append("sqrt(%s)" % _expand_math_cmds(a))
+            i = j2
+            continue
+
+        m = _SLOT_CMD_RE.match(s, i)
+        if m:
+            j = m.end()
+            k = j
+            while k < n and s[k] in " \t":
+                k += 1
+            if k < n and s[k] == "[":
+                val, k2 = bracket_arg(s, k)
+                if val is not None:
+                    out.append(" " + _expand_math_cmds(val) + " ")
+                    i = k2
+                    continue
+            i = j
+            continue
+
+        m = _KEEP_ARG_CMD_RE.match(s, i)
+        if m:
+            a, j = _math_arg(s, m.end())
+            out.append(" " + _expand_math_cmds(a) + " ")
+            i = j
+            continue
+
+        m = _DROP_ARG_CMD_RE.match(s, i)
+        if m:
+            j = m.end()
+            while True:
+                k = j
+                while k < n and s[k] in " \t":
+                    k += 1
+                if k < n and s[k] == "{":
+                    _, j = _math_arg(s, k)
+                    continue
+                if k < n and s[k] == "[":
+                    _, k2 = bracket_arg(s, k)
+                    if k2 > k:
+                        j = k2
+                        continue
+                break
+            i = j
+            continue
+
+        # 不认识的反斜杠命令：保留一个字符，后面的正则统一处理
+        out.append(s[i])
+        i += 1
+    return "".join(out)
+
+
+def math_text(s: str) -> tuple[str, str]:
+    r"""LaTeX/纯文本 → `(严格, 宽松)` 两列搜索文本。
+
+    严格保留空格与 `^_`，宽松去掉它们（并把 `sin(b)` 压成 `sinb`），
+    这样 `cosB` / `cos B` / `\cos(B)` 能命中同一道题。中文和标点全部丢弃
+    ——中文检索走全文索引，不在这列里。
+    """
+    s = s or ""
+    if s.lstrip().startswith("%% @q"):
+        s = s.split("\n", 1)[1] if "\n" in s else ""
+    s = s.replace("$$", " ").replace("$", " ")
+    # 图形代码不是公式：整段丢掉，免得 `draw (1,2)` 混进检索
+    s = re.sub(r"\\begin\{tikzpicture\}.*?\\end\{tikzpicture\}", " ", s, flags=re.S)
+    s = re.sub(r"\\begin\{pgfpicture\}.*?\\end\{pgfpicture\}", " ", s, flags=re.S)
+    # `cosB` / `sinA`：先拆成 `cos B`，否则后面会被当成一个单词
+    s = re.sub(
+        r"\b(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|log|ln|lg|lim)"
+        r"(?=[A-Za-z])", r"\1 ", s)
+    s = _BEGIN_END_RE.sub(" ", s)
+    s = _expand_math_cmds(s)
+    # \left \right 家族、间距命令
+    s = re.sub(
+        r"\\(?:left|right|middle|bigl?|Bigl?|biggl?|Biggl?|"
+        r"bigr|Bigr|biggr|Biggr)(?![a-zA-Z])", " ", s)
+    s = re.sub(r"\\(?:quad|qquad|,|;|!|:| )", " ", s)
+    # 保留参数的命令已经被摊平，这里只清掉残留的命令名
+    s = _KEEP_ARG_CMD_RE.sub(" ", s)
+
+    def _cmd(m: re.Match) -> str:
+        name = m.group(1)
+        if name in _MATH_CMD:
+            return " " + _MATH_CMD[name] + " "
+        if name in _DROP_CMD:
+            return " "
+        return " " + name + " "
+
+    s = _MATH_CMD_RE.sub(_cmd, s)
+    s = (s.replace("{", " ").replace("}", " ")
+          .replace("&", " ").replace("\\\\", " "))
+    s = s.replace("\\%", "%").replace("\\_", "_")
+    s = s.translate(_MATH_TRANS)
+    # 全角数字/字母 → 半角
+    s = "".join(
+        chr(ord(c) - 0xFEE0)
+        if ("０" <= c <= "９" or "Ａ" <= c <= "Ｚ" or "ａ" <= c <= "ｚ")
+        else c for c in s)
+    # 只留数学字符；中文、标点、表格线全部丢掉
+    s = re.sub(r"[^0-9A-Za-z+\-*/=<>^_().,!|~ ]+", " ", s)
+    # 运算符两侧不留空格：`x^ 2`、`sin ^2 a`、`( pi )/(4)` 都收干净
+    s = re.sub(r"\(\s+", "(", s)
+    s = re.sub(r"\s+\)", ")", s)
+    s = re.sub(r"\s*([=<>+\-*/^_,!|])\s*", r"\1", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    if len(s) < 2:
+        return "", ""
+    strict = s.lower()
+    loose = re.sub(r"\s+", "", strict)
+    loose = loose.replace("*", "")          # `2*x` 与 `2x` 视为同一写法
+    loose = re.sub(r"[\^_]", "", loose)     # `x^2` 与 `x2`
+    loose = re.sub(r"\(([a-z0-9.]+)\)", r"\1", loose)  # `sin(b)` → `sinb`
+    return strict, loose
 # 题干末尾的作答括号，可能是 `（\quad）`、`(\quad)`、`\paren`
 TAIL_PAREN_RE = re.compile(r"[（(]\s*(?:\\quad|\\qquad)?\s*[）)]\s*$")
 WIDTH_RE = re.compile(r"width\s*=\s*([^,\]]+)")
@@ -392,6 +644,23 @@ def _selftest() -> int:
     ids = sorted(f.id for f in q5.figures)
     check("选项里的图也要登记进 figures",
           ids == ["aaaa1111bbbb2222.png", "cccc3333dddd4444.png"], str(ids))
+
+    # 搜索归一化：老师在搜索框里写 cosB / 3/4 / x2，要能落到同一串
+    check("公式：cosB 归一", math_text(r"\cos B") == ("cos b", "cosb"),
+          str(math_text(r"\cos B")))
+    check("公式：分数", math_text(r"\frac{3}{4}") == ("(3)/(4)", "3/4"),
+          str(math_text(r"\frac{3}{4}")))
+    check("公式：根式", math_text(r"\sqrt{3}") == ("sqrt(3)", "sqrt3"),
+          str(math_text(r"\sqrt{3}")))
+    check("公式：上标", math_text(r"x^{2}") == ("x^2", "x2"),
+          str(math_text(r"x^{2}")))
+    check("公式：三角平方", math_text(r"\sin^2 A") == ("sin^2 a", "sin2a"),
+          str(math_text(r"\sin^2 A")))
+    check("公式：三角形",
+          math_text(r"\triangle ABC") == ("triangle abc", "triangleabc"),
+          str(math_text(r"\triangle ABC")))
+    check("纯中文不进公式列", math_text("三角形形状判断") == ("", ""),
+          str(math_text("三角形形状判断")))
 
     print("latex_ir 自检 %s（%d 项失败）" % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0

@@ -70,16 +70,20 @@ def _match(q: str) -> str:
     return " AND ".join(p for p in parts if p)
 
 
+# 分词/索引字段变化时 +1：卷没变也要重建，否则旧索引缺新字段。
+_DOC_VERSION = 2
+
+
 def _sig() -> tuple:
     from . import store
-    return store.volume_signature()
+    return tuple(store.volume_signature()) + (("__doc__", _DOC_VERSION, 0),)
 
 
 def _doc(q) -> str:
     return _clean(" ".join([
         q.stem or "", " ".join(o.text for o in q.options),
         q.answer or "", q.solution or "",
-        " ".join(q.point_titles or []),
+        " ".join(q.points or []), " ".join(q.point_titles or []),
         str((q.meta or {}).get("book") or ""),
         str((q.meta or {}).get("source_label") or ""),
         str((q.meta or {}).get("region") or ""),
@@ -101,7 +105,10 @@ def build(force: bool = False) -> dict:
             pass
 
     t0 = time.time()
-    tmp = DB.with_name(DB.name + ".tmp")
+    # 同上：服务/测试/CLI 可能同时重建，固定 tmp 会互相踩。
+    import os as _os
+    tmp = DB.with_name("%s.tmp.%d.%d" % (DB.name, _os.getpid(),
+                                         threading.get_ident()))
     tmp.unlink(missing_ok=True)
     DB.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(tmp)
@@ -162,6 +169,46 @@ def search(q: str, limit: int = 2000) -> list[str]:
         return [r[0] for r in rows]
     except Exception:                                        # noqa: BLE001
         return []
+
+
+def apply(keys: list[str], items: dict | None = None) -> bool:
+    """增量更新已建好的索引。
+
+    只用于**服务端自己刚写过**的 key（patch/源码/复核）；调用方保证索引在
+    写之前是 current 的。索引本来就不存在/不是 current，返回 False，让下一次
+    搜索走完整 rebuild，绝不假装同步成功。
+
+    `items`（key → Question）由写接口直接传进来时，**不再 load_cached()
+    重读全库**——以前改一个标签要顺手把 3 万道题再解析一遍，是单题
+    PATCH 里比写盘还贵的一步。旧/新 key 都可能出现：`items` 里没有的
+    key 会被当作删除处理（改名时旧 key 正好走这条）。
+    """
+    keys = list(dict.fromkeys(k for k in keys if k))
+    if not keys or not DB.exists() or not _CACHE.get("ok"):
+        return False
+    with _LOCK:
+        try:
+            if items is None:
+                from . import store
+                by = {q.key: q for q in store.load_cached()}
+            else:
+                by = items
+            with sqlite3.connect(DB) as c:
+                for k in keys:
+                    c.execute("delete from docs where key=?", (k,))
+                    q = by.get(k)
+                    if q is not None:
+                        c.execute("insert into docs(key,text) values(?,?)",
+                                  (k, _doc(q)))
+                sig = _sig()
+                c.execute("insert into meta(k,v) values('sig',?) "
+                          "on conflict(k) do update set v=excluded.v",
+                          (json.dumps([list(x) for x in sig]),))
+            _CACHE.update({"sig": sig, "ok": True})
+            return True
+        except Exception:                                    # noqa: BLE001
+            _CACHE.update({"sig": (), "ok": False})
+            return False
 
 
 def invalidate() -> None:

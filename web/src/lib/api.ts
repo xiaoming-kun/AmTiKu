@@ -74,6 +74,8 @@ export const api = {
   batchPatch: (body: {
     keys: string[]
     points?: string[]
+    /** 考点操作：默认 replace；add 追加；remove 移除 */
+    point_mode?: 'replace' | 'add' | 'remove'
     difficulty?: string
     stars?: number
     year?: number | string
@@ -88,16 +90,63 @@ export const api = {
   source: (key: string, body: {
     tex?: string; dry_run?: boolean; expect_hash?: string
   }) => send('/api/questions/' + enc(key) + '/source', 'POST', body),
-  facets: () => request('/api/facets'),
+  facets: (stage = '') =>
+    request('/api/facets' + (stage ? `?stage=${encodeURIComponent(stage)}` : '')),
+  /** 学段驾驶舱：图谱 / 讲义 / 题库 / 组卷四段流水线汇总。 */
+  overview: (stage = 'senior') =>
+    request(`/api/overview?stage=${encodeURIComponent(stage)}`),
+  /** 小学/初中诊断题库（高中走 /api/questions）。 */
+  diagnostics: (p: Record<string, string>) =>
+    request(`/api/diagnostics?${new URLSearchParams(p)}`),
+  diagnosticsExport: (body: {
+    stage: string; q?: string; book?: string; chapter?: string; point?: string;
+    level?: string; limit?: number; title?: string; answers?: boolean
+  }) => send('/api/diagnostics/export', 'POST', body),
+  /** 知识地图：学段 → 年级/册 → 章 → 知识点（按教材顺序）。只读。 */
+  map: () => request('/api/map'),
+  /** 考点专题：列表 / 详情（含讲义 PDF 地址与精选题）。 */
+  topics: (stage = '') =>
+    request('/api/topics' + (stage ? `?stage=${encodeURIComponent(stage)}` : '')),
+  topic: (id: string) => request('/api/topics/' + enc(id)),
+  /** 从高中考点新建一份讲义骨架（不覆盖已有讲义）。 */
+  topicNew: (point: string, title = '') => send('/api/topics/new', 'POST', { point, title }),
+  /** 网页版讲义（HTML 片段 + KaTeX 公式）。 */
+  topicLecture: (id: string) => request('/api/topics/' + enc(id) + '/lecture'),
+  topicHistory: (id: string) => request('/api/topics/' + enc(id) + '/history'),
+  topicRestore: (id: string, name: string) => send('/api/topics/' + enc(id) + '/restore', 'POST', { name }),
+  /** 单个知识点的诊断题（小学/初中）。 */
+  mapQuestions: (id: string) => request('/api/map/questions/' + enc(id)),
   /** 单题完整记录。**带 `tex`**——卷面上真正会写出去的那段源码，
    *  由 `amti/render_tex.py` 生成，前端不再自己拼一遍。 */
   get: (key: string) => request('/api/questions/' + enc(key)),
+  /** 列表「显示答案」：只取答案的块 IR，避免为一道题拉整份解析。 */
+  answer: (key: string) => request('/api/questions/' + enc(key) + '/answer'),
+  /** 相似题：同考点 / 同公式结构 / 同题型。 */
+  similar: (key: string, limit = 8) =>
+    request(`/api/questions/${enc(key)}/similar?limit=${limit}`),
+  /** 重复题：同指纹 / duplicate_group / dup_of。只提示，不合并。 */
+  duplicates: (key: string) =>
+    request(`/api/questions/${enc(key)}/duplicates`),
   baseline: () => request('/api/baseline'),
   /** 只读设置（导出位置等）。 */
   settings: () => request('/api/settings'),
   changes: () => request('/api/changes'),
   changeText: (name: string) => request('/api/changes/' + enc(name)),
   statsDetail: () => request('/api/stats/detail'),
+  /* ── 审阅工作台 ─────────────────────────────────────
+     复核状态与“编辑过”分开；队列/抽样只读，决定通过下面一个写入口落盘。 */
+  reviewStats: () => request('/api/review/stats'),
+  reviewQueue: (p: Record<string, string>) =>
+    request(`/api/review/queue?${new URLSearchParams(p)}`),
+  reviewSample: (body: {
+    n: number; seed?: number; book?: string; type?: string;
+    year_from?: number; risk?: string
+  }) => send('/api/review/sample', 'POST', body),
+  reviewDecision: (body: {
+    items: { key: string; status: string; note?: string }[]
+    reviewer?: string
+    batch_id?: string
+  }) => send('/api/review/decision', 'POST', body),
   export: (body: any) => send('/api/export', 'POST', body),
   generate: (body: any) => send('/api/generate', 'POST', body),
   /** 单题换题：同题型/同板块/同难度的候选（只读，不写库）。 */
@@ -118,6 +167,25 @@ export const api = {
   llmUnload: (model: string) => send('/api/llm/unload', 'POST', { model }),
   vlmExtract: (data: string, name: string, dpi = 200) =>
     send('/api/vlm/extract', 'POST', { data, name, dpi }),
+  /* ── AI 录题（DeepSeek 读整份资料）──────────────────
+     和读图不同：这个能吃 100 页 PDF，跑几分钟，所以是"开任务 + 轮询进度"。
+     **仍然只读不写库**：产物是一段源材料文本，填进录入框后面走同一条管线。 */
+  aiStatus: () => request('/api/ai/status'),
+  /** 保存配置。`api_key` 传 undefined = 不动；传 "" = 清空。 */
+  aiConfig: (body: {
+    api_key?: string; base_url?: string; model?: string
+    pages_per_call?: number; workers?: number
+  }) => send('/api/ai/config', 'POST', body),
+  aiTest: () => send('/api/ai/test', 'POST'),
+  /** 开一个读资料任务。`answer*` 是**另一份文件**（答案/解析），没有就传空。 */
+  aiRun: (data: string, name: string, answerData = '', answerName = '') =>
+    send('/api/ai/run', 'POST', {
+      data, name, answer_data: answerData, answer_name: answerName,
+    }),
+  aiJob: (id: string) => request('/api/ai/job/' + encodeURIComponent(id)),
+  /** 取消：不再发新请求；已读到的批次保留，已经在飞的请求仍会计费。 */
+  aiCancel: (id: string) =>
+    send('/api/ai/job/' + encodeURIComponent(id) + '/cancel', 'POST'),
   /* ── 回收站 ────────────────────────────────────────
      「删除」不是真删：移进回收站（存整道题），随时能恢复。 */
   trashReasons: () => request('/api/trash/reasons'),
@@ -137,6 +205,7 @@ export const api = {
   /* ── 试卷存档 / 合集 ────────────────────────────
      存档里只存**题号**，所以任何时候都能原样还原那套卷。 */
   papers: () => request('/api/papers'),
+  paper: (name: string) => request('/api/papers/' + enc(name)),
   paperSave: (body: any) => send('/api/papers', 'POST', body),
   paperDelete: (name: string) => send(`/api/papers/${enc(name)}`, 'DELETE'),
 }

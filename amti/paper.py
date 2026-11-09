@@ -50,8 +50,8 @@ _ANS_DEFINE = r"\definecolor{%s}{HTML}{%s}" % (ANS_RED, ANS_RED_HEX)
 # 品牌页眉页脚。**这是版式，不是水印**：只占页边距里的页眉/页脚位，
 # 不压正文、不斜铺、不影响阅读；和水印的区别是可以直接删掉而不伤内容。
 BRAND_NAME = "AmTiKu"
-BRAND_HEX = "CE338A"                       # 与网页/讲义同一个品牌色
-BRAND_LABEL = "高中数学题库"
+BRAND_HEX = "2563EB"                       # 与 BoardUI 网页同一个强调蓝
+BRAND_LABEL = "K12 数学题库"
 
 _ANS_MACRO = re.compile(r"(\\(?:paren|fillin)\s*\[|\\fillin\s*\{)")
 
@@ -214,6 +214,91 @@ def _cap_figure_height(tex: str, cap: str = r"0.46\textheight") -> str:
     return re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", sub, tex)
 
 
+# **独立成行**的配图：整行只有图（可带 `$` 包着、可并排几张）。
+# 题干里 97% 的图都是这种；`A. \includegraphics…` 这种选项里的图不算，
+# 它们归 `choices` 管。
+_FIG_ONLY = re.compile(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{[^}]*\}")
+_FIG_SEP = re.compile(r"\\(?:qquad|quad|enspace|thinspace|hfill|hfil|,|;|:|!)|"
+                      r"\\hspace\*?\s*\{[^}]*\}")
+
+
+def _is_figure_line(line: str) -> bool:
+    r"""这一行是不是"只有图"（一张或并排几张，允许 `$`、`\quad`、`\hspace`）。
+
+    并排图（"图一 图二 图三"那种）以前只认单张，于是整行**左对齐**——
+    库里像 `\includegraphics{A}\quad\includegraphics{B}` 的写法不少。
+    """
+    if "\\includegraphics" not in line:
+        return False
+    rest = _FIG_ONLY.sub("", line)
+    rest = _FIG_SEP.sub("", rest).replace("$", "")
+    return rest.strip() == ""
+
+# 这些环境里是 **LR 模式**（表格单元格、行内公式），`\begin{center}` 进去
+# 会直接报 `! LaTeX Error: Not allowed in LR mode.`——整份卷子出不来。
+# 判据留宽一点：宁可少包一层 center，也不能编译失败。
+_LR_ENVS = frozenset({"tabular", "tabular*", "tabularx", "array", "longtable",
+                      "math", "displaymath", "mathpar"})
+_ENV_RE = re.compile(r"\\(begin|end)\s*\{([^}]+)\}")
+
+
+def center_figures(tex: str) -> str:
+    r"""把**独立成行**的配图包进 `center`——图居中是卷面最基本的规矩。
+
+    库里 2690 道带图题，只有 86 道自己写了 `center`；其余都是把
+    `\includegraphics` 单独扔一行，LaTeX 就按普通段落**左对齐**排，
+    小图（中位数才 2cm 宽）贴在页边，看着像掉出来的一块。
+    改成居中后顺带有了 `center` 环境的上下间距，图不再顶着题干。
+
+    只动"整行只有图"的行：句子中间的图（`如图\includegraphics…`）、
+    选项里的图（`\item …`）原样不动——那些由行文/`choices` 自己排。
+    已经在 `center` 里的也不重复包（库里有 86 道自己包了）；并排的几张图
+    （`\includegraphics{A}\quad\includegraphics{B}`）按一整行一起包。
+
+    ⚠️ **表格单元格里不许包**：那里是 LR 模式，`center` 会报
+    `Not allowed in LR mode`，整份卷子编译失败（实测 46 道带图题里
+    有 2 道是图在 `tabular` 里）。所以顺带盯着 `tabular/array/…` 的深度。
+    """
+    lines = tex.split("\n")
+    out: list[str] = []
+    center = lr = 0                 # 当前在第几层 center / LR 环境里
+    for line in lines:
+        for m in _ENV_RE.finditer(line):
+            delta = 1 if m.group(1) == "begin" else -1
+            name = m.group(2).strip()
+            if name == "center":
+                center = max(0, center + delta)
+            elif name in _LR_ENVS:
+                lr = max(0, lr + delta)
+        if center == 0 and lr == 0 and _is_figure_line(line):
+            out += [r"\begin{center}", line.strip(), r"\end{center}"]
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+# 作答括号（`\paren[…]`）。连**前面的空格**一起收掉——见 `keep_paren_with_text`。
+_PAREN_AT = re.compile(r"[ \t]*\\paren\s*\[")
+
+
+def keep_paren_with_text(tex: str) -> str:
+    r"""让 `\paren` 跟前一段文字**排在同一行**，不许自己掉到下一行。
+
+    `paren/type=none` 解决的是"括号被 `\hfill` 推到下一行最右边"，但
+    括号本身还是个 2.6em 宽的小盒子：题干那行正好排满时，它仍会自己
+    掉到下一行行首（实测 60 题里还剩 1 处）。
+
+    只加 `\nobreak` 不够：xeCJK 会在 `）` 和 `（` 之间插一段胶，
+    TeX 正是在**那段胶**处断行，而 `\nobreak` 排在胶后面管不着它。
+    所以三步：`\unskip` 先撤掉那段胶（连带题库里常写的半角空格），
+    `\nobreak` 封死断点，再补 0.2em 让括号不贴着前一个字。
+
+    `\unskip` 只在"前面确实是一段胶"时才动手；前面是数学公式时，
+    撤掉的是公式结束处的 0pt 胶，不改变字形间距。
+    """
+    return _PAREN_AT.sub(r"\\unskip\\nobreak\\hskip 0.2em\\paren[", tex)
+
+
 # 模拟题出处名的**脏数据过滤器**。
 #
 # 老数据的 `meta.source_label` 常是卷头/页码被误当卷名（实测：
@@ -374,7 +459,7 @@ def _brand_page_style(label: str = BRAND_LABEL) -> list[str]:
     版式本身只占页眉/页脚，不碰版心：
 
         ┌────────────────────────────────────┐
-        │ AmTiKu                    高中数学题库 │  ← 页眉（品牌色 + 灰标签）
+        │ AmTiKu                    K12 数学题库 │  ← 页眉（品牌色 + 灰标签）
         │ ────────────────────────────────── │  ← 0.4pt 细线
         │                                    │
         │              正文                   │
@@ -827,6 +912,17 @@ def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 0,
     # `to_image` 只换**渲染过**的；没渲染过的原样走内联 TikZ。
     from . import tikzfig as _tz
     tex, _n = _tz.to_image(tex, q.figures)
+    # **独立成行的图居中**，并给一个"不超过小半页"的高度上限。
+    # 两件都是**渲染期**的事（数据里不写 `center`，也不写 height），
+    # 所以放在这里、和 TikZ→图片同一层：写库路径 `store.render_question`
+    # 不经过 `_q_tex`，不会被顺手改掉。
+    tex = center_figures(tex)
+    tex = shrink_option_figures(tex)
+    tex = _cap_figure_height(tex, r"0.32\textheight")
+    # **括号不许自己掉到下一行**（见 `keep_paren_with_text`）。
+    # 放在标红之前：`red_answer_macros` 只认 `\paren[` 这几个字，前面多一个
+    # `\nobreak` 不影响它圈范围。
+    tex = keep_paren_with_text(tex)
     # **答案标红**：只在"卷面上真的显示答案"时才染（学生版不染，见模块顶部说明）。
     if show_answers:
         tex = red_answer_macros(tex)
@@ -836,6 +932,49 @@ def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 0,
     if show_source:
         tex = _stem_with_source(tex, q)
     return tex
+
+
+def _image_option_question(q: Question) -> bool:
+    r"""这道题的**选项**里有没有图（`\includegraphics` 或内联 TikZ）。
+
+    为什么要单独判：四个选项图通常是 2×2 两行，光图就 8–12cm；
+    `\needspace{6\baselineskip}` 挡不住，会出现"题干和 A/B 在这页、
+    C/D 的图从下一页开头"这种拆题（实测 2010 广东卷（理）第 6 题）。
+    """
+    return bool(q.options) and any(
+        ("\\includegraphics" in (o.text or "")) or
+        ("\\begin{tikzpicture}" in (o.text or ""))
+        for o in q.options)
+
+
+# 选项里 `width = 0.4\linewidth` 这种写法：三个以上图选项时按这个宽度上限缩。
+_OPT_FIG_W = re.compile(
+    r"(\\includegraphics\s*\[[^\]]*?width\s*=\s*)([0-9.]+)(\\linewidth)")
+
+
+def shrink_option_figures(tex: str, cap: float = 0.30) -> str:
+    r"""**三个以上图选项**时，把每张图的宽度压到 `cap\linewidth` 以内。
+
+    四个 0.4\linewidth 的图选项排成 2×2，整块接近半页——既"配图太大"，
+    又把后面的题顶到下一页（2010 广东卷（理）第 6 题实测 12.4cm）。
+    压到 0.3 之后仍是 2×2，但整块缩到 8cm 出头，能和一页里的其它题共存。
+
+    只动**选项里的** `width`，题干里的图是作者定的版面，原样不动；
+    只在图选项 ≥3 个时动手（两个图选项的题，0.4 宽是合理的）。
+    """
+    i = tex.find("\\begin{choices}")
+    j = tex.find("\\end{choices}", i)
+    if i < 0 or j < 0:
+        return tex
+    block = tex[i:j]
+    if block.count("\\includegraphics") < 3:
+        return tex
+
+    def sub(m):
+        val = min(float(m.group(2)), cap)
+        return "%s%.2f%s" % (m.group(1), val, m.group(3))
+
+    return tex[:i] + _OPT_FIG_W.sub(sub, block) + tex[j:]
 
 
 def _qid_mark(q: Question) -> str:
@@ -982,6 +1121,47 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"\usepackage{lastpage}",
         # `\needspace`：题干和选项别被分页拆开
         r"\usepackage{needspace}",
+        # ⚠️ **选项别撑满整行（但长选项必须照旧折行）。**
+        #
+        # exam-zh 的 `choices` 先按最宽选项算出列数，再把**每一列拉成
+        # 「整行宽 ÷ 列数」**——于是 `A. 1  B. 2  C. 3  D. 4` 被摊到四个
+        # 4cm 宽的格子里，短选项之间空得能塞下一只手（用户报的"选项排得松"）。
+        #
+        # 这里把"最终列宽"改成 **min(模板算出的列宽, 自然最大宽度)**：
+        # 短选项收得紧，长选项一字不改地按原来的列宽折行——**不能只取自然宽度**，
+        # 实测长选项（有的长达 245 个汉字宽）会整行冲出纸面（517pt overfull）。
+        #
+        # ⚠️ 动的是 exam-zh 内部函数与变量。加 `\cs_if_exist:NT` 守卫：
+        # 将来包一升级、函数名变了，这里**静默回到模板默认行为**（松一点），
+        # 而不是整份卷子编译不过。
+        r"\ExplSyntaxOn",
+        r"\cs_if_exist:NT \__examzh_choices_calc_item_width:",
+        r"  {",
+        r"    \cs_set_protected:Npn \__examzh_choices_calc_item_width:",
+        r"      {",
+        # 当前值 = 自然最大宽度（非 bottom 标签时还含标签宽/间距），先存一份
+        r"        \dim_set_eq:NN \l_tmpa_dim \l__examzh_choices_item_width_dim",
+        # 模板原公式：整行 ÷ 列数，再减标签宽/间距 → 内容可用的列宽
+        r"        \dim_set:Nn \l__examzh_choices_item_width_dim",
+        r"          { ( \l__examzh_choices_total_width_dim",
+        r"              - \l__examzh_choices_columns_int \l__examzh_choices_column_sep_dim",
+        r"              + \l__examzh_choices_column_sep_dim )",
+        r"            / \l__examzh_choices_columns_int }",
+        r"        \str_if_eq:VnF \l__examzh_choices_label_pos_tl { bottom }",
+        r"          {",
+        r"            \dim_sub:Nn \l__examzh_choices_item_width_dim",
+        r"              { \l__examzh_choices_label_width_dim"
+        r"                + \l__examzh_choices_label_sep_dim }",
+        r"            \dim_sub:Nn \l_tmpa_dim",
+        r"              { \l__examzh_choices_label_width_dim"
+        r"                + \l__examzh_choices_label_sep_dim }",
+        r"          }",
+        # 取小：自然宽度更窄就用它（短选项紧排），否则保留列宽（长选项折行）
+        r"        \dim_compare:nNnT { \l_tmpa_dim } < { \l__examzh_choices_item_width_dim }",
+        r"          { \dim_set_eq:NN \l__examzh_choices_item_width_dim \l_tmpa_dim }",
+        r"      }",
+        r"  }",
+        r"\ExplSyntaxOff",
         # **品牌页眉页脚**（版式，不是水印）。放在 `extra` 之前：
         # 调用方若要加自己的 `\AtBeginDocument`，注册得比这里晚，仍然能覆盖。
         *_brand_page_style(BRAND_LABEL),
@@ -999,6 +1179,15 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"\examsetup{",
         r"  page/size=a4paper,",
         r"  paren/show-paren=true,",
+        # ⚠️ **括号必须紧跟在题干后面，不许右对齐到页边。**
+        #
+        # exam-zh 默认 `paren/type = hfill`：先把括号用 `\hfill` 推到行尾，
+        # 行尾放不下就 `\allowbreak` 换行、再 `\hfill` 推到右侧——所以题干
+        # 那行只要差一点放不下，卷面上就会出现**孤零零一个（　）掉在右下方**，
+        # 抽查里约一半选择题这样（用户报的"排版很难看"就是它）。
+        # `none` 让括号当普通字排：放不下时断在**前一个词**，绝不会自己成行。
+        # 真实高考卷也是紧跟题干（"……则 $A\cap B=$（　　）"）。
+        r"  paren/type=none,",
         f"  paren/show-answer={'true' if show_answers else 'false'},",
         f"  fillin/show-answer={'true' if show_answers else 'false'},",
         # 不显示答案时，exam-zh 默认在空位上画个**黑色三角**当标记（模板的
@@ -1095,8 +1284,12 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             continue
         # `\section{}` 由 exam-zh 自动编号成「一、选择题：…」并加粗——
         # 早先手写 `\noindent{\bfseries 一、选择题…}`，编号要自己维护
-        # 小节标题不要孤零零掉在页底：下面至少留 12 行（标题 + 首题开头）
-        doc.append(r"\needspace{12\baselineskip}")
+        # 小节标题不要孤零零掉在页底：下面至少留 12 行（标题 + 首题开头）。
+        # ⚠️ 首题**选项带图**时要跟它一起留够半页，否则标题会独自留在页底、
+        # 题目整体挪到下一页（实测出现过「一、选择题」孤零零一行）。
+        head_need = (r"0.58\textheight" if _image_option_question(items[0])
+                     else r"12\baselineskip")
+        doc.append("\\needspace{" + head_need + "}")
         if mode == "gaokao":
             doc.append(r"\section{" + _gaokao_section(t, len(items)) + "}")
         else:
@@ -1141,18 +1334,32 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             #
             # 6 行是个折中：够装下"题干 2-3 行 + 选项 2 行"，
             # 又不会因为要求太高而在页底留下大片空白。
-            doc.append(r"\needspace{6\baselineskip}")
+            #
+            # ⚠️ **选项里带图的题要另算**：四个选项图通常是 2×2 两行，
+            # 光图就 8–12cm，6 行根本挡不住——实测出现过"题干和 A/B 在这页、
+            # C/D 的图孤零零从下一页开头"。这类题按半页预留。
+            tex = _q_tex(q, show_answers and not answers_at_end,
+                         default_columns=columns, show_source=show_source)
+            need = (r"0.5\textheight" if _image_option_question(q)
+                    else r"6\baselineskip")
+            doc.append("\\needspace{" + need + "}")
             if qid_marks:
                 doc.append(_qid_mark(q))
-            doc.append(_q_tex(q, show_answers and not answers_at_end,
-                              default_columns=columns,
-                              show_source=show_source))
+            doc.append(tex)
             # 解答题留白：**必须 `\vspace*`**（带星号）——
-            # 不带星号的 `\vspace` 在分页处会被丢弃，题目落在页底时留白凭空消失
+            # 不带星号的 `\vspace` 在分页处会被丢弃，题目落在页底时留白凭空消失。
+            #
+            # **再加 `plus 1fill minus 0.8cm`**（用户报的"页底大片空白"）：
+            # · `plus 1fill`：一页排到最后，剩余的纸面被这一段的留白吃掉，
+            #   而不是"5cm 留白 + 页底另空一截"——留白就是作答区，不该有两块白；
+            # · `minus 0.8cm`：两道大题差一两厘米排不进同一页时，
+            #   允许各自收一点（8cm 收成 7.2cm）把两题挤进一页，
+            #   而不是把第二题整个推到下一页、上一页空掉半页。
+            # 收紧的量有上限，学生写字的地方不会被吃没。
             if t == "detailed_answer" and not show_answers:
                 cm = blank_for(diff, problem_blank_cm)
                 if cm > 0:
-                    doc.append(f"\\vspace*{{{cm:.2f}cm}}")
+                    doc.append(f"\\vspace*{{{cm:.2f}cm plus 1fill minus 0.8cm}}")
             if qid_marks:
                 doc.append(f"\\label{{amtiqend{idx}}}")
             doc.append("")
@@ -1254,7 +1461,7 @@ def _render_handout(questions: list[Question], *, title: str = "",
         # 主色换成 AmTiKu 品牌色（elegantnote 的 \section、标题都用 ecolor）
         r"\definecolor{ecolor}{RGB}{206,51,138}",
         # **品牌页眉页脚**：讲义也是 AmTiKu 出的，页码照样保留。
-        *_brand_page_style("高中数学讲义"),
+        *_brand_page_style("K12 数学讲义"),
         # 行内公式也用 displaystyle——iPad 上分数才看得清
         r"\everymath{\displaystyle}",
         "",

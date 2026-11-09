@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, Check, FileText, Loader2, Play, Sparkles, Undo2, Upload, X,
+  AlertTriangle, Check, FileText, KeyRound, Loader2, Play, Sparkles, Undo2, Upload, X,
 } from 'lucide-react'
 import { renderBlocks } from '@/lib/render'
 import { api } from '@/lib/api'
@@ -70,6 +70,12 @@ function blockingOf(it: any): string[] {
   const out: string[] = [...(it?.blocking || [])]
   if (it?.flags && !it.flags['答案']) out.push('缺答案')
   if (it?.flags && !it.flags['解析']) out.push('缺解析')
+  // AI 读出来的图没画好/没裁好：源码里会有「【图：…请补图】」占位。
+  // 服务端 `_structure_errors` 也会拦，这里提前取消勾选，免得用户漏看。
+  const src = String(it?.tex || '')
+  if (src.includes('【图：') || src.includes('请补图') || src.includes('请手工补')) {
+    out.push('缺图待补')
+  }
   return [...new Set(out)]
 }
 
@@ -82,10 +88,13 @@ function loadDraft(): any {
   } catch { return {} }
 }
 
-export default function IngestDrawer({ onClose, onDone, facets, closing }: {
+export default function IngestDrawer({ onClose, onDone, facets, closing, ai = false }: {
   onClose: () => void; onDone: () => void; facets: any
   /** 正在播退场动画（父组件用 `useUnmount` 控制）。 */
   closing?: boolean
+  /** **大模型录题**模式：左栏第一屏只放"选一份资料"，
+   *  出题之后自动切回和「录入题目」完全一样的逐题确认界面（同一套代码）。 */
+  ai?: boolean
 }) {
   const draft0 = useMemo(() => loadDraft(), [])
   const [text, setText] = useState(String(draft0.text || ''))
@@ -146,6 +155,34 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   const lastHint = useRef<{ title: string; year: number | null }>({ title: '', year: null })
   const [vlmReady, setVlmReady] = useState(false)
   const [vlmEngine, setVlmEngine] = useState('')
+  /* ── AI 读整份资料（DeepSeek）──
+     状态机：没配 key → 设置面板；配了 → 选文件 → 后台跑任务（轮询进度）
+     → 结果填进输入框 → 自动解析。**全程不写库**，和粘贴文本走同一条管线。 */
+  const [aiCfg, setAiCfg] = useState<any>(null)
+  const [aiSetup, setAiSetup] = useState(false)
+  const [aiKey, setAiKey] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiTesting, setAiTesting] = useState(false)
+  const [aiProg, setAiProg] = useState<{ done: number; total: number; msg: string; sec?: number } | null>(null)
+  /** 答案 / 解析——**和试题分开的一份文件**。最常见的形态是「一份试题 + 一份答案」，
+   *  所以它跟试题一样是必填的引导项，只是允许留空（留空时缺答案的题会被拦下）。 */
+  const [aiAns, setAiAns] = useState<{ name: string; b64: string } | null>(null)
+  const [aiErr, setAiErr] = useState('')
+  const [aiNote, setAiNote] = useState('')
+  /** 后台任务 id / 是否已点取消。取消接口只发一次，状态靠轮询推进。 */
+  const [aiJobId, setAiJobId] = useState('')
+  const [aiCancelling, setAiCancelling] = useState(false)
+  /** AI 结果的逐题核对元数据：block → {pages, answer_pages, answer_quote, ...} */
+  const [aiCards, setAiCards] = useState<Record<number, any>>({})
+  const [aiPageDir, setAiPageDir] = useState('')
+  const [pageView, setPageView] = useState<{ dir: string; name: string; title: string } | null>(null)
+  /** 高级设置：模型 / 接口地址 / 每批页数 / 并发。 */
+  const [aiModel, setAiModel] = useState('')
+  const [aiBase, setAiBase] = useState('')
+  const [aiPages, setAiPages] = useState('')
+  const [aiWorkers, setAiWorkers] = useState('')
+  /** 任务序号：关掉抽屉/换文件时，旧轮询的结果一律丢掉。 */
+  const aiSeq = useRef(0)
 
   useEffect(() => {
     api.vlmStatus().then((s: any) => {
@@ -210,6 +247,224 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
     r.readAsDataURL(f)
   }
 
+  /* ══ AI 读整份资料 ══════════════════════════════════════════════════
+     和「大模型读图」的区别：那个一次读一页、跑在本地；这个把整份 PDF
+     拆页后交给 DeepSeek，几分钟读完，回来的是**一整份源材料**。
+     结果仍然只填进输入框——核对、勾选、入库一步都不少。 */
+
+  const aiRefresh = async () => {
+    try {
+      const cfg: any = await api.aiStatus()
+      setAiCfg(cfg)
+      setAiModel(String(cfg?.model || ''))
+      setAiBase(String(cfg?.base_url || ''))
+      setAiPages(String(cfg?.pages_per_call || 6))
+      setAiWorkers(String(cfg?.workers || 2))
+    } catch { /* 状态拿不到不挡录入 */ }
+  }
+  useEffect(() => { void aiRefresh() }, [])
+
+  const aiSaveKey = async () => {
+    setAiErr(''); setAiTesting(true)
+    try {
+      const pg = Math.round(Number(aiPages))
+      const wk = Math.round(Number(aiWorkers))
+      if (aiPages.trim() && (!Number.isFinite(pg) || pg < 1 || pg > 12)) {
+        setAiErr('每批页数填 1–12'); return
+      }
+      if (aiWorkers.trim() && (!Number.isFinite(wk) || wk < 1 || wk > 4)) {
+        setAiErr('并发填 1–4'); return
+      }
+      const body: any = { api_key: aiKey.trim() || undefined }
+      if (aiModel.trim()) body.model = aiModel.trim()
+      if (aiBase.trim()) body.base_url = aiBase.trim()
+      if (aiPages.trim()) body.pages_per_call = pg
+      if (aiWorkers.trim()) body.workers = wk
+      const cfg: any = await api.aiConfig(body)
+      setAiCfg(cfg); setAiKey('')
+      setAiModel(String(cfg?.model || ''))
+      setAiBase(String(cfg?.base_url || ''))
+      setAiPages(String(cfg?.pages_per_call || 6))
+      setAiWorkers(String(cfg?.workers || 2))
+      if (!cfg?.configured) { setAiErr('还没填 Key'); return }
+      const t: any = await api.aiTest()
+      setAiSetup(false)
+      setAiNote(`连接正常（${t.model}，${t.ms} 毫秒）—— 现在可以拖资料进来了`)
+    } catch (e) {
+      setAiErr(String((e as any)?.message || e))
+    } finally { setAiTesting(false) }
+  }
+
+  const aiClearKey = async () => {
+    if (!window.confirm('清掉这台电脑上保存的 API Key？')) return
+    try {
+      const cfg: any = await api.aiConfig({ api_key: '' })
+      setAiCfg(cfg); setAiNote('已清掉 Key')
+    } catch (e) { setAiErr(String((e as any)?.message || e)) }
+  }
+
+  /** 轮询任务。**不设死循环**：最多等 2 小时（100 页也用不了这么久）。 */
+  /** 把一次 AI 结果里的逐题核对/覆盖/用量展开成一句人话。 */
+  const aiResultNote = (res: any, cancelled: boolean): string => {
+    const st = res.stats || {}
+    const cov = res.coverage || {}
+    const pendNos = (res.pending || []).map((p: any) => p?.no).filter(Boolean).slice(0, 8)
+    const parts = [cancelled
+      ? `已取消：保留已核对 ${st.ok || 0} 道`
+      : `读完 ${st.pages || 0} 页：${st.ok || 0} 道通过第二遍核对`]
+    if (aiAns?.name) parts.unshift(`答案册：${aiAns.name}`)
+    if (cov.expected) {
+      let c = `覆盖 ${cov.transcribed || 0}/${cov.expected}`
+      if (cov.flawed?.length) c += `；答案册标错 ${cov.flawed.length} 道（第 ${cov.flawed.join('、')} 题）`
+      if (cov.missing?.length) c += `；缺转录 ${cov.missing.length} 道（第 ${cov.missing.join('、')} 题）`
+      if (cov.uncertain?.length) c += `；核对未过 ${cov.uncertain.length} 道`
+      parts.push(c)
+    }
+    if (st.pending) {
+      parts.push(`${st.pending} 道未入库`
+        + (pendNos.length ? `（第 ${pendNos.join('、')} 题）` : ''))
+    }
+    if (st.usage?.total_tokens) {
+      parts.push(`用量 ${st.usage.total_tokens} tokens，约 ¥${Number(st.cost_cny || 0).toFixed(3)}`)
+    }
+    if (res.warnings?.length) parts.push(`${res.warnings.length} 条提示`)
+    if (res.problems?.length) parts.push(`${res.problems.length} 处图/组装问题`)
+    return parts.join('；')
+  }
+
+  const setAiResult = (res: any) => {
+    const cards: Record<number, any> = {}
+    for (const it of (res.items || [])) {
+      if (it && typeof it.block === 'number') cards[it.block] = it
+    }
+    setAiCards(cards)
+    setAiPageDir(String(res.page_dir || ''))
+  }
+
+  const aiWatch = async (id: string, seq: number) => {
+    for (let i = 0; i < 3600; i++) {
+      await new Promise((r) => setTimeout(r, 1200))
+      if (seq !== aiSeq.current) return
+      let j: any
+      try { j = await api.aiJob(id) }
+      catch (e) {
+        if (seq === aiSeq.current) {
+          setAiErr(String((e as any)?.message || e)); setAiBusy(false)
+          setAiCancelling(false)
+        }
+        return
+      }
+      if (seq !== aiSeq.current) return
+      setAiProg({ done: j.done || 0, total: j.total || 0, msg: j.msg || '',
+                  sec: j.elapsed || 0 })
+      if (j.state === 'cancelling') {
+        // 取消请求已受理：继续轮询，等线程把在飞的批次收尾。
+        setAiCancelling(true)
+        continue
+      }
+      if (j.state === 'cancelled') {
+        const res = j.result || {}
+        if (res.latex) {
+          setSrcDir(res.crop_dir || '')
+          setAiResult(res)
+          changeText(res.latex)
+          setAiNote(aiResultNote(res, true))
+          void dryRun(res.latex, res.crop_dir || '')
+        } else {
+          setAiResult(res)
+          setAiNote(aiResultNote(res, true))
+        }
+        setAiBusy(false); setAiProg(null); setAiCancelling(false); setAiJobId('')
+        return
+      }
+      if (j.state === 'done') {
+        const res = j.result || {}
+        setSrcDir(res.crop_dir || '')
+        setAiResult(res)
+        changeText(res.latex || '')
+        setAiNote(aiResultNote(res, false))
+        setAiBusy(false); setAiProg(null); setAiCancelling(false); setAiJobId('')
+        // 自动解析：让用户直接看到题卡，少点一次
+        if (res.latex) void dryRun(res.latex, res.crop_dir || '')
+        return
+      }
+      if (j.state === 'error') {
+        setAiErr(j.error || '读失败了'); setAiBusy(false); setAiProg(null)
+        setAiCancelling(false); setAiJobId('')
+        return
+      }
+    }
+    setAiErr('等了太久还没读完 —— 关掉重试，或把「每批页数」调小')
+    setAiBusy(false); setAiCancelling(false)
+  }
+
+  /** 取消：不再发新请求；已读的批次保留，已经在飞的请求仍会计费。 */
+  const aiCancel = async () => {
+    if (!aiJobId || aiCancelling) return
+    if (!window.confirm('取消这次读题？\n\n'
+      + '已读到的题会保留；已经发给 DeepSeek 的请求收不回来，仍会计费。')) return
+    setAiCancelling(true)
+    setAiProg((p) => (p ? { ...p, msg: '正在取消…' } : p))
+    try { await api.aiCancel(aiJobId) }
+    catch (e) {
+      setAiErr(String((e as any)?.message || e)); setAiCancelling(false)
+    }
+  }
+
+  const aiRunFile = (f: File) => {
+    setAiErr(''); setAiNote('')
+    if (aiBusy) {
+      setAiErr('上一份还在读，等它读完再换（同时开两个任务会重复计费）')
+      return
+    }
+    const isPdf = /\.pdf$/i.test(f.name) || f.type === 'application/pdf'
+    const isImg = f.type.startsWith('image/')
+    if (!isPdf && !isImg) {
+      setAiErr('只吃 PDF 和图片。Word 文件请在 Word 里「文件 → 另存为 → PDF」，再把 PDF 拖进来')
+      return
+    }
+    // **换卷必须清掉旧答案册**。否则模型会把上一份卷子的答案按题号抄到
+    // 这一份上，answer_quote 还是题号，unverified=0，界面看不出错。
+    if (aiAns) {
+      const keep = window.confirm(
+        `这次要带上答案 / 解析《${aiAns.name}》吗？\n\n`
+        + '点「确定」= 带上它（同一份卷子重读时用）。\n'
+        + '点「取消」= 清掉它。换一份卷子时必须清掉，不然会把上一份的答案按题号抄到这一份上。')
+      if (!keep) {
+        setAiAns(null)
+        setAiErr('已清掉上次的答案 / 解析。请先选这次卷子的答案文件，再选试题。')
+        return
+      }
+    }
+    const seq = ++aiSeq.current
+    setAiJobId(''); setAiCancelling(false)
+    setAiCards({}); setAiPageDir(''); setPageView(null)
+    setAiBusy(true); setAiProg({ done: 0, total: 0, msg: '正在上传…' })
+    const r = new FileReader()
+    r.onload = async () => {
+      try {
+        if (seq !== aiSeq.current) return
+        const b64 = String(r.result || '').split(',')[1] || ''
+        const j: any = await api.aiRun(b64, f.name, aiAns?.b64 || '', aiAns?.name || '')
+        if (seq !== aiSeq.current) {
+          // 上传途中抽屉被关了/换了文件：任务可能刚好开出来，顺手取消，
+          // 否则它会继续读、继续计费，而界面已经拿不回这个 job id。
+          if (j?.job) void api.aiCancel(j.job).catch(() => { /* 可能已结束 */ })
+          return
+        }
+        setAiJobId(j.job || '')
+        setAiProg({ done: 0, total: 0, msg: '排队中…' })
+        await aiWatch(j.job, seq)
+      } catch (e) {
+        if (seq === aiSeq.current) {
+          setAiErr(String((e as any)?.message || e)); setAiBusy(false); setAiProg(null)
+        }
+      }
+    }
+    r.onerror = () => { setAiErr('读不出这个文件'); setAiBusy(false); setAiProg(null) }
+    r.readAsDataURL(f)
+  }
+
   const yNum = () => {
     const n = Number(year)
     return Number.isFinite(n) && n > 0 ? n : null
@@ -247,8 +502,18 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   }, [text, book, label, year, region, srcDir, autoTag, backfill, nearThreshold])
 
   const closeSafely = () => {
+    const aiRunning = aiBusy
+    if (aiRunning && !window.confirm(
+      '这次 AI 读题还在跑（或正在上传）。关闭会同时取消它（已读到的结果不会带回界面），'
+      + '已经发出去的请求仍会计费。仍要关闭？')) return
     if (text.trim() && !report
       && !window.confirm('关闭录入？材料已自动保存为本地草稿，下次打开可恢复。')) return
+    // 两个确认都过了才真正取消/关抽屉：否则用户点错「关闭」又取消，
+    // 任务已经被取消了，界面却还开着。
+    if (aiRunning && aiJobId) {
+      void api.aiCancel(aiJobId).catch(() => { /* 任务可能刚好结束 */ })
+    }
+    aiSeq.current += 1
     onClose()
   }
 
@@ -256,6 +521,8 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
     try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
     setText(''); setBook(DEFAULT_BOOK); setLabel(DEFAULT_LABEL); setYear(DEFAULT_YEAR)
     setRegion(''); setSrcDir(''); setAutoTag(false)
+    setAiAns(null); setAiNote(''); setAiErr('')
+    setAiCards({}); setAiPageDir(''); setPageView(null)
     setRestored(false)
     resetReview()
   }
@@ -339,8 +606,11 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   /** 干跑：解析 + 规范化 + 查重 + 校验。**什么都不写。**
    *  如果源材料前几行有 `\title{}`，先把出处/年份填进去；因为 key/查重
    *  都跟出处有关，填完再跑一遍，免得看到的是"空出处"的结果。 */
-  const dryRun = async () => {
-    if (!text.trim()) { setErr('先粘贴题目 LaTeX'); return }
+  /** 干跑。`srcArg` 给文本（AI 刚读回来的），`srcDirArg` 给图片来源目录——
+   *  两个都从外面传，是因为 setState 还没生效，直接用会拿到旧值。 */
+  const dryRun = async (srcArg?: string, srcDirArg?: string) => {
+    const src = srcArg ?? text
+    if (!src.trim()) { setErr('先粘贴题目 LaTeX'); return }
     if (!sourceCheck()) return
     setBusy(true); setErr(''); setMsg(''); setTagErr('')
     tagSeq.current += 1
@@ -354,7 +624,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
       const autoYr = !yr.trim() || yr === String(lastHint.current.year || '')
       if (autoLab || autoYr) {
         try {
-          const h: any = await api.ingestSource(text)
+          const h: any = await api.ingestSource(src)
           if (h?.title && autoLab) { lab = h.title; filled = true }
           if (h?.year && autoYr) { yr = String(h.year); filled = true }
           if (filled) { setLabel(lab); setYear(yr) }
@@ -362,6 +632,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
         } catch { /* 提示接口失败不挡主流程 */ }
       }
       const withFields = () => baseBody({
+        text: src, src_dir: (srcDirArg ?? srcDir).trim(),
         label: lab, year: yr ? Number(yr) : null,
         items: pv ? itemOverrides() : [],
       })
@@ -393,7 +664,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
       const em = buildEdits(d, edits)
       const pm = buildPicks(d, picks)
       setEdits(em); setPicks(pm)
-      if (autoTag) {
+      if (autoTag && !ai) {
         const need = d.items.some((it: any) => pm[it.block]
           && !(em[it.block]?.points?.length))
         if (need) void tagItems(d, em, { onlyPicked: true, pickMap: pm })
@@ -753,6 +1024,29 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
   const specAfter = pv?.spec?.after?.length || 0
   const hintTitle = pv?.source_hint?.title || ''
   const hintYear = pv?.source_hint?.year
+  /** AI 模式、还没读到东西：先把出处 / 批量 / LaTeX 三块收起来——
+   *  小白一打开就看见三组输入框会直接懵。读到内容后自动恢复。 */
+  const aiClean = ai && !text.trim()
+  const aiHasText = ai && !!text.trim()
+  /** 选资料的隐藏 input：大框和"换一份"窄条共用同一个处理函数。 */
+  const aiFileInput = (
+    <input type="file" accept=".pdf,image/*" className="hidden"
+      onChange={(e) => {
+        const f = e.target.files?.[0]
+        e.currentTarget.value = ''
+        if (!f) return
+        // **只在"明确没配"时才拦**。`aiCfg` 还没拉回来（null）时照跑不误：
+        // 配置的真假以服务端为准，这里拦一下反而会误伤——页面刚打开就选文件，
+        // 会看到「先把 API Key 填上」，其实早就配好了。
+        if (aiCfg && !aiCfg.configured) {
+          setAiSetup(true)
+          setAiErr('先把 API Key 填上（只需一次），填好后再选一次文件')
+          return
+        }
+        aiRunFile(f)
+      }} />
+  )
+
   const showHint = !!hintTitle && (label.trim() !== hintTitle
     || (!!hintYear && year.trim() !== String(hintYear)))
 
@@ -763,11 +1057,15 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
       <div className="flex min-h-0 flex-1 flex-col" onClick={(e) => e.stopPropagation()}>
         <header className="flex shrink-0 items-center gap-3 border-b border-border bg-surface px-5 py-3.5">
           <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-ink">
-            <FileText size={15} />
+            {ai ? <Sparkles size={15} /> : <FileText size={15} />}
           </span>
-          <span className="shrink-0 text-[15px] font-semibold tracking-tight text-ink">录入题目</span>
+          <span className="shrink-0 text-[15px] font-semibold tracking-tight text-ink">
+            {ai ? '大模型录题' : '录入题目'}
+          </span>
           <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-faint">
-            粘贴整份试卷 → 自动切题 → 逐题确认 → 勾选入库（干跑什么都不写）
+            {ai
+              ? '整份 PDF / 照片交给 DeepSeek → 逐题核对 → 勾选入库（读的过程中不写库）'
+              : '粘贴整份试卷 → 自动切题 → 逐题确认 → 勾选入库（干跑什么都不写）'}
           </span>
           <CloseBtn onClick={closeSafely} className="ml-auto" />
         </header>
@@ -775,7 +1073,219 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
         <div className="flex min-h-0 flex-1">
           {/* 左：源材料。出处 / 批量 / LaTeX 三块。 */}
           <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
-            <section className="shrink-0">
+
+            {/* ── 大模型录题：第一屏只做一件事——选资料 ──
+                之前把 AI 藏进「录入题目」的工具条里，小白根本找不到。
+                现在从「录题」页的卡片进（没有独立导航项），打开就是这张卡。 */}
+            {ai && (
+              <section className="shrink-0 rounded-[var(--radius-card)] border border-brand-line
+                                  bg-brand-soft/30 p-4">
+                <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                  <Sparkles size={15} className="text-brand-ink" />
+                  选一份资料，交给大模型读
+                </div>
+                {aiHasText ? (
+                  /* 已经读完一份：大框收成一条，把地方让给下面的出处/源材料 */
+                  <label className="mt-2.5 flex cursor-pointer items-center justify-center gap-2
+                                    rounded-lg border border-dashed border-brand-line bg-surface
+                                    py-2 text-[11.5px] text-ink-soft hover:border-brand
+                                    hover:text-brand-ink">
+                    <Upload size={12} />换一份资料（把 PDF 拖进来，或点这里）
+                    {aiFileInput}
+                  </label>
+                ) : (
+                  <label
+                    onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
+                    onDragLeave={() => setDrag(false)}
+                    onDrop={(e) => {
+                      e.preventDefault(); setDrag(false)
+                      const f = e.dataTransfer.files?.[0]
+                      if (f) aiRunFile(f)
+                    }}
+                    className={`mt-3 flex h-[168px] cursor-pointer flex-col items-center justify-center
+                                gap-2 rounded-xl border-2 border-dashed bg-surface text-center
+                                transition-colors ${drag
+                                  ? 'border-brand bg-brand-soft'
+                                  : 'border-brand-line hover:border-brand hover:bg-brand-soft/40'}`}>
+                    {aiBusy ? <Loader2 size={22} className="animate-spin text-brand-ink" />
+                      : <Upload size={22} className="text-brand-ink" />}
+                    <span className="text-[13.5px] font-semibold text-ink">
+                      {aiBusy ? '正在读，别关窗口…' : '把 PDF 拖到这里，或点一下选文件'}
+                    </span>
+                    <span className="text-[11.5px] leading-relaxed text-ink-faint">
+                      照片也行（一页一张）；Word 请先在 Word 里「文件 → 另存为 → PDF」
+                    </span>
+                    <span className="text-[10.5px] text-ink-faint">
+                      按页计费：100 页约几毛钱 · 读完自动切到逐题核对
+                    </span>
+                    {aiFileInput}
+                  </label>
+                )}
+                {/* 答案 / 解析：最常见的形态是**试题一份、答案一份**，所以单列一行。
+                    留空也能跑，只是缺答案的题会被拦下（库里要求答案+解析齐全）。 */}
+                <div className={`mt-2 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 ${
+                  aiAns ? 'border-has-line bg-has-soft/40' : 'border-border bg-surface'}`}>
+                  <FileText size={12} className={`shrink-0 ${aiAns ? 'text-has' : 'text-ink-faint'}`} />
+                  <span className="shrink-0 text-[11px] font-medium text-ink-soft">答案 / 解析</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-ink-faint">
+                    {aiAns ? aiAns.name : '另一份文件（只抄不解；不选的话缺答案的题会被拦下）'}
+                  </span>
+                  {aiAns && (
+                    <button onClick={() => setAiAns(null)}
+                      className="shrink-0 text-[10.5px] text-ink-faint underline hover:text-warn">
+                      清掉
+                    </button>
+                  )}
+                  <label className="press inline-flex h-[22px] shrink-0 cursor-pointer items-center
+                                    gap-1 whitespace-nowrap rounded-md border border-border
+                                    bg-surface px-1.5 text-[10.5px] text-ink-soft
+                                    hover:border-brand-line hover:text-brand-ink">
+                    <Upload size={11} />{aiAns ? '换一份' : '选文件'}
+                    <input type="file" accept=".pdf,image/*" className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        e.currentTarget.value = ''
+                        if (!f) return
+                        const rd = new FileReader()
+                        rd.onload = () => setAiAns({
+                          name: f.name,
+                          b64: String(rd.result || '').split(',')[1] || '',
+                        })
+                        rd.onerror = () => setAiErr('读不出这个答案文件')
+                        rd.readAsDataURL(f)
+                      }} />
+                  </label>
+                </div>
+
+                <div className="mt-2 flex items-center gap-2 text-[10.5px] text-ink-faint">
+                  <button onClick={() => { setAiSetup((v) => !v); setAiErr('') }}
+                    className="inline-flex items-center gap-1 rounded-md border border-border
+                               bg-surface px-1.5 py-[2px] hover:border-brand-line hover:text-brand-ink">
+                    <KeyRound size={11} />
+                    {aiCfg?.configured ? `DeepSeek 已配置（${aiCfg.model}${aiCfg.key_hint}）` : '设置 API Key'}
+                  </button>
+                  {aiCfg?.configured && (
+                    <button onClick={() => void aiClearKey()}
+                      className="underline hover:text-warn">清掉 Key</button>
+                  )}
+                  <span className="ml-auto">教程：docs/AI录题.md</span>
+                </div>
+              </section>
+            )}
+            {ai && (aiSetup || ((aiCfg && !aiCfg.configured) ?? false) || aiBusy || !!aiErr || !!aiNote) && (
+              <div className="shrink-0 space-y-1.5">
+                {(aiSetup || (aiCfg && !aiCfg.configured)) && (
+                  <div className="rounded-lg border border-brand-line bg-brand-soft/40 p-2.5">
+                    <div className="flex items-center gap-1.5 text-[12px] font-semibold text-brand-ink">
+                      <KeyRound size={13} />第一次用：填一次 DeepSeek 的 API Key
+                    </div>
+                    <ol className="mt-1.5 space-y-0.5 text-[11px] leading-relaxed text-ink-soft">
+                      <li>1. 浏览器打开 <b className="font-mono">platform.deepseek.com</b> 登录 → 左侧「API keys」→「创建 API key」→ 复制 `sk-` 开头那串</li>
+                      <li>2. 粘贴到下面 → 点「保存并测试」（通过会显示毫秒数）</li>
+                      <li>3. 以后直接把试卷 PDF 拖进上面的虚线框；按量计费：100 页约几毛钱</li>
+                    </ol>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <input type="password" value={aiKey} spellCheck={false}
+                        onChange={(e) => setAiKey(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && aiKey.trim()) void aiSaveKey() }}
+                        placeholder="sk-…（只存这台电脑，界面只显示末四位）"
+                        className={`${FIELD} min-w-0 flex-1 font-mono`} />
+                      <button onClick={() => void aiSaveKey()}
+                        disabled={aiTesting || (!aiKey.trim() && !aiCfg?.configured)}
+                        className="press inline-flex h-[32px] shrink-0 items-center gap-1 rounded-lg
+                                   bg-brand px-2.5 text-[11.5px] font-semibold text-white
+                                   disabled:opacity-40">
+                        {aiTesting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                        保存并测试
+                      </button>
+                      {aiCfg?.configured && (
+                        <button onClick={() => setAiSetup(false)} className={MINI}>收起</button>
+                      )}
+                    </div>
+                    <details className="mt-2 text-[10.5px] text-ink-faint">
+                      <summary className="cursor-pointer select-none">
+                        高级设置（模型 / 地址 / 每批页数 / 并发；一般不用改）
+                      </summary>
+                      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                        <label className="col-span-2">
+                          <span className="mb-0.5 block">模型</span>
+                          <input value={aiModel} spellCheck={false}
+                            onChange={(e) => setAiModel(e.target.value)}
+                            placeholder="deepseek-flash"
+                            className={`${FIELD} h-[28px] w-full font-mono`} />
+                        </label>
+                        <label className="col-span-2">
+                          <span className="mb-0.5 block">接口地址</span>
+                          <input value={aiBase} spellCheck={false}
+                            onChange={(e) => setAiBase(e.target.value)}
+                            placeholder="https://api.deepseek.com"
+                            className={`${FIELD} h-[28px] w-full font-mono`} />
+                        </label>
+                        <label>
+                          <span className="mb-0.5 block">每批页数（1–12）</span>
+                          <input type="number" min={1} max={12} value={aiPages}
+                            onChange={(e) => setAiPages(e.target.value)}
+                            placeholder="6"
+                            className={`${FIELD} h-[28px] w-full`} />
+                        </label>
+                        <label>
+                          <span className="mb-0.5 block">并发（1–4）</span>
+                          <input type="number" min={1} max={4} value={aiWorkers}
+                            onChange={(e) => setAiWorkers(e.target.value)}
+                            placeholder="2"
+                            className={`${FIELD} h-[28px] w-full`} />
+                        </label>
+                      </div>
+                      <div className="mt-1">改完点上面的「保存并测试」生效；页数越多越容易截断。</div>
+                    </details>
+                    {aiCfg?.configured && (
+                      <div className="mt-1.5 flex items-center gap-2 text-[10.5px] text-ink-faint">
+                        <span>已保存 {aiCfg.key_hint}（{aiCfg.model}）</span>
+                        <button onClick={() => void aiClearKey()} className="underline hover:text-warn">清掉 Key</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {aiBusy && (
+                  <div className="rounded-lg border border-brand-line bg-surface px-2.5 py-2">
+                    <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-brand-ink">
+                      <Loader2 size={12} className="animate-spin shrink-0" />
+                      <span className="min-w-0 truncate">{aiProg?.msg || '正在准备…'}</span>
+                      <span className="ml-auto shrink-0 text-[10.5px] font-normal text-ink-faint">
+                        {aiProg?.sec ? `已等 ${aiProg.sec} 秒 · ` : ''}别关窗口
+                      </span>
+                      <button onClick={() => void aiCancel()}
+                        disabled={!aiJobId || aiCancelling}
+                        className="shrink-0 text-[10.5px] underline text-ink-faint
+                                   hover:text-warn disabled:opacity-40">
+                        {aiCancelling ? '正在取消…' : '取消'}
+                      </button>
+                    </div>
+                    <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-brand transition-[width] duration-300"
+                        style={{ width: aiProg?.total
+                          ? `${Math.max(3, Math.round(aiProg.done / aiProg.total * 100))}%` : '30%' }} />
+                    </div>
+                  </div>
+                )}
+                {aiErr && (
+                  <div className="flex items-start gap-1.5 rounded-lg border border-warn-line
+                                  bg-warn-soft px-2.5 py-2 text-[11.5px] leading-relaxed text-warn">
+                    <AlertTriangle size={13} className="mt-[1px] shrink-0" />
+                    <span className="min-w-0 break-words">{aiErr}</span>
+                    <button onClick={() => setAiErr('')} className="ml-auto shrink-0 underline">知道了</button>
+                  </div>
+                )}
+                {aiNote && !aiBusy && (
+                  <div className="flex items-start gap-1.5 rounded-lg border border-has-line
+                                  bg-has-soft px-2.5 py-2 text-[11.5px] leading-relaxed text-has">
+                    <Check size={13} className="mt-[1px] shrink-0" />
+                    <span className="min-w-0 break-words">{aiNote}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            <section className={`shrink-0 ${aiClean ? 'hidden' : ''}`}>
               <div className="mb-2 flex items-baseline gap-2">
                 <span className="grid h-4 w-4 shrink-0 place-items-center rounded bg-muted
                                  text-[10px] font-semibold text-ink-faint">1</span>
@@ -871,8 +1381,10 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
               </div>
             </section>
 
-            {/* 批量：AI 只补空标签；逐题在右栏改。 */}
-            <section className="shrink-0">
+            {/* 批量：AI 只补空标签；逐题在右栏改。
+                **大模型录题模式下整块不显示** —— 那边的考点/难度是 DeepSeek 读出来的，
+                再去勾一个「解析后用 qwen3.5 自动标」只会让小白以为还得装个本地模型。 */}
+            <section className={`shrink-0 ${ai ? 'hidden' : ''}`}>
               <div className="mb-2 flex items-baseline gap-2">
                 <span className="grid h-4 w-4 shrink-0 place-items-center rounded bg-muted
                                  text-[10px] font-semibold text-ink-faint">2</span>
@@ -929,7 +1441,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
             </section>
 
             {/* 题目：输入框有边框；文件名/读图按钮跟着它。 */}
-            <section className="flex min-h-[240px] flex-1 flex-col">
+            <section className={`flex min-h-[240px] flex-1 flex-col ${aiClean ? 'hidden' : ''}`}>
               {restored && (
                 <div className="mb-2 flex items-center gap-2 rounded-md border border-border
                                 bg-surface-2 px-2 py-1 text-[10.5px] text-ink-faint">
@@ -937,18 +1449,23 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                   <button onClick={clearDraft} className="underline hover:text-ink-soft">清空重来</button>
                 </div>
               )}
-              <div className="mb-2 flex shrink-0 items-center gap-2">
+              {/* 工具条：**允许换行**。按钮从 2 个长到 4 个之后，窄一点的窗口
+                  会把「AI 读整份资料…」挤成三行——先给容器 flex-wrap，再让每个
+                  按钮不折行，宁可整组掉到第二行。 */}
+              <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2">
                 <span className="grid h-4 w-4 shrink-0 place-items-center rounded bg-muted
                                  text-[10px] font-semibold text-ink-faint">3</span>
-                <span className={LABEL}>题目 LaTeX</span>
+                <span className={`${LABEL} shrink-0 whitespace-nowrap`}>题目 LaTeX</span>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
                 <button onClick={() => { changeText(INGEST_SAMPLE); setMsg('已填入示例') }}
-                  className="press ml-auto inline-flex h-[26px] items-center gap-1 rounded-lg border
-                             border-border bg-surface px-2 text-[11.5px] text-ink-soft
+                  className="press inline-flex h-[26px] shrink-0 items-center gap-1 whitespace-nowrap
+                             rounded-lg border border-border bg-surface px-2 text-[11.5px] text-ink-soft
                              hover:border-brand-line hover:text-brand-ink">
                   <FileText size={12} />填入示例
                 </button>
-                <label className="press inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-lg
-                                  border border-border bg-surface px-2 text-[11.5px] text-ink-soft
+                <label className="press inline-flex h-[26px] shrink-0 cursor-pointer items-center
+                                  gap-1 whitespace-nowrap rounded-lg border border-border bg-surface
+                                  px-2 text-[11.5px] text-ink-soft
                                   hover:border-brand-line hover:text-brand-ink">
                   <Upload size={12} />选文件…
                   <input type="file" accept=".tex,.txt" className="hidden"
@@ -957,9 +1474,9 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                 <label title={vlmReady
                     ? `读图链路已就绪${vlmEngine ? '：' + vlmEngine : ''}`
                     : '点这里会按需启动本地模型（PaddleOCR-VL 认字 → 27B 改格式；首次约 10–60 秒）'}
-                  className="press inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-lg
-                             border border-brand-line bg-brand-soft px-2 text-[11.5px] font-medium
-                             text-brand-ink hover:border-brand">
+                  className="press inline-flex h-[26px] shrink-0 cursor-pointer items-center gap-1
+                             whitespace-nowrap rounded-lg bg-brand px-2 text-[11.5px] font-semibold
+                             text-white transition-[filter] hover:brightness-105">
                   {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                   大模型读图…
                   <span className={`ml-0.5 h-1.5 w-1.5 rounded-full ${
@@ -967,6 +1484,35 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                   <input type="file" accept="image/*,.pdf" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) ocrFile(f) }} />
                 </label>
+
+                {/* AI 读整份资料：第一次先填 key；之后选文件 → 后台读 → 自动解析。
+                    **不和「大模型读图」合并**：那个跑本地小模型（免费、慢、只认一页），
+                    这个跑 DeepSeek（按量计费、几分钟读上百页）。两件事，两个按钮。 */}
+                <label title="用 DeepSeek 读整份资料（PDF 或照片）：按页计费，100 页几毛钱"
+                  className="press inline-flex h-[26px] shrink-0 cursor-pointer items-center gap-1
+                             whitespace-nowrap rounded-lg border border-brand-line bg-brand-soft
+                             px-2 text-[11.5px] font-medium text-brand-ink hover:border-brand">
+                  <Sparkles size={12} />AI 读整份资料…
+                  <input type="file" accept=".pdf,image/*" className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      e.currentTarget.value = ''
+                      if (!f) return
+                      // 同 AI 卡里那条：只在**明确没配**时拦，配置还没拉回来就照跑
+                      if (aiCfg && !aiCfg.configured) {
+                        setAiSetup(true)
+                        setAiErr('先把 API Key 填上（只需一次），填好后再选一次文件')
+                        return
+                      }
+                      aiRunFile(f)
+                    }} />
+                </label>
+                <button onClick={() => { setAiSetup((v) => !v); setAiErr('') }}
+                  title={aiCfg?.configured ? `DeepSeek 设置（当前 ${aiCfg.model}${aiCfg.key_hint}）` : 'DeepSeek 设置'}
+                  className="press icon-btn h-[26px] w-[26px] shrink-0 rounded-lg border border-border bg-surface">
+                  <KeyRound size={12} className={aiCfg?.configured ? 'text-has' : 'text-ink-faint'} />
+                </button>
+                </div>
               </div>
               <div className="relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-card)]
                               border border-border bg-surface-2
@@ -1012,7 +1558,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                   <span className="text-[11px] text-ink-faint">
                     脚本会先验证、再规范化、最后复核；不合规的不让入库
                   </span>
-                  <button onClick={dryRun} disabled={busy}
+                  <button onClick={() => void dryRun()} disabled={busy}
                     className="press ml-auto inline-flex items-center gap-1.5 rounded-lg border
                                border-brand-line bg-brand-soft px-4 py-2 text-[13px] font-semibold
                                text-brand-ink transition-colors hover:bg-brand hover:text-white
@@ -1052,16 +1598,18 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                     ? '全部收起' : '全部展开'}
                 </button>
               </>)}
-              <button onClick={() => pv && void tagItems(pv, edits, { onlyPicked: true, mainOnly })}
-                disabled={!pv || !emptyTagCount || tagging}
-                title="用 qwen3.5 只给还没标考点的题补标；已标的不动"
-                className="press ml-auto inline-flex h-[26px] items-center gap-1 rounded-lg border
-                           border-brand-line bg-brand-soft px-2 text-[11px] font-medium
-                           text-brand-ink hover:border-brand disabled:opacity-40">
-                {tagging ? <Loader2 size={12} className="animate-spin" />
-                         : <Sparkles size={12} />}
-                AI 标注空缺{emptyTagCount ? ` (${emptyTagCount})` : ''}
-              </button>
+              {!ai && (
+                <button onClick={() => pv && void tagItems(pv, edits, { onlyPicked: true, mainOnly })}
+                  disabled={!pv || !emptyTagCount || tagging}
+                  title="用 qwen3.5 只给还没标考点的题补标；已标的不动"
+                  className="press ml-auto inline-flex h-[26px] items-center gap-1 rounded-lg border
+                             border-brand-line bg-brand-soft px-2 text-[11px] font-medium
+                             text-brand-ink hover:border-brand disabled:opacity-40">
+                  {tagging ? <Loader2 size={12} className="animate-spin" />
+                           : <Sparkles size={12} />}
+                  AI 标注空缺{emptyTagCount ? ` (${emptyTagCount})` : ''}
+                </button>
+              )}
             </div>
 
             {pv && (
@@ -1191,15 +1739,22 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                 <div className="anim-fade-in flex h-full flex-col justify-center gap-3 px-1">
                   <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
                     <Play size={13} className="shrink-0 text-ink-faint" />
-                    点左边「解析成题」之后，这里会变成一张张题卡：
+                    {ai
+                      ? '左边选一份资料、等它读完，这里就会出现一张张题卡：'
+                      : '点左边「解析成题」之后，这里会变成一张张题卡：'}
                   </div>
                   <ol className="space-y-2">
-                    {([
+                    {(ai ? ([
+                      ['大模型读题', '整份 PDF 一页页交给 DeepSeek，题干/选项/答案/解析一起抄出来'],
+                      ['只抄不解', '原文没有答案就留空；缺答案/缺解析的题不会进来'],
+                      ['脚本规范 + 查重', '先验证、再修改、最后复核；跟库里已有的题对一遍'],
+                      ['人拍板', '勾选要入库的题；图没画好/没裁好的会被标出来'],
+                    ] as const) : ([
                       ['自动切题', '一份卷子里的 question/problem 全切出来，不用一道一道粘'],
                       ['脚本规范 + 查重', '先验证、再修改、最后复核；跟库里已有的题对一遍'],
                       ['qwen3.5 粗标', '考点/难度先填一版，卡片里逐题可改'],
                       ['人拍板', '勾选要入库的题；缺答案/解析/图的会被拦住'],
-                    ] as const).map(([t, d], i) => (
+                    ] as const)).map(([t, d], i) => (
                       <li key={t} className="flex gap-2.5 rounded-[var(--radius-card)] border
                                              border-border bg-surface p-2.5">
                         <span className="mt-[1px] grid h-4 w-4 shrink-0 place-items-center rounded
@@ -1299,6 +1854,7 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                 )}
                 {visibleItems.map((it: any) => {
                   const b = it.block
+                  const am = aiCards[b]
                   const e = edits[b] || { ...EMPTY, source_no: String(b + 1) }
                   const hard = blockingOf(it)
                   const picked = !!picks[b]
@@ -1382,6 +1938,43 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                       <div className="q-stem mt-1.5 text-[12.5px] leading-relaxed">
                         {renderBlocks(it.blocks?.stem)}
                       </div>
+
+                      {am && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className={`rounded px-1.5 py-[1px] font-medium ${
+                            am.verified ? 'bg-has-soft text-has' : 'bg-warn-soft text-warn'}`}>
+                            {am.verified ? '答案已复核' : `核对未过${am.verdict ? `：${am.verdict}` : ''}`}
+                          </span>
+                          {am.answer_source === 'answer_sheet' && (
+                            <span className="text-ink-faint">答案：答案册原文</span>
+                          )}
+                          {am.answer_source === 'inline' && (
+                            <span className="text-ink-faint">答案：题页原文</span>
+                          )}
+                          {am.pages?.length > 0 && aiPageDir && (
+                            <button onClick={() => setPageView({
+                              dir: aiPageDir, name: `q-${am.pages[0]}.png`,
+                              title: `原卷第 ${am.pages[0]} 页`,
+                            })} className={MINI}>看原页</button>
+                          )}
+                          {am.answer_pages?.length > 0 && aiPageDir && (
+                            <button onClick={() => setPageView({
+                              dir: aiPageDir, name: `a-${am.answer_pages[0]}.png`,
+                              title: `答案册第 ${am.answer_pages[0]} 页`,
+                            })} className={MINI}>看答案页</button>
+                          )}
+                          {typeof am.confidence === 'number' && (
+                            <span className="text-ink-faint">
+                              置信度 {Math.round(am.confidence * 100)}%
+                            </span>
+                          )}
+                          {am.problems?.length > 0 && (
+                            <span className="text-warn" title={am.problems.join('；')}>
+                              {am.problems.length} 处核对提示
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {Object.keys(it.figure_previews || {}).length > 0 && (
                         <div className="mt-2 rounded-md border border-border bg-bg p-2">
@@ -1584,19 +2177,21 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                           className={MINI}>
                           {srcOpen[b] ? '收起源码' : '改源码'}
                         </button>
-                        <button onClick={() => void tagItems(pv, edits, { blocks: [b], mainOnly })}
-                          disabled={tagging}
-                          className={MINI} title="只重标这一道，覆盖卡片上的考点/难度">
-                          <Sparkles size={10} />AI 标注这题
-                        </button>
-                        <button onClick={() => void tagItems(pv, edits, {
-                          blocks: [b], mainOnly, model: 'qwen/qwen3.8-27b',
-                        })}
-                          disabled={tagging}
-                          className={MINI}
-                          title="用 27B 慢标这一道；更准，但会占 16GB 内存">
-                          27B 重标
-                        </button>
+                        {!ai && (<>
+                          <button onClick={() => void tagItems(pv, edits, { blocks: [b], mainOnly })}
+                            disabled={tagging}
+                            className={MINI} title="只重标这一道，覆盖卡片上的考点/难度">
+                            <Sparkles size={10} />AI 标注这题
+                          </button>
+                          <button onClick={() => void tagItems(pv, edits, {
+                            blocks: [b], mainOnly, model: 'qwen/qwen3.8-27b',
+                          })}
+                            disabled={tagging}
+                            className={MINI}
+                            title="用 27B 慢标这一道；更准，但会占 16GB 内存">
+                            27B 重标
+                          </button>
+                        </>)}
                         {!picked && hard.length === 0 && !isDup && (
                           <button onClick={() => setPicks({ ...picks, [b]: true })}
                             className={MINI}>选这道</button>
@@ -1657,6 +2252,16 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
                           <div className="text-[11.5px] leading-relaxed">
                             {renderBlocks(it.blocks?.solution)}
                           </div>
+                          {am?.answer_quote && (
+                            <div className="text-[10.5px] leading-relaxed text-ink-faint">
+                              答案原文：{am.answer_quote}
+                            </div>
+                          )}
+                          {am?.solution_quote && (
+                            <div className="max-h-28 overflow-y-auto text-[10.5px] leading-relaxed text-ink-faint">
+                              解析原文：{am.solution_quote}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1790,6 +2395,26 @@ export default function IngestDrawer({ onClose, onDone, facets, closing }: {
           </div>
         </div>
       </div>
+
+      {pageView && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-6"
+          onClick={(e) => { e.stopPropagation(); setPageView(null) }}>
+          <div className="max-h-full max-w-[min(1100px,92vw)] overflow-auto rounded-xl
+                          border border-border bg-surface p-2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-2 py-1">
+              <span className="text-[12px] font-medium text-ink-soft">{pageView.title}</span>
+              <button onClick={() => setPageView(null)}
+                className="text-[11px] text-ink-faint underline hover:text-ink">关闭</button>
+            </div>
+            <img
+              src={`/api/ingest/preview-image?path=${encodeURIComponent(pageView.name)}`
+                + `&src_dir=${encodeURIComponent(pageView.dir)}`}
+              alt={pageView.title}
+              className="max-h-[82vh] max-w-full object-contain" />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

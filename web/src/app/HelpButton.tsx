@@ -1,6 +1,6 @@
 /** 右下角那颗「快捷键」浮球。
  *
- *  为什么必须有它：这一版加了一批**单键快捷键**（W/I/K/V/B/P/M/R/C）。
+ *  为什么必须有它：这一版加了一批**单键快捷键**（O/M/T/B/I/P/S/H/R/C）。
  *  快捷键没有面板可看，就只对写它的人有用——藏在代码注释里的快捷键
  *  等于不存在。所以给一个常驻的入口，随手一点就能查。
  *
@@ -9,14 +9,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { CircleHelp } from 'lucide-react'
 import { CloseBtn } from '@/app/ui'
-import { NAV_GROUPS } from '@/app/Nav'
 
 /** 键位分组。**顺序按使用的先后**：先找题，再组卷，最后是通用。 */
 const GROUPS: { title: string; rows: [string, string][] }[] = [
   {
     title: '导航',
-    rows: NAV_GROUPS.flatMap((g) =>
-      g.items.map((i) => [`${i.hint}`, `${i.label} · ${i.desc}`] as [string, string])),
+    rows: [
+      ['O', '总览 · 进度与待办'],
+      ['M', '知识图谱 · 教材顺序与先修关系'],
+      ['T', '讲义 · 讲 · 错 · 练'],
+      ['B', '题库 · 找题与挑题'],
+      ['I', '录题 · LaTeX / AI 读资料'],
+      ['P', '组卷 · 当前卷子与导出'],
+      ['S', '试卷库 · 存档与合集'],
+      ['H', '题库体检 · 覆盖与缺口'],
+      ['R', '回收站'],
+      ['C', '变更记录'],
+    ],
   },
   {
     title: '找题与组卷',
@@ -27,6 +36,7 @@ const GROUPS: { title: string; rows: [string, string][] }[] = [
       ['Enter', '打开当前这道题的详情'],
       ['空格', '勾选 / 取消勾选当前这道（Shift 连选）'],
       ['⌘ ↵', '把当前这道题加进卷子'],
+      ['Z', '专注模式：收起侧栏，宽度全给题目与详情'],
     ],
   },
   {
@@ -75,7 +85,7 @@ export default function HelpButton() {
   }, [open])
 
   return (
-    <div ref={box} className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-2.5">
+    <div ref={box} className="mobile-hide fixed bottom-5 right-5 z-40 flex flex-col items-end gap-2.5">
       {open && (
         <div className="pop-c w-[326px] rounded-[var(--radius-pop)] border border-border bg-surface
                         p-4 shadow-[var(--shadow-pop)]">

@@ -60,17 +60,27 @@ const MACROS: Record<string, string> = {
   '\\N': '\\mathbb{N}',
 }
 
+// 同一道题的解析/答案常被反复打开；KaTeX 渲染过的 HTML 缓存起来，
+// 重新挂载时不用再把同一串公式算一遍（数据缓存之外的第二层）。
+const KATEX_CACHE = new Map<string, string | null>()
+
 function Math({ tex, display }: { tex: string; display: boolean }) {
   const html = useMemo(() => {
+    const key = `${display ? 'd' : 'i'}:${tex}`
+    if (KATEX_CACHE.has(key)) return KATEX_CACHE.get(key) ?? null
     try {
-      return katex.renderToString(tex, {
+      const out = katex.renderToString(tex, {
         displayMode: display,
         throwOnError: false,
         strict: false,
         trust: true,
         macros: MACROS,
       })
+      if (KATEX_CACHE.size > 3000) KATEX_CACHE.clear()
+      KATEX_CACHE.set(key, out)
+      return out
     } catch {
+      KATEX_CACHE.set(key, null)
       return null
     }
   }, [tex, display])

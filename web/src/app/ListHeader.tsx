@@ -9,8 +9,8 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import {
-  Check, ChevronDown, Command as CommandIcon, LayoutGrid, ListFilter, Rows2, Rows3,
-  SlidersHorizontal, Tags, X,
+  Check, ChevronDown, Command as CommandIcon, LayoutGrid, ListFilter, Loader2, Rows2, Rows3,
+  SlidersHorizontal, Tags, X, Maximize2, Minimize2,
 } from 'lucide-react'
 import type { useQuestionList } from '@/lib/useQuestionList'
 import { Num } from '@/app/ui'
@@ -23,6 +23,7 @@ const PAGE_SIZES = [10, 20, 50, 100, 200]
 export default function ListHeader({
   L, total, loading, scopeChips, showFilter, onShowFilter, clearAllFilters,
   dense, onDense, compact, onCompact, maskAns, onMaskAns, onPalette, onDeleteChecked, onAddChecked, onBatchEdit, view,
+  zen, onZen,
 }: {
   L: L
   total: number
@@ -42,6 +43,8 @@ export default function ListHeader({
   onAddChecked: () => void
   onBatchEdit: () => void
   view: 'list' | 'paper'
+  zen?: boolean
+  onZen?: () => void
 }) {
   const [viewOpen, setViewOpen] = useState(false)
   const viewRef = useRef<HTMLDivElement>(null)
@@ -63,12 +66,13 @@ export default function ListHeader({
         <span className="shrink-0 text-[14px] font-semibold text-brand-ink">
           已选 <span className="tnum">{L.checked.size}</span> 道
         </span>
-        <button onClick={() => L.checkAll(L.items)} title="全选本页"
-          className="press shrink-0 whitespace-nowrap rounded-lg border border-brand-line
+        <button onClick={() => L.checkAll(L.items)}
+          title="把本页题目加入已选（保留其他页的勾选）"
+          className="press hidden shrink-0 whitespace-nowrap rounded-lg border border-brand-line sm:inline-flex
                      bg-surface px-2.5 py-[4px] text-[12px] text-brand-ink hover:bg-surface-2">
-          全选</button>
+          全选本页</button>
         <button onClick={L.clearChecked}
-          className="press shrink-0 whitespace-nowrap rounded-lg border border-brand-line
+          className="press hidden shrink-0 whitespace-nowrap rounded-lg border border-brand-line sm:inline-flex
                      bg-surface px-2.5 py-[4px] text-[12px] text-brand-ink hover:bg-surface-2">
           清空</button>
         <span className="min-w-0 flex-1" />
@@ -97,17 +101,24 @@ export default function ListHeader({
     )
   }
 
+  // `backdrop-blur` 会创建 stacking context：表头必须自己抬到 z-30，
+  // 否则弹层的 z-40 只在这个 context 内比较，会被下面的题卡盖住。
   return (
-    <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border
-                    bg-surface px-4">
-      <h1 className="shrink-0 text-[19px] font-semibold tracking-tight">题库</h1>
+    <div className="app-chrome relative z-30 flex h-[52px] shrink-0 items-center gap-2 border-b border-border/70
+                    bg-[color-mix(in_srgb,var(--color-surface)_62%,transparent)] px-4 backdrop-blur-2xl">
       <span className="tnum shrink-0 rounded-full bg-muted px-2 py-[2px] text-[11.5px]
                        font-medium text-ink-soft">
-        {loading ? '加载中…' : <><Num value={total} /> 道</>}
+        {loading ? (total > 0 ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Num value={total} /> 道
+            <Loader2 size={10} className="animate-spin text-brand" />
+            <span className="text-[10px] font-normal text-ink-faint">更新中</span>
+          </span>
+        ) : '加载中…') : <><Num value={total} /> 道</>}
       </span>
 
       {/* 生效条件做成可删胶囊：一条一个 ×，点掉哪条撤哪条 */}
-      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-hidden">
+      <span className="hidden min-w-0 flex-1 flex-wrap items-center gap-1.5 overflow-hidden sm:flex">
         {scopeChips.length === 0 ? (
           <span className="truncate text-[12px] text-ink-faint">全部题目</span>
         ) : (<>
@@ -130,6 +141,7 @@ export default function ListHeader({
                        text-ink-faint hover:text-warn">清除</button>
         </>)}
       </span>
+      <span className="min-w-0 flex-1 sm:hidden" />
 
       {!showFilter && (
         <button onClick={onShowFilter} title="展开筛选面板（K）"
@@ -146,9 +158,22 @@ export default function ListHeader({
         </button>
       )}
 
+      {/* 专注模式：只留题目和详情。挑题/读题时把侧栏收掉，宽度全给内容。 */}
+      {view === 'list' && onZen && (
+        <button onClick={onZen} title={`${zen ? '退出' : '进入'}专注模式（Z）`}
+          aria-pressed={!!zen}
+          className={`press hidden h-[30px] shrink-0 items-center gap-1.5 rounded-lg border px-2.5 sm:flex
+                      text-[12.5px] transition-colors ${zen
+                        ? 'border-brand-line bg-brand-soft text-brand-ink'
+                        : 'border-border bg-surface text-ink-soft hover:border-border-strong hover:text-ink'}`}>
+          {zen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          <span className="hidden lg:inline">{zen ? '退出专注' : '专注'}</span>
+        </button>
+      )}
+
       {/* 视图选项：密度 / 每页条数。不常改，收进弹层，表头立刻轻一截 */}
       {view === 'list' && (
-        <div ref={viewRef} className="relative shrink-0">
+        <div ref={viewRef} className="relative hidden shrink-0 sm:block">
           <button onClick={() => setViewOpen((v) => !v)} title="视图选项"
             aria-expanded={viewOpen}
             className={`press flex h-[30px] items-center gap-1.5 rounded-lg border px-2.5
@@ -203,6 +228,9 @@ export default function ListHeader({
                   </button>
                 ))}
               </div>
+              <div className="-mt-1 mb-2 text-[10px] leading-relaxed text-ink-faint">
+                显示后公式答案先露源码；展开仍看排版。
+              </div>
               <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-ink-faint">每页</div>
               <div className="flex flex-wrap gap-1">
                 {PAGE_SIZES.map((n) => (
@@ -226,7 +254,7 @@ export default function ListHeader({
       )}
 
       <button onClick={onPalette} title="命令面板（⌘K）"
-        className="press flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg border
+        className="press hidden h-[30px] shrink-0 items-center gap-1.5 rounded-lg border sm:flex
                    border-border bg-surface px-2 text-[12.5px] text-ink-faint
                    hover:border-border-strong hover:text-ink">
         <CommandIcon size={13} />

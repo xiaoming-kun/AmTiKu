@@ -32,10 +32,16 @@ export type UrlFilters = {
 
 export type UrlSnapshot = {
   filters: UrlFilters
-  /** `null` = 地址里没写，按默认 `used`；空串是「题库原序」，要保留 */
+  /** `null` = 地址里没写，按默认 `used`；`raw` = 题库原序；
+   *  空串是旧链接的兼容写法（读时映射成 raw）。 */
   sort: string | null
   page: number
+  /** 老地址栏参数；新界面用 `view`。两个都读，写只写 `view`。 */
   tab: string
+  /** 当前页面：overview/map/lectures/bank/ingest/paper/papers/health/trash/changes */
+  view: string
+  /** 当前学段：primary/junior/senior */
+  stage: string
 }
 
 const EMPTY: UrlFilters = {
@@ -53,7 +59,9 @@ const FILTER_KEYS: [keyof UrlFilters, string][] = [
 ]
 
 function read(): UrlSnapshot {
-  if (typeof window === 'undefined') return { filters: { ...EMPTY }, sort: null, page: 1, tab: '' }
+  if (typeof window === 'undefined') return {
+    filters: { ...EMPTY }, sort: null, page: 1, tab: '', view: '', stage: '',
+  }
   const sp = new URLSearchParams(window.location.search)
   const filters = { ...EMPTY }
   for (const [field, key] of FILTER_KEYS) {
@@ -62,10 +70,12 @@ function read(): UrlSnapshot {
   const page = Math.max(1, parseInt(sp.get('page') || '1', 10) || 1)
   return {
     filters,
-    // 用 `has` 区分「没写」和「写了空串（题库原序）」
+    // 用 `has` 区分「没写」和「写了空串（旧链接的题库原序；新链接写 raw）」
     sort: sp.has('sort') ? (sp.get('sort') || '') : null,
     page,
     tab: sp.get('tab') || '',
+    view: sp.get('view') || '',
+    stage: sp.get('stage') || '',
   }
 }
 
@@ -79,10 +89,13 @@ export function writeUrlState(s: UrlSnapshot): void {
     const v = s.filters[field]
     if (v) sp.set(key, v)
   }
-  // 默认排序 `used` 不写；空串（题库原序）要写 `sort=`，否则刷新会变回频次序
+  // 默认排序 `used` 不写；`raw`（题库原序）要写 `sort=raw`。
+  // 旧链接里的空串 `sort=` 仍能读，useQuestionList 会把它映射成 raw。
   if (s.sort !== null && s.sort !== 'used') sp.set('sort', s.sort)
   if (s.page > 1) sp.set('page', String(s.page))
   if (s.tab && s.tab !== 'workbench') sp.set('tab', s.tab)
+  if (s.view) sp.set('view', s.view)
+  if (s.stage && s.stage !== 'senior') sp.set('stage', s.stage)
   const qs = sp.toString()
   const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
   const now = window.location.pathname + window.location.search + window.location.hash

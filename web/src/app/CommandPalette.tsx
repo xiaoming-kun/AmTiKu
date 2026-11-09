@@ -121,6 +121,38 @@ export default function CommandPalette({ open, onClose, commands, onSearch }: {
     }
   }
 
+  const renderGroup = (g: { name: string; items: Cmd[] }) => (
+    <div key={g.name} role="group" aria-label={g.name} className="mb-1 last:mb-0">
+      <div className="px-3 pb-1 pt-2 text-[10.5px] font-semibold tracking-[0.08em]
+                      text-ink-faint">
+        {g.name}
+      </div>
+      {g.items.map((c) => {
+        const i = hits.indexOf(c)
+        const on = i === idx
+        return (
+          <button key={c.id} id={`cmdk-${c.id}`} role="option" aria-selected={on}
+            onMouseMove={() => setIdx(i)}
+            onClick={() => { c.run(); onClose() }}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left
+                        transition-colors ${on ? 'bg-brand-soft' : 'hover:bg-muted'}`}>
+            <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${
+              on ? 'bg-surface text-brand-ink' : 'bg-muted text-ink-faint'}`}>
+              {c.icon}
+            </span>
+            <span className={`min-w-0 flex-1 truncate text-[13px] ${
+              on ? 'font-medium text-brand-ink' : 'text-ink'}`}>{c.label}</span>
+            {c.hint && (
+              <kbd className={`shrink-0 rounded border px-1.5 text-[10.5px] leading-[18px] ${
+                on ? 'border-brand-line bg-surface text-brand-ink'
+                   : 'border-border bg-surface-2 text-ink-faint'}`}>{c.hint}</kbd>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+
   if (!shown) return null
 
   return (
@@ -130,7 +162,7 @@ export default function CommandPalette({ open, onClose, commands, onSearch }: {
       <div role="dialog" aria-modal="true" aria-label="命令面板"
         onMouseDown={(e) => e.stopPropagation()}
         className={`${closing ? 'anim-pop-out' : 'pop-c'} flex max-h-[min(560px,70vh)]
-                   w-[min(620px,100%)] flex-col overflow-hidden rounded-[var(--radius-pop)]
+                   w-[min(760px,100%)] flex-col overflow-hidden rounded-[var(--radius-pop)]
                    border border-border bg-surface shadow-[var(--shadow-pop)]`}>
 
         {/* 输入框 = combobox，指着下面的 listbox */}
@@ -172,35 +204,12 @@ export default function CommandPalette({ open, onClose, commands, onSearch }: {
               没有匹配的命令
             </div>
           ) : (
-            groups.map((g) => (
-              <div key={g.name} role="group" aria-label={g.name} className="mb-1 last:mb-0">
-                <div className="px-3 pb-1 pt-2 text-[10.5px] font-semibold tracking-[0.08em]
-                                text-ink-faint">
-                  {g.name}
-                </div>
-                {g.items.map((c) => {
-                  const i = hits.indexOf(c)
-                  const on = i === idx
-                  return (
-                    <button key={c.id} id={`cmdk-${c.id}`} role="option" aria-selected={on}
-                      onMouseMove={() => setIdx(i)}
-                      onClick={() => { c.run(); onClose() }}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left
-                                  transition-colors ${on ? 'bg-brand-soft' : 'hover:bg-muted'}`}>
-                      <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${
-                        on ? 'bg-surface text-brand-ink' : 'bg-muted text-ink-faint'}`}>
-                        {c.icon}
-                      </span>
-                      <span className={`min-w-0 flex-1 truncate text-[13px] ${
-                        on ? 'font-medium text-brand-ink' : 'text-ink'}`}>{c.label}</span>
-                      {c.hint && (
-                        <kbd className={`shrink-0 rounded border px-1.5 text-[10.5px] leading-[18px] ${
-                          on ? 'border-brand-line bg-surface text-brand-ink'
-                             : 'border-border bg-surface-2 text-ink-faint'}`}>{c.hint}</kbd>
-                      )}
-                    </button>
-                  )
-                })}
+            (q.trim() ? (
+              groups.map(renderGroup)
+            ) : (
+              <div className="grid grid-cols-1 items-start gap-x-3 sm:grid-cols-2">
+                <div>{groups.filter((g) => g.name === '去').map(renderGroup)}</div>
+                <div>{groups.filter((g) => g.name !== '去').map(renderGroup)}</div>
               </div>
             ))
           )}

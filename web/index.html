@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AmTiKu · 题库</title>
+    <title>K12 数学题库 · AmTiKu</title>
     <meta name="color-scheme" content="light dark" />
     <script>
       /* 首屏防闪：在**第一次绘制之前**把主题定下来。
@@ -16,12 +16,12 @@
        * 具体规则见 src/lib/theme.ts，**两处的键名和取值必须一致**。
        * 外面包 try：隐私模式下 localStorage 会抛，那时跟随系统即可。 */
       (function () {
-        var mode = 'system', accent = 'rose';
+        var mode = 'light', accent = 'aurora';
         try {
           var m = localStorage.getItem('amtiku.theme');
           if (m === 'light' || m === 'dark' || m === 'system') mode = m;
           var a = localStorage.getItem('amtiku.accent');
-          if (/^(rose|indigo|ocean|emerald|violet|graphite)$/.test(a)) accent = a;
+          if (/^(aurora|rose|indigo|ocean|emerald|violet|graphite)$/.test(a)) accent = a;
         } catch (e) {}
         var dark = mode === 'dark' ||
           (mode === 'system' && window.matchMedia &&

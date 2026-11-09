@@ -11,12 +11,13 @@ import { useDebounced } from '@/lib/useDebounced'
 import { groupTree } from '@/app/Stats'
 import { INITIAL_URL, type UrlFilters } from '@/lib/urlState'
 
-export type SortKey = 'used' | 'new' | 'old' | 'solved' | 'diff' | 'diff2' | 'year' | 'year2' | ''
+export type SortKey = 'used' | 'new' | 'old' | 'solved' | 'diff' | 'diff2' | 'year' | 'year2' | 'raw' | ''
 
-const SORT_KEYS = new Set<string>(['used', 'new', 'old', 'solved', 'diff', 'diff2', 'year', 'year2', ''])
+const SORT_KEYS = new Set<string>(['used', 'new', 'old', 'solved', 'diff', 'diff2', 'year', 'year2', 'raw', ''])
 const split = (s?: string) => (s || '').split(',').filter(Boolean)
 
-export function useQuestionList() {
+export function useQuestionList(opts?: { stage?: string }) {
+  const stage = opts?.stage || ''
   const [facets, setFacets] = useState<Facets | null>(null)
   const [items, setItems] = useState<Q[]>([])
   const [total, setTotal] = useState(0)
@@ -67,9 +68,13 @@ export function useQuestionList() {
   const [openTopics, setOpenTopics] = useState<Set<string>>(new Set())
   // 排序：默认按**使用频次**（导出过多次的经典题排前面）。
   // `seq` 是录入先后（append 只追加，所以文件顺序就是录入顺序）。
-  const [sort, setSort] = useState<SortKey>(
-    INITIAL_URL.sort === null ? 'used'
-      : (SORT_KEYS.has(INITIAL_URL.sort) ? INITIAL_URL.sort as SortKey : 'used'))
+  // `raw` 是地址栏里的「题库原序」：以前用空串表示，但空串同时是后端
+  // 搜索的“按相关度”默认值，选“原序”实际不生效——现在单独用 `raw`。
+  const [sort, setSort] = useState<SortKey>(() => {
+    const s = INITIAL_URL.sort
+    if (s === null || !SORT_KEYS.has(s)) return 'used'
+    return s === '' ? 'raw' : s as SortKey
+  })
   const [years, setYears] = useState<string[]>(split(INITIAL_URL.filters.year))
   const toggleYear = (v: string) =>
     setYears((xs) => (xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]))
@@ -137,15 +142,28 @@ export function useQuestionList() {
   const exitSelect = () => {
     setSelectMode(false); setChecked(new Set()); setCheckedMap(new Map()); setAnchor(null)
   }
-  /** 「全选本页」：`checked` 和 `checkedMap` **必须一起改**。
+  /** 「全选本页」：**追加**到已选，不覆盖别页的勾选。
    *
-   *  批量操作（加入卷子/讲义、删除选中）读的是 `checkedMap`（要题对象，
-   *  而且得支持跨页），表头显示的是 `checked`。以前 ListHeader 只 `setChecked`，
-   *  于是「已选 100 道 → 加入卷子」实际只加进去上一次单独勾的那 1 道，
-   *  导出自然只有 1 题（用户实测报的 bug，2026-11-02）。 */
+   *  `checked` 和 `checkedMap` **必须一起改**：批量操作（加入卷子/删除选中）
+   *  读的是 `checkedMap`（要题对象，而且得支持跨页），表头显示的是 `checked`。
+   *  以前 ListHeader 只 `setChecked`，于是「已选 100 道 → 加入卷子」实际只
+   *  加进去上一次单独勾的那 1 道（用户实测报的 bug，2026-11-02）。
+   *
+   *  2026-11-08：又发现它会把**前面页**的勾选静默替换掉——第 1 页全选
+   *  100 道、第 2 页再全选，表头仍显示 100，但前 100 道已经没了。
+   *  跨页勾选本来就是这套设计的目的，所以这里改成并集追加。
+   *  想只留本页，先点「清空」再全选。 */
   const checkAll = (qs: Q[]) => {
-    setChecked(new Set(qs.map((x) => x.key)))
-    setCheckedMap(new Map(qs.map((x) => [x.key, x])))
+    setChecked((s) => {
+      const n = new Set(s)
+      for (const q of qs) n.add(q.key)
+      return n
+    })
+    setCheckedMap((m) => {
+      const n = new Map(m)
+      for (const q of qs) n.set(q.key, q)
+      return n
+    })
   }
   /** 「清空」勾选：两个集合一起清。只清一个的话，隐藏的旧勾选还会被批量操作读走。 */
   const clearChecked = () => {
@@ -207,7 +225,7 @@ export function useQuestionList() {
    *  **组卷用的池子**不是同一批题，用户筛了星级、卷子却出别的题。
    *  现在只有这一处组装，谁要筛条件都拿它。 */
   const filters = useMemo(() => ({
-    q: qApplied, type, kind,
+    q: qApplied, type, kind, stage,
     point: points.join(','), difficulty: diffs.join(','),
     year: years.join(','), has: has.join(','), missing: missing.join(','),
     source: sources.join(','),
@@ -215,7 +233,7 @@ export function useQuestionList() {
     star_state: starStates.join(','), quality: qualities.join(','),
     point_source: pointSource, answer_source: answerSources.join(','),
     reviewed,
-  }), [qApplied, type, kind, points, diffs, years, has, missing,
+  }), [qApplied, type, kind, stage, points, diffs, years, has, missing,
        sources, scopes, paperStates, starStates, qualities, pointSource,
        answerSources, reviewed])
 
@@ -285,8 +303,8 @@ export function useQuestionList() {
   useEffect(() => { setPageInput(String(page)) }, [page])
 
   useEffect(() => {
-    api.facets().then(setFacets).catch(reportErr)
-  }, [reload])
+    api.facets(stage).then(setFacets).catch(reportErr)
+  }, [reload, stage])
 
   // 选中的考点所在大类自动展开，否则选完就看不见自己选了什么
   useEffect(() => {
@@ -321,7 +339,8 @@ export function useQuestionList() {
     setScopes(split(f.scope)); setPaperStates(split(f.paper))
     setStarStates(split(f.star)); setQualities(split(f.quality))
     setPointSource(f.psrc || ''); setAnswerSources(split(f.asrc)); setReviewed(f.reviewed || '')
-    setSort((SORT_KEYS.has(sortKey) ? sortKey : 'used') as SortKey)
+    const next = SORT_KEYS.has(sortKey) ? sortKey : 'used'
+    setSort((next === '' ? 'raw' : next) as SortKey)
     setPage(1)
   }
 

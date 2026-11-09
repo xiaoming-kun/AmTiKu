@@ -332,6 +332,11 @@ def parse_source(text: str, *, book: str = "手工录入", label: str = "",
             q.type = meta["type"]
         if qtype_i:
             q.type = qtype_i
+            # 题型覆盖也要写回 meta：`to_dict` 会把 meta 原样存进 `%% @q`，
+            # 下次解析时 meta["type"] 会再次覆盖 q.type；不写回的话，
+            # 用户手改的题型会在重读时被旧值翻回去。
+            # 注意这里改的是局部 meta（第 413 行才赋给 q.meta）。
+            meta["type"] = qtype_i
 
         book_i = str(val("book", book) or "手工录入").strip()
 
@@ -394,6 +399,14 @@ def parse_source(text: str, *, book: str = "手工录入", label: str = "",
             elif "points" in ov:
                 q.points = []
                 meta.pop("point_source", None)
+
+        # AI 录题的核对溯源：第二遍核对通过才走到这里，来源/置信度不能丢。
+        # 以前这些字段只在 `aiingest` 的返回值里有，commit 重新解析源码时
+        # 全部丢掉，题库里看不出这道是答案册核对过的还是模型直读的。
+        for f in ("answer_source", "solution_source", "verdict",
+                  "verified", "confidence"):
+            if f in ov and ov[f] is not None and ov[f] != "":
+                meta[f] = ov[f]
 
         # 难度：逐题 > 全局。逐题空串 = 明确清空（让难度回落到主考点派生）。
         diff_i = difficulty
@@ -761,6 +774,12 @@ def _structure_errors(qs) -> list[dict]:
         ans = (q.answer or "").strip()
         sol = (q.solution or "").strip()
         stem = (q.stem or "").strip()
+
+        # AI 录题里图没画好/没裁好会留一行「【图：…请补图】」。这是**占位**，
+        # 不是题干；以前 conform/schema 都不认它，题会默认勾选、原样印进 PDF。
+        # 宁可让用户先补图，也不能让占位进库。
+        if "【图：" in stem or "请补图" in stem or "请手工补" in stem:
+            why.append("题干里还留着「请补图」占位，先把图补上再入库")
 
         if ans and _flat(ans) == _flat(stem):
             why.append("答案栏抄了整条题干")

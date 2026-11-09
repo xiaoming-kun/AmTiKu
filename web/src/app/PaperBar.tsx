@@ -20,10 +20,10 @@ export default function PaperBar({
 }) {
   if (!paper.length) return null
   return (
-    <div className={`anim-slide-d flex shrink-0 items-center gap-2.5 border-b px-4 py-2
-                     text-[12.5px] ${view === 'paper'
-                       ? 'border-brand-line bg-brand-soft/60'
-                       : 'border-border bg-surface-2'}`}>
+    <div className={`app-chrome anim-slide-d flex shrink-0 items-center gap-2.5 border-b px-4 py-2
+                     text-[12.5px] backdrop-blur-xl ${view === 'paper'
+                       ? 'border-brand-line bg-brand-soft/40'
+                       : 'border-border/70 bg-[color-mix(in_srgb,var(--color-surface)_62%,transparent)]'}`}>
       <button onClick={onToggleView}
         className="press flex min-w-0 flex-1 items-center gap-2.5 text-left">
         <ClipboardList size={14}
@@ -61,8 +61,8 @@ export default function PaperBar({
           （见 App.tsx 的快捷键），不是导出。按钮上标错会让人按了以后
           卷子多一道、导出弹层却没出现。 */}
       <button onClick={onExport} title="导出这份卷子"
-        className="press shrink-0 rounded-md bg-brand px-2.5 py-[4px] text-[11.5px]
-                   font-medium text-white shadow-[var(--shadow-brand)] hover:brightness-105">
+        className="press grad-primary shrink-0 rounded-full px-3 py-[4px] text-[11.5px]
+                   font-medium text-white shadow-[var(--shadow-brand)] hover:brightness-110">
         导出
       </button>
     </div>

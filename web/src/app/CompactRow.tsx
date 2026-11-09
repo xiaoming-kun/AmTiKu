@@ -10,7 +10,7 @@
 import { Check, Plus } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { Highlight, renderBlocks } from '@/lib/render'
-import { DIFF_STARS, starsLabel } from '@/lib/display'
+import { DIFF_STARS, dispPoint, starsLabel } from '@/lib/display'
 import { SHORT_NAME } from '@/lib/paper'
 
 export default function CompactRow({
@@ -27,13 +27,14 @@ export default function CompactRow({
   kw?: string
 }) {
   const stars = DIFF_STARS[q.difficulty] || q.stars || 0
-  const point = q.point_titles?.[0] || ''
+  const point = dispPoint(q.point_titles?.[0] || '')
   const type = SHORT_NAME[q.type] || q.type_label || ''
   const missing = [!q.flags['答案'] && '答案', !q.flags['解析'] && '解析'].filter(Boolean)
 
   return (
     <div
       onClick={onOpen}
+      data-qkey={q.key}
       aria-current={active ? 'true' : undefined}
       className={`group flex h-[34px] cursor-pointer items-center gap-2.5 border-b border-border/60
                   px-3 text-[12.5px] transition-colors ${

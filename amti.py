@@ -493,7 +493,9 @@ def cmd_accept(_a) -> int:
     # **逐个 `-m` 跑**，不能只 import——自检写在 `__main__` 里，
     # import 一下什么都不执行，那一层就成了摆设（实测踩过）。
     for m in ("schema", "latex_blocks", "render_tex", "images", "dedup",
-              "ingest", "generate", "normalize", "search", "fts"):
+              "ingest", "generate", "normalize", "search", "similar",
+              "duplicates", "fts",
+              "knowledge_map", "topics", "review"):
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
     # 存储层：**缩卷**（题数跨过每卷 5000 的边界）时，多余的旧卷必须先删再回读。
     # 实测「合并重复题」一次删 541 道（7 卷 → 6 卷）被这个顺序 bug 整批回滚。
@@ -509,6 +511,9 @@ def cmd_accept(_a) -> int:
     run("读图自检", [_s.executable, "-m", "amti.vlm", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")
     run("录题自检", [_s.executable, "-m", "amti.record", "--selftest"], r"通过|失败")
+    # AI 录题（DeepSeek 读整份资料）：JSON 从脏回复里捞、答案归一、
+    # 图占位/填空组装、图片包成页。**不发任何网络请求**——验收不该依赖 key 和余额。
+    run("AI 录题自检", [_s.executable, "-m", "amti.aiingest", "--selftest"], r"通过|失败")
     # 录入 v2（Paddle → 27B 结构化）：接口报错的翻译、token 估计、上下文护栏。
     # 自检**不碰模型**；它守的正是「超过上下文 → UnboundLocalError」那个坑。
     run("录入 v2 自检", [_s.executable, "-m", "amti.record2", "selftest"], r"通过|失败")
@@ -534,6 +539,10 @@ def cmd_accept(_a) -> int:
     # 这些原来只在 AGENTS 里要求"手工跑"，accept 看不到它们红——现在一条命令全跑。
     # `接口测试` 会 PATCH 一道题再还原（自检式写库），其余只读。
     run("接口回归", [_s.executable, str(root / "测试" / "接口测试.py")], r"通过")
+    # 小初章节讲义：120 章是否都在、是否都按高中模板、是否只讲不练。
+    # 数据不存在时脚本自己明确“跳过”，不算失败。
+    run("小初讲义回归", [_s.executable, str(root / "测试" / "小初讲义测试.py")],
+        r"通过|跳过")
     temp_server = _ensure_server(root)
     try:
         run("端到端渲染", ["node", "web/check.mjs"],
@@ -640,6 +649,15 @@ def cmd_images(a) -> int:
     return 1 if tot["missing"] else 0
 
 
+def cmd_stagepack(a) -> int:
+    r"""按学段出包：把母库筛成一个可独立运行的数据目录（发给客户用）。"""
+    from amti import stagepack
+    argv = [a.stage, "--out", a.out]
+    if a.dry_run:
+        argv.append("--dry-run")
+    return stagepack.main(argv)
+
+
 def cmd_ingest(a) -> int:
     r"""录入题目。默认**干跑**，`--yes` 才真的写。
 
@@ -734,7 +752,7 @@ def cmd_ingest(a) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="AmTiKu 题库工具")
+    ap = argparse.ArgumentParser(description="AmTiKu · K12 数学题库工具")
     sub = ap.add_subparsers(dest="cmd")
 
     sub.add_parser("status", help="库的现状").set_defaults(fn=cmd_status)
@@ -829,6 +847,13 @@ def main() -> int:
     gp.add_argument("--year", type=int, default=None, help="年份")
     gp.add_argument("--yes", action="store_true", help="确认导入")
     gp.set_defaults(fn=cmd_ingest)
+
+    sp = sub.add_parser("stagepack", help="按学段把母库导出成独立数据目录")
+    sp.add_argument("stage", choices=["primary", "junior", "senior"],
+                    help="primary=小学 / junior=初中 / senior=高中")
+    sp.add_argument("--out", required=True, help="输出目录（新目录，或上次的出包目录）")
+    sp.add_argument("--dry-run", action="store_true", help="只报将导出多少道")
+    sp.set_defaults(fn=cmd_stagepack)
 
     args = ap.parse_args()
     if not getattr(args, "fn", None):

@@ -9,6 +9,7 @@ import {
   RefreshCw, Tags, TriangleAlert,
 } from 'lucide-react'
 import { api, reportErr } from '@/lib/api'
+import { STAGE_BY_KEY, type Stage } from '@/lib/stage'
 
 type Diff = '简单题' | '中档题' | '难题'
 type Point = {
@@ -30,6 +31,11 @@ type Data = {
   figures: { files: number; bytes: number }
   reviewed?: number
   unreviewed?: number
+  review?: {
+    pending: number; approved: number; needs_fix: number
+    flagged: number; stale: number; reviewed: number; total: number
+    review_rate: number
+  }
 }
 
 export type Scope = {
@@ -92,7 +98,13 @@ function pct(n: number, d: number) {
   return d ? Math.round((n / d) * 100) : 0
 }
 
-export default function Health({ onScope }: { onScope: (s: Scope) => void }) {
+export default function Health({ onScope, stage = 'senior', onMap, onIngest, onReview }: {
+  onScope: (s: Scope) => void
+  stage?: Stage
+  onMap?: () => void
+  onIngest?: () => void
+  onReview?: () => void
+}) {
   const [d, setD] = useState<Data | null>(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -105,6 +117,32 @@ export default function Health({ onScope }: { onScope: (s: Scope) => void }) {
       .finally(() => setBusy(false))
   }
   useEffect(load, [])
+
+  if (stage !== 'senior') {
+    const meta = STAGE_BY_KEY[stage]
+    return (
+      <div className="mx-auto w-full max-w-[980px] px-6 py-8">
+        <div className="b-eyebrow flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
+          K12 数学题库 · {meta.name} · 题库体检
+        </div>
+        <h1 className="mt-1.5 text-[30px] font-semibold tracking-tight">这个学段还没有正式题库</h1>
+        <p className="mt-1 max-w-[620px] text-[12px] leading-relaxed text-ink-faint">
+          题库体检统计的是正式入库的题。{meta.name}目前以知识图谱和诊断题为主，
+          题目录进来之后，这一页会自动有覆盖、难度和缺口数据。
+        </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {onMap && <button onClick={onMap} className="b-btn b-btn-primary">去知识图谱</button>}
+          {onIngest && <button onClick={onIngest} className="b-btn b-btn-secondary">去录题</button>}
+        </div>
+        <div className="b-card mt-5 p-5 text-[11.5px] leading-relaxed text-ink-faint">
+          现在能看的：<b className="text-ink-soft">知识图谱</b>（教材顺序、先修关系）、
+          <b className="text-ink-soft">诊断题</b>（题库页里按知识点筛）、
+          <b className="text-ink-soft">讲义</b>（建设进度）。这三块都在左侧导航里。
+        </div>
+      </div>
+    )
+  }
 
   if (!d) {
     return (
@@ -137,8 +175,9 @@ export default function Health({ onScope }: { onScope: (s: Scope) => void }) {
       <div className="mx-auto w-full max-w-[1180px] space-y-4 px-6 py-5">
         <header className="flex items-end gap-3">
           <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-2 text-[21px] font-semibold tracking-tight">
-              <Activity size={19} className="text-brand" />题库体检
+            <h1 className="flex items-center gap-2 text-[28px] font-semibold tracking-tight">
+              <Activity size={22} className="text-brand" />
+              健康度 <span className="grad-text">总览</span>
             </h1>
             <p className="mt-0.5 text-[12px] text-ink-faint">
               覆盖、难度、缺口和待补队列。点数字/考点直接跳到工作台筛题。
@@ -230,16 +269,28 @@ export default function Health({ onScope }: { onScope: (s: Scope) => void }) {
                 <span className="tnum text-[12px] font-medium text-warn">{unlabeled}</span>
                 <ArrowRight size={12} className="shrink-0 text-ink-faint" />
               </button>
-              <button onClick={() => onScope({ reviewed: 'no', note: '未复核' })}
+              <button onClick={() => (onReview ? onReview() : onScope({ reviewed: 'no', note: '未复核' }))}
                 className="press flex w-full items-center gap-2 rounded-lg border border-border
                            bg-bg px-2.5 py-2 text-left hover:border-brand-line">
                 <CircleAlert size={14} className="shrink-0 text-warn" />
-                <span className="min-w-0 flex-1 text-[12px]">未复核</span>
+                <span className="min-w-0 flex-1 text-[12px]">待审题</span>
                 <span className="tnum text-[12px] font-medium text-warn">
-                  {(d.unreviewed ?? 0).toLocaleString()}
+                  {(d.review?.pending ?? d.unreviewed ?? 0).toLocaleString()}
                 </span>
                 <ArrowRight size={12} className="shrink-0 text-ink-faint" />
               </button>
+              {(!!d.review?.needs_fix || !!d.review?.flagged) && (
+                <button onClick={() => onReview?.()}
+                  className="press flex w-full items-center gap-2 rounded-lg border border-warn-line
+                             bg-warn-soft/40 px-2.5 py-2 text-left hover:border-warn">
+                  <TriangleAlert size={14} className="shrink-0 text-warn" />
+                  <span className="min-w-0 flex-1 text-[12px]">需修改 / 存疑</span>
+                  <span className="tnum text-[12px] font-medium text-warn">
+                    {((d.review?.needs_fix || 0) + (d.review?.flagged || 0)).toLocaleString()}
+                  </span>
+                  <ArrowRight size={12} className="shrink-0 text-ink-faint" />
+                </button>
+              )}
               <div className="flex items-center gap-2 rounded-lg border border-border bg-bg px-2.5 py-2">
                 <ImageIcon size={14} className="shrink-0 text-ink-faint" />
                 <span className="min-w-0 flex-1 text-[12px]">图片文件</span>
@@ -249,9 +300,10 @@ export default function Health({ onScope }: { onScope: (s: Scope) => void }) {
               </div>
             </div>
             <div className="mt-3 text-[10.5px] leading-relaxed text-ink-faint">
+              审阅状态与“编辑过”分开记：改答案/解析不会再自动算作复核。
+              过期的旧复核（改过正文）会显示为“失效”，不再冒充已复核。
               无标签来源是<b className="font-medium text-ink-soft">考点标签的来源没记录</b>
-              （point_source 为空），标签本身可能没错——多是早期批量录入留下的；
-              点进去抽样复核即可，不必全量重打。
+              （point_source 为空），标签本身可能没错——点进去抽样复核即可。
             </div>
           </Panel>
 

@@ -4,10 +4,12 @@
 
 ## 一、这是什么
 
-本地**高中数学题库 + 组卷系统**。全部数据在项目目录内，只监听 `127.0.0.1`，不联任何外部服务。
+本地 **K12 数学题库 + 组卷系统**（小学 / 初中 / 高中）。全部数据在项目目录内，只监听 `127.0.0.1`，不联任何外部服务。
 
 * 后端：Python 3，自研 HTTP 服务（`amti/`，端口 8899）
-* 前端：React 18 + TypeScript + Tailwind（`web/src/`，构建产物 `web/dist/`，由后端一起发）
+* 前端：React 19 + TypeScript + Tailwind 4（`web/src/`，构建产物 `web/dist/`，由后端一起发）
+* 界面：BoardUI 浅色设计语言（中性骨架 + 学院蓝 + Bento 卡片），新壳在 `web/src/app/Shell.tsx`，页面在 `web/src/app/pages/`
+* 信息架构：**学段优先**（小学/初中/高中）→ 总览 → 知识图谱 → 讲义 → 题库 → 录题 → 组卷
 * 题目：**LaTeX**（界面用 KaTeX 渲染）
 * 目录：**根目录只放"入口"和"数据区"**，一次性产物进 `归档/`——每个目录的职责见 `docs/目录规范.md`
 
@@ -26,12 +28,85 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | 唯一入口 | 管什么 | 绕过的后果 |
 |---|---|---|
 | `amti/store.py` | 分卷存储 | 题库唯一真相是 `题目/*.tex`；另建存储 → 数据不一致 |
-| `amti/latex_ir.py` + `latex_blocks.py` | LaTeX 解析 | 全项目只有这里懂 LaTeX；别处再写解析 → 必然分叉 |
+| `amti/latex_ir.py` + `latex_blocks.py` | LaTeX 解析 + 检索用有损归一化 | 全项目只有这里懂 LaTeX；`math_text()` 只服务搜索，结构化字段仍走 `parse_question`，别处再写解析 → 必然分叉 |
 | `amti/normalize.py` | 规范化 | 全库唯一改题目形态的地方；绕过 → 规范审查失败 |
 | `amti/images.py` | 图片入库 | 唯一处理图片处（内容寻址命名） |
 | `amti/ingest.py` | 录入 | 承诺**存量题目一个字不变**；不要拿它做批量修改 |
+| `amti/knowledge_map.py` | 教材知识地图 | 读 `知识地图.json`；另写一份教材顺序 → 与考点库分叉 |
+| `amti/topics.py` / `amti/topic_export.py` / `amti/lecture_html.py` | 讲义 | 另起一套讲义数据/渲染 → 与专题页分叉 |
+| `amti/lecture_tex.py` | 小初章节讲义 | 小初 content JSON → 与高中同款 elegantbook `.tex` / PDF / manifest；另写一套模板 → 三学段版式分叉 |
+| `amti/diagnostic.py` | 小初诊断卷 | 绕过它自己拼 LaTeX → 与正式试卷渲染分叉 |
+| `amti/open_lectures.py` | 开源小初**素材**（来源/许可追溯） | 读 `数据/开源讲义/manifest.json`；讲义页不再直接读它，另起一套阅读器 → 与讲义页分叉，且容易丢许可/署名 |
+| `amti/readmodel.py` | 题库元数据读模型（派生 SQLite） | 只用于列表筛选/排序/分页；真相仍是 `题目/*.tex`，未就绪时回退旧路径 |
+| `amti/lite_cache.py` | 列表块 IR 缓存（派生 SQLite） | 按 content_hash 命中；删了可重建，不能当题库真相 |
+| `amti/content_store.py` | 题目内容读模型（派生 SQLite） | 详情主键读 + 公式召回；真相仍是 `题目/*.tex`，删了可重建，未就绪回退 `store.find` |
+| `amti/recall.py` | 检索召回（中文 FTS / 公式） | 列表与组卷共用；在路由里各写一套 → 两边搜到的不是同一批题 |
+| `amti/similar.py` | 相似题（派生索引） | 同考点 / 公式 / 题型；按卷签名缓存，真相仍是 `题目/*.tex` |
+| `amti/duplicates.py` | 重复题标注（派生分组） | 复用 `dedup` 指纹；只提示不合并，真相仍是 `题目/*.tex` |
+| `amti/search.py` | 相关度打分 + 公式等价写法 | `math_forms()` 是查询扩展；新增写法规则只改这里 |
+| `amti/web/query.py` | 题目筛选条件（列表与组卷共用） | 两边各写一套 → 列表筛到的和组卷池子不是同一批题；改筛选口径只改这里 |
+| `amti/review.py` | 审阅状态、风险队列、分层抽样、Wilson CI | 另写一套复核口径 → 体检页数字再次失真；`reviewed_at` 不得再兼作“编辑过” |
 
 > 新增功能前先问：这件事是不是已经有唯一入口了？有 → 改那个模块；没有 → 才新建。
+
+### 内容库与公式检索
+
+`数据/缓存/content.sqlite` 是**派生**的题目内容库：按 key 存原始题块（压缩），
+详情页主键读约 2ms；还存 `math_strict/math_loose` 两列供公式召回，
+`math_q` 只存题面（题干/选项/答案，不含解析）供相似题用，
+`block_hash` 用于重建时按题块复用旧行的压缩 body 和 math 三列。
+卷签名（mtime+size）变了就失效，读时回退 `store.find()` 并后台重建。
+
+重建是**增量**的：题块 hash 没变的行直接复用，只有改过的题跑 `math_text`。
+实测 31,505 道：全量 11s，改一道题后约 1s。改 `math_text()` 规则时**必须
+bump `SCHEMA`**，否则旧行会按旧规则留下。
+
+```bash
+python3 -m amti.content_store status   # 行数 / 大小 / 是否 current
+python3 -m amti.content_store build    # 同步重建（约 11 秒 / 31k 题）
+python3 -m amti.content_store clear    # 删掉，下次读自动重建
+```
+
+检索召回统一走 `amti/recall.py`：纯中文 2 字以上 → FTS5；公式 → 内容库
+`math_*`（`cosB`、`cos B`、`\cos(B)` 归一；`1/2` 与 `0.5`、`(x+1)^2` 与
+`x^2+2x+1` 走 SymPy 有界等价）；其余 → 原 `kw_hit`。列表与组卷都从
+`recall()` 拿候选，再交给 `QuestionFilter`，不要各写一套。
+
+> 公式等价只做**写法归一 + 有限代数改写**（分数/小数、展开/因式分解），
+> 不做定理证明；`1/2` 搜不到 `0.5` 说明 SymPy 没装或库没建好，先看
+> `content_store.status()`。
+
+### 相似题
+
+`GET /api/questions/{key}/similar?limit=8` → `{key, items, ready}`。
+
+- 特征：`math_q` 的字符 trigram（IDF 加权 Jaccard）+ 考点 Jaccard + 题型/难度/出处；
+- 索引：`math_q` 倒排，按卷签名缓存；首次约 0.4s，之后单题 <10ms；
+- 内容库没建好时 `ready=false`，前端显示“索引构建中”，**不拿空结果冒充没有相似题**；
+- 详情页“相似题”按钮 → 点一条直接切题。
+
+### 重复题
+
+列表卡片：`meta.duplicate_group` / `meta.dup_of` 存在时标“重复题”。
+详情页“查重”：`amti/duplicates.py` 复用 `dedup` 的题干+选项指纹，合并
+`duplicate_group` / `dup_of` / 完全同指纹三路，只提示，**绝不自动合并**。
+实测 8,005 道 / 3,141 组；首次建组约 2.6s，之后 0.28s。没有组返回
+`n=0, items=[]`，不编造。
+
+
+## 三·五、开源素材与小初章节讲义
+
+小学/初中的**讲义正文**在 `数据/专题/小初/content/*.json`，由 `amti/lecture_tex.py`
+渲染成与高中同款的 elegantbook `.tex`，再走 `amti/lecture_html.py` 出网页版；
+讲义页三学段共用 `web/src/app/TopicsPage.tsx`。
+
+`数据/开源讲义/` 是**来源与许可追溯**：MIT / LPPL 的原文、图片、LICENSE 和署名。
+它不再直接出现在讲义阅读器里；生成小初讲义时只从中取材，并在 `source_note` 与
+页面标题下保留原作者、许可与链接。
+开源素材条目仍要写 `book` / `chapter`，并与 `知识地图.json` 的册/章标题逐字一致；
+不匹配的条目不显示。每篇必须保留：来源仓库、作者、LICENSE、原文与本项目内的署名。
+MIT / LPPL 的内容可以原样整合，但**不能改掉版权声明**，也不能把第三方讲义声称为原创。
+讲义 `source_note` 与页面标题下必须保留这些署名。
 
 ## 四、改数据的规矩
 

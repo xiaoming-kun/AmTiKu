@@ -16,7 +16,7 @@
 import { useSyncExternalStore } from 'react'
 
 export type Mode = 'system' | 'light' | 'dark'
-export type Accent = 'rose' | 'indigo' | 'ocean' | 'emerald' | 'violet' | 'graphite'
+export type Accent = 'aurora' | 'rose' | 'indigo' | 'ocean' | 'emerald' | 'violet' | 'graphite'
 
 /** localStorage 键。**这两个字符串在 index.html 里也出现**，改名要一起改。 */
 const K_MODE = 'amtiku.theme'
@@ -25,8 +25,9 @@ const K_ACCENT = 'amtiku.accent'
 export const ACCENTS: { id: Accent; label: string; dot: string }[] = [
   // dot 是给选择器里那个小圆点用的实色。写死而不是读 CSS 变量：
   // 下拉要**同时**展示六种颜色，读变量只能读到当前那一种。
+  { id: 'aurora',   label: '系统蓝', dot: '#0a84ff' },
+  { id: 'indigo',   label: '学院蓝', dot: '#0071e3' },
   { id: 'rose',     label: '玫粉',   dot: '#ce338a' },
-  { id: 'indigo',   label: '靛蓝',   dot: '#4f5bd5' },
   { id: 'ocean',    label: '湖蓝',   dot: '#2b7fa8' },
   { id: 'emerald',  label: '翠绿',   dot: '#2b8355' },
   { id: 'violet',   label: '紫罗兰', dot: '#8b46c4' },
@@ -40,7 +41,7 @@ function readMode(): Mode {
     const v = localStorage.getItem(K_MODE)
     if (v && (MODES as string[]).includes(v)) return v as Mode
   } catch { /* 隐私模式下 localStorage 会抛，退回默认 */ }
-  return 'system'
+  return 'light'
 }
 
 function readAccent(): Accent {
@@ -48,7 +49,7 @@ function readAccent(): Accent {
     const v = localStorage.getItem(K_ACCENT)
     if (v && ACCENTS.some((a) => a.id === v)) return v as Accent
   } catch { /* 同上 */ }
-  return 'rose'
+  return 'aurora'
 }
 
 /** 系统现在是不是暗色。老 Safari 没有 matchMedia 的 change 事件，

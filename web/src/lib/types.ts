@@ -7,6 +7,23 @@ import type { Block } from '@/lib/render'
 
 export type Flags = Record<string, boolean>
 
+/** 审阅状态。`stale` 不落盘：正文改过、原复核指纹对不上时现算。 */
+export type ReviewInfo = {
+  status: 'pending' | 'approved' | 'needs_fix' | 'flagged' | 'stale'
+  label: string
+  short: string
+  reviewed_at: string
+  reviewed_by: string
+  note: string
+  batch: string
+  reviewed_hash: string
+  stale: boolean
+  /** 0–100，只用于排序；不是对题目正确性的断言。 */
+  risk: number
+  tier: 'high' | 'medium' | 'low'
+  reasons: string[]
+}
+
 export type Q = {
   key: string; type: string; type_label: string; kind: string
   stem: string; options: { label: string; text: string }[]
@@ -16,7 +33,13 @@ export type Q = {
   seq?: number
   used?: number                       // 被导出（试卷/讲义）的次数
   meta: Record<string, any>; hash: string
+  /** 学段：primary / junior / senior（后端按考点现推） */
+  stage?: string
   missing: string[]; flags: Flags
+  /** 有效审阅状态；列表/详情都带。 */
+  review?: ReviewInfo
+  /** 相似题接口附加：0–1 的相似度。 */
+  similarity?: number
 }
 
 /** 保存成功后的统一回调（详情页 → 列表）。
@@ -50,6 +73,7 @@ export type Facets = {
   answer_sources?: { value: string; n: number }[]
   regions?: { value: string; n: number }[]
   reviewed_states?: { value: string; n: number }[]
+  review_states?: { value: string; n: number }[]
 }
 
 /** 基线对比。`内容变化` 是**没登记过的改动**（要警惕）；
@@ -75,4 +99,46 @@ export type ExportResult = {
   page_stats?: { page: number; fill_pct: number; blank_cm: number; empty: boolean }[]
   warnings?: string[]
   question_pages?: Record<string, string[]>
+}
+
+/** 学段驾驶舱的返回结构（`/api/overview`）。 */
+export type Overview = {
+  stage: {
+    key: string; name: string; points: number; books: number
+    chapters: number; edges: number
+  }
+  edition: string
+  updated: string
+  coverage: { points: number; bank: number; diagnostics: number; lectures: number }
+  bank: {
+    total: number
+    types: { label: string; n: number }[]
+    difficulty: { value: string; n: number }[]
+    missing: Record<string, number>
+    untagged_source: number
+    unreviewed: number
+    review?: {
+      pending: number; approved: number; needs_fix: number
+      flagged: number; stale: number; reviewed: number; total: number
+      review_rate: number
+    }
+  }
+  diagnostics: {
+    total: number; points: number
+    levels: { value: string; n: number }[]
+  }
+  lectures: { total: number; points: number }
+  open_lectures?: { total: number; by_stage: Record<string, number> }
+  papers: {
+    total: number
+    recent: { name: string; title: string; kind: string; n: number; at: string }[]
+  }
+  stages: {
+    key: string; name: string; points: number
+    bank: number; diagnostics: number; lectures: number; open_lectures?: number
+  }[]
+  tasks: {
+    id: string; label: string; n: number; tone: 'warn' | 'info' | 'ok'
+    page: string; filters?: Record<string, string>; hint: string
+  }[]
 }

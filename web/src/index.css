@@ -26,73 +26,73 @@
       并且都配 soft 底 —— 状态用"底色+文字"成对出现，不靠单色硬顶。
    ══════════════════════════════════════════════════════════════════ */
 @theme {
-  /* ── 灰阶骨架 ── */
-  --color-bg:            oklch(0.9765 0.0025 340);
-  --color-surface:       oklch(1 0 0);
-  --color-surface-2:     oklch(0.988 0.003 345);
-  --color-border:        oklch(0.922 0.006 340);
-  --color-border-strong: oklch(0.862 0.009 340);
-  --color-muted:         oklch(0.963 0.006 345);
-  --color-ink:           oklch(0.225 0.014 340);
-  --color-ink-soft:      oklch(0.435 0.014 340);
-  /* 三级文字原来 0.618：压白底 3.69:1、压 muted 3.31:1，**低于 AA 的 4.5**。
-     它是 10.5px 的小标签（「工作流」「外观」「展开」…），一屏几十个，
-     而目标用户是长时间读题改卷的老师 —— 这一档不该是"看得见就行"。
-     取 0.535 后：surface 5.20 / bg 4.85 / muted 4.66，全部过线，
-     视觉上仍是明显的浅灰，和 ink-soft(0.435 → 8.0:1) 拉得开。
-     ⚠️ 这是浅色下**唯一**动了原有观感的改动；想还原就把这行改回 0.618。 */
-  --color-ink-faint:     oklch(0.535 0.010 340);
+  /* ── 画布与卡片：苹果风的暖白灰，卡片纯白，边界靠 1px 极浅描边 ── */
+  --color-bg:            #f5f5f7;
+  --color-surface:       #ffffff;
+  --color-surface-2:     #fbfbfd;
+  --color-border:        #e5e5ea;
+  --color-border-strong: #d1d1d6;
+  --color-muted:         #f2f2f7;
+  --color-ink:           #1d1d1f;
+  --color-ink-soft:      #6e6e73;
+  --color-ink-faint:     #86868b;
 
-  /* ── 品牌粉：只在选中/主按钮/关键数字出现 ── */
-  --color-brand:        oklch(0.585 0.205 351);
-  --color-brand-deep:   oklch(0.505 0.196 351);
-  --color-brand-soft:   oklch(0.966 0.026 350);
-  --color-brand-line:   oklch(0.885 0.062 351);
-  --color-brand-ink:    oklch(0.498 0.196 351);
+  /* ── 强调色：低饱和靛紫。只出现在选中、链接、关键数字上 ── */
+  --color-brand:        #0071e3;
+  --color-brand-deep:   #0066cc;
+  --color-brand-soft:   #eaf3ff;
+  --color-brand-line:   #b9d9fb;
+  --color-brand-ink:    #0066cc;
+  --color-cyan:         #00a3c4;
+  --color-violet:       #af52de;
+  --color-magenta:      #ff2d55;
 
-  /* ── 语义色 ──
-     has / warn / danger 的亮度不是随手挑的：它们几乎**成对出现**
-     （浅底 soft + 同色文字），所以取值必须让「文字压在自家浅底上」
-     过得了 4.5:1。原来 warn 是 3.14:1、has 3.59:1、danger 4.27:1 ——
-     一屏几十个「缺答案」的琥珀色小标签，其实一直是糊的。 */
-  --color-has:       oklch(0.520 0.125 158);
-  --color-has-soft:  oklch(0.963 0.030 158);
-  --color-has-line:  oklch(0.885 0.060 158);
-  /* gap 同理：它是 `text-gap`（标「缺解析」「缺答案」）的**文字色**，
-     原来 0.640 压自家底只有 2.99:1 —— 比 ink-faint 还差。 */
-  --color-gap:       oklch(0.528 0.012 340);
-  --color-gap-soft:  oklch(0.958 0.005 340);
-  --color-warn:      oklch(0.540 0.145 66);
-  --color-warn-soft: oklch(0.968 0.042 80);
-  --color-warn-line: oklch(0.895 0.075 78);
-  --color-danger:      oklch(0.550 0.196 25);
-  --color-danger-soft: oklch(0.966 0.028 22);
+  /* ── 语义色 ── */
+  --color-has:       #248a3d;
+  --color-has-soft:  #e9f8ee;
+  --color-has-line:  #b7e3c3;
+  --color-gap:       #8e8e93;
+  --color-gap-soft:  #f2f2f7;
+  --color-warn:      #b25000;
+  --color-warn-soft: #fff4e5;
+  --color-warn-line: #ffd9a8;
+  --color-danger:      #d70015;
+  --color-danger-soft: #ffebe9;
 
-  /* ── 「实心」面 & 遮罩 ──
-     这两个是**方向相反**的东西，不能借用 ink：
-     · solid —— 屏幕上少数几个高对比实心块（「加入组卷」按钮、toast）。
-       浅色下是近黑底白字，暗色下必须翻成近白底黑字。
-     · scrim —— 弹层背后那层压暗。浅色下是半透明黑；暗色下 ink 变成
-       近白，直接借用 `bg-ink/25` 会让弹层背景变成一片白雾。 */
-  --color-solid:     oklch(0.225 0.014 340);
-  --color-solid-ink: oklch(1 0 0);
-  --color-scrim:     oklch(0.225 0.014 340 / .25);
+  /* ── 「实心」面 & 遮罩：主按钮是黑，不是品牌色 ── */
+  --color-solid:     #1d1d1f;
+  --color-solid-ink: #ffffff;
+  --color-scrim:     rgb(15 15 20 / .32);
 
-  /* ── 层次：卡片靠明度差 + 极轻投影立起来 ── */
-  --shadow-card: 0 1px 2px oklch(0.3 0.02 340 / .045);
-  --shadow-hover: 0 4px 14px -4px oklch(0.3 0.02 340 / .10), 0 1px 3px oklch(0.3 0.02 340 / .05);
-  --shadow-pop: 0 12px 32px -10px oklch(0.3 0.02 340 / .18), 0 2px 8px oklch(0.3 0.02 340 / .06);
-  /* 品牌光晕跟着强调色走，不写死粉色 —— 换主题色时它必须一起换 */
-  --shadow-brand: 0 6px 18px -6px color-mix(in oklab, var(--color-brand) 40%, transparent);
+  /* ── 玻璃、渐变与光 ── */
+  --color-glass:   rgb(255 255 255 / .72);
+  --color-glass-2: rgb(255 255 255 / .52);
+  --grad-primary:  linear-gradient(180deg, #0a84ff 0%, #0071e3 100%);
+  --grad-text:     linear-gradient(135deg, #0071e3 0%, #af52de 100%);
+  --grad-aurora:   radial-gradient(55% 70% at 8% 0%, rgb(10 132 255 / .10), transparent 60%),
+                   radial-gradient(50% 65% at 92% 0%, rgb(175 82 222 / .08), transparent 62%),
+                   radial-gradient(55% 60% at 55% 100%, rgb(255 45 85 / .04), transparent 60%);
+  --grad-surface:  linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
+  --grad-hero:     linear-gradient(135deg, #f5f5f7 0%, #eef6ff 52%, #f6f1ff 100%);
+  --glow-cyan:     0 18px 40px -26px rgb(0 113 227 / .28);
+  --glow-violet:   0 18px 40px -26px rgb(175 82 222 / .20);
 
-  --radius-card: 12px;
-  --radius-pop: 14px;
+  /* ── 层次：很轻的投影，靠留白和圆角撑住 ── */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / .035), 0 18px 44px -32px rgb(0 0 0 / .18);
+  --shadow-hover: 0 24px 64px -36px rgb(0 0 0 / .24), 0 1px 0 rgb(255 255 255 / .8) inset;
+  --shadow-pop: 0 32px 80px -24px rgb(0 0 0 / .24);
+  --shadow-brand: 0 8px 20px -12px rgb(0 113 227 / .42);
 
-  /* ── 缓动：一套到底，不要每个组件各写一条 ── */
+  --radius-card: 20px;
+  --radius-pop: 24px;
+  --radius-btn: 12px;
+
+  /* ── 缓动 ── */
   --ease-soft: cubic-bezier(.22, .61, .36, 1);
   --ease-spring: cubic-bezier(.34, 1.32, .64, 1);
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC",
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+               "Helvetica Neue", "Segoe UI", "PingFang SC", "Noto Sans SC",
                "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
 }
@@ -111,85 +111,105 @@
       层次主要靠描边承担，投影只补一点点。
    ═════════════════════════════════════════════════════════════════ */
 .dark {
-  /* 灰阶骨架：surface 比 bg 亮，卡片才立得起来 */
-  --color-bg:            oklch(0.185 0.008 340);
-  --color-surface:       oklch(0.228 0.009 340);
-  --color-surface-2:     oklch(0.205 0.008 342);
-  --color-border:        oklch(0.310 0.011 340);
-  --color-border-strong: oklch(0.385 0.013 340);
-  --color-muted:         oklch(0.268 0.010 342);
-  --color-ink:           oklch(0.945 0.004 340);
-  --color-ink-soft:      oklch(0.780 0.008 340);
-  /* 三级文字在暗色下必须比"数值相等"更亮。
-     浅色里 ink-faint 只有 3.3:1（灰字压白底），那是**刻意的浅灰**，不刺眼；
-     暗色里同样的数值却是**浅灰字压近黑底** —— 小字号会糊、还带光晕感，
-     用户直接反馈「看不太清楚了」。所以这里不照抄浅色的对比度，
-     按「压在它会出现的最亮底（muted 0.268）上 ≥5.5:1」重新解了一个值。
-     层次仍是三层：压 surface 时 ink 14.5 / ink-soft 8.5 / ink-faint 6.3。 */
-  --color-ink-faint:     oklch(0.700 0.010 340);
+  /* 深空：不是把白底调暗，而是重新解的一套冷黑。 */
+  --color-bg:            #000000;
+  --color-surface:       #1c1c1e;
+  --color-surface-2:     #2c2c2e;
+  --color-border:        #38383a;
+  --color-border-strong: #48484a;
+  --color-muted:         #2c2c2e;
+  --color-ink:           #f5f5f7;
+  --color-ink-soft:      #a1a1a6;
+  --color-ink-faint:     #8e8e93;
 
-  /* 品牌粉：暗底上提一点，但没提到白字压不住的程度 */
-  --color-brand:        oklch(0.580 0.205 351);
-  --color-brand-deep:   oklch(0.500 0.197 351);
-  --color-brand-soft:   oklch(0.285 0.057 351);
-  --color-brand-line:   oklch(0.405 0.098 351);
-  --color-brand-ink:    oklch(0.820 0.107 351);
+  /* 极光主色：青 → 靛 → 紫 */
+  --color-brand:        #0a84ff;
+  --color-brand-deep:   #0071e3;
+  --color-brand-soft:   rgb(10 132 255 / .16);
+  --color-brand-line:   rgb(10 132 255 / .38);
+  --color-brand-ink:    #64b5ff;
+  --color-cyan:         #64d2ff;
+  --color-violet:       #bf5af2;
+  --color-magenta:      #ff375f;
 
-  /* 语义色：整对翻转（浅底→深底，深字→浅字） */
-  --color-has:       oklch(0.760 0.130 158);
-  --color-has-soft:  oklch(0.280 0.048 158);
-  --color-has-line:  oklch(0.395 0.075 158);
-  /* gap 也是**当文字用的**（`text-gap` 标「缺解析」「缺答案」），
-     不是纯装饰 —— 所以它得和 ink-faint 同档，不能停在 0.600（压自家底只有 3.99:1）。 */
-  --color-gap:       oklch(0.660 0.010 340);
-  --color-gap-soft:  oklch(0.255 0.008 340);
-  --color-warn:      oklch(0.815 0.130 78);
-  --color-warn-soft: oklch(0.305 0.055 72);
-  --color-warn-line: oklch(0.420 0.080 72);
-  --color-danger:      oklch(0.730 0.150 25);
-  --color-danger-soft: oklch(0.295 0.070 25);
+  /* 语义色：整对翻转（深底 + 亮字） */
+  --color-has:       #30d158;
+  --color-has-soft:  rgb(48 209 88 / .14);
+  --color-has-line:  rgb(48 209 88 / .34);
+  --color-gap:       #8e8e93;
+  --color-gap-soft:  #2c2c2e;
+  --color-warn:      #ff9f0a;
+  --color-warn-soft: rgb(255 159 10 / .14);
+  --color-warn-line: rgb(255 159 10 / .34);
+  --color-danger:      #ff453a;
+  --color-danger-soft: rgb(255 69 58 / .14);
 
-  /* 实心块翻向：近黑底白字 → 近白底黑字 */
-  --color-solid:     oklch(0.900 0.005 340);
-  --color-solid-ink: oklch(0.200 0.010 340);
-  /* 遮罩是"压暗"，两个模式下都得是黑，只是暗色下要更实 */
-  --color-scrim:     oklch(0.050 0 0 / .62);
+  /* 实心块翻向：深底亮字 → 亮底深字 */
+  --color-solid:     #f8fafc;
+  --color-solid-ink: #070b14;
+  --color-scrim:     rgb(2 4 10 / .72);
 
-  --shadow-card:  0 1px 2px oklch(0 0 0 / .30);
-  --shadow-hover: 0 4px 14px -4px oklch(0 0 0 / .45), 0 1px 3px oklch(0 0 0 / .30);
-  --shadow-pop:   0 12px 32px -10px oklch(0 0 0 / .60), 0 2px 8px oklch(0 0 0 / .35);
+  /* 玻璃 */
+  --color-glass:   rgb(11 16 28 / .66);
+  --color-glass-2: rgb(17 24 39 / .55);
+  --grad-primary:  linear-gradient(180deg, #0a84ff 0%, #0071e3 100%);
+  --grad-text:     linear-gradient(135deg, #64b5ff 0%, #bf5af2 100%);
+  --grad-aurora:   radial-gradient(55% 70% at 12% 8%, rgb(10 132 255 / .12), transparent 60%),
+                   radial-gradient(50% 65% at 88% 12%, rgb(191 90 242 / .10), transparent 62%),
+                   radial-gradient(55% 60% at 55% 100%, rgb(255 55 95 / .06), transparent 60%);
+  --grad-surface:  linear-gradient(180deg, #1f1f21, #1a1a1c);
+  --glow-cyan:     0 0 30px rgb(10 132 255 / .28);
+  --glow-violet:   0 0 30px rgb(191 90 242 / .24);
 
-  /* 让浏览器知道该用暗色的滚动条 / 表单控件 / 默认背景 */
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / .05), 0 12px 32px -20px rgb(0 0 0 / .9);
+  --shadow-hover: inset 0 1px 0 rgb(255 255 255 / .08), 0 28px 68px -26px rgb(0 0 0 / .98),
+                  0 0 0 1px rgb(10 132 255 / .16);
+  --shadow-pop: 0 30px 90px -24px rgb(0 0 0 / .95), 0 0 0 1px rgb(255 255 255 / .08);
+  --shadow-brand: 0 0 34px rgb(10 132 255 / .24);
+  --radius-card: 20px;
+  --radius-pop: 24px;
+  --radius-btn: 12px;
+
   color-scheme: dark;
 }
 
 /* ══ 主题色 ═════════════════════════════════════════════════════════
-   默认是玫粉（写在上面的 @theme 里）。另外五套**强调色**只换品牌那一族
-   变量，骨架灰阶和语义色一个都不动 —— 换主题不该把「有/缺/警示」的颜色
-   也一起换掉。
-
-   每套色按 hue 单独解了亮度：蓝绿在 oklch 里同亮度下的白字对比度比粉色
-   低，所以它们的 L 要更低（湖蓝 0.557、翠绿 0.547）。给所有色相套同一个
-   L 的话，白字压在翠绿上只有 3.9:1。
+   默认是 BoardUI 的蓝（写在上面的 @theme 里）。另外五套**强调色**只换
+   品牌那一族变量，骨架灰阶和语义色一个都不动 —— 换主题不该把
+   「有/缺/警示」的颜色也一起换掉。
 
    选择器写成 `.dark[data-accent=x]`（两个类）而不是 `.dark`（一个类），
-   暗色 × 主题色才叠得对。MathBank 那份实现里 `.dark` 和 `.theme-x` 同权重、
-   且 `.dark` 声明在后，结果**暗色下六套主题全变成同一个灰**，只有下拉里的
-   小圆点不一样。这里不重蹈。
+   暗色 × 主题色才叠得对。
    ═════════════════════════════════════════════════════════════════ */
+/* 默认：BoardUI 蓝。品牌色只用于链接/选中，主按钮走蓝色渐变。 */
+:root[data-accent="aurora"] {
+  --color-brand:      #0071e3;
+  --color-brand-deep: #0066cc;
+  --color-brand-soft: #eaf3ff;
+  --color-brand-line: #b9d9fb;
+  --color-brand-ink:  #0066cc;
+}
+.dark[data-accent="aurora"] {
+  --color-brand:      #0a84ff;
+  --color-brand-deep: #0071e3;
+  --color-brand-soft: rgb(10 132 255 / .16);
+  --color-brand-line: rgb(10 132 255 / .38);
+  --color-brand-ink:  #64b5ff;
+}
+
 :root[data-accent="indigo"] {
-  --color-brand:      oklch(0.576 0.190 277);
-  --color-brand-deep: oklch(0.505 0.182 277);
-  --color-brand-soft: oklch(0.966 0.016 277);
-  --color-brand-line: oklch(0.885 0.056 277);
-  --color-brand-ink:  oklch(0.498 0.182 277);
+  --color-brand:      #2563eb;
+  --color-brand-deep: #1d4ed8;
+  --color-brand-soft: #eff6ff;
+  --color-brand-line: #bfdbfe;
+  --color-brand-ink:  #1d4ed8;
 }
 .dark[data-accent="indigo"] {
-  --color-brand:      oklch(0.576 0.190 277);
-  --color-brand-deep: oklch(0.500 0.182 277);
-  --color-brand-soft: oklch(0.285 0.053 277);
-  --color-brand-line: oklch(0.405 0.091 277);
-  --color-brand-ink:  oklch(0.820 0.091 277);
+  --color-brand:      #3b82f6;
+  --color-brand-deep: #2563eb;
+  --color-brand-soft: #172554;
+  --color-brand-line: #1e3a8a;
+  --color-brand-ink:  #93c5fd;
 }
 
 :root[data-accent="ocean"] {
@@ -589,6 +609,12 @@ body {
 }
 .nav-item[data-on='1']::before { height: 18px; }
 
+/* 组件类（.icon-btn / .b-btn）自己带 display，Tailwind 的 hidden 会被
+   组件层的同优先级规则盖掉；手机端要彻底收起时用这个显式开关。 */
+@media (max-width: 639px) {
+  .mobile-hide { display: none !important; }
+}
+
 /* 尊重系统的「减少动态效果」——这不是可选项，是无障碍要求 */
 @media (prefers-reduced-motion: reduce) {
   .anim-fade-up, .anim-fade-in, .anim-pop, .anim-slide-r,
@@ -602,3 +628,155 @@ body {
   .card-lift:hover { transform: none; }
   .nav-item::before { transition: none; }
 }
+
+/* ── 网页版讲义（tex → HTML + KaTeX）────────────────────────────
+   纸张式排版：白底深字，定义/方法/核心思路各一种底色，
+   和讲义原来的 elegantbook 观感对齐；公式由 KaTeX 渲染。 */
+.lecture {
+  max-width: var(--lec-width, 900px); margin: 0 auto;
+  background: #f8f5ee; color: #1d2433; border-radius: 16px;
+  padding: 30px 36px 36px; line-height: var(--lec-leading, 1.8);
+  font-size: var(--lec-font, 14px);
+  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+}
+.lecture h1 { font-size: 21px; text-align: center; color: #1d4e79; margin: 0 0 18px; font-weight: 700; }
+.lecture h2 { font-size: 17px; color: #1d4e79; margin: 24px 0 10px; padding-bottom: 4px;
+  border-bottom: 1px solid #e4ecf4; font-weight: 700; }
+.lecture h3 { font-size: 15px; color: #26648f; margin: 18px 0 8px; font-weight: 700; }
+.lecture p { margin: 8px 0; }
+.lecture .definition, .lecture .theorem, .lecture .proposition, .lecture .example {
+  border: 1px solid; border-radius: 6px; padding: 8px 13px; margin: 13px 0;
+}
+.lecture .definition { border-color: #9ed3c6; background: #f2fbf8; }
+.lecture .theorem { border-color: #bcd7ee; background: #f4f9fe; }
+.lecture .proposition { border-color: #d9c6ee; background: #faf6fe; }
+.lecture .example { border-color: #e2d3a8; background: #fdfaf0; }
+.lecture .introduction { border: 1px solid #c9dcee; background: #eef5fb;
+  border-radius: 6px; padding: 10px 15px; margin: 12px 0; }
+.lecture .env-title { font-weight: 700; margin-bottom: 6px; color: #0f6e62; font-size: 13.5px; }
+.lecture .theorem .env-title { color: #1d4ed8; }
+.lecture .proposition .env-title { color: #7c3aed; }
+.lecture .example .env-title { color: #a16207; }
+.lecture .introduction .env-title { color: #1d4ed8; }
+.lecture table { border-collapse: collapse; width: 100%; margin: 13px 0; font-size: 13px; }
+.lecture th, .lecture td { border: 1px solid #d7e0ea; padding: 5px 9px; text-align: left; vertical-align: top; }
+.lecture th { background: #f2f6fa; }
+.lecture caption { caption-side: top; padding: 3px 0 6px; color: #4b5563; font-size: 12.5px; }
+.lecture .lec-fig { display: block; margin: 14px auto; max-width: 460px; width: auto; height: auto; }
+.lecture .math.display { display: block; overflow-x: auto; margin: 9px 0; }
+.lecture .katex { color: inherit; font-size: 1.04em; }
+.lecture ol, .lecture ul { margin: 7px 0 7px 1.5em; }
+.lecture li { margin: 3px 0; }
+.lecture .anchor { display: none; }
+
+/* 讲义 + 练习合成一张纸：网页版讲义模式下的统一底色 */
+.lecture-paper {
+  max-width: var(--lec-paper, 920px); margin: 0 auto; border-radius: 18px; overflow: hidden;
+  border: 1px solid transparent;
+  background: linear-gradient(#f8f5ee, #f8f5ee) padding-box,
+              linear-gradient(135deg, rgb(34 211 238 / .55), rgb(139 92 246 / .35), transparent 65%) border-box;
+  box-shadow: 0 34px 90px -34px rgb(0 0 0 / .85), 0 0 0 1px rgb(255 255 255 / .04);
+}
+.lecture-paper .lecture { max-width: none; margin: 0; border-radius: 0; }
+@media (max-width: 640px) {
+  .lecture { padding: 20px 16px 24px; border-radius: 12px; }
+  .lecture-paper { border-radius: 12px; }
+  .lecture-practice { padding: 2px 16px 22px; }
+  .lecture .lec-extra-row { gap: 7px; }
+}
+.lecture-practice { padding: 2px 36px 34px; color: #1f2430; background: #f8f5ee; }
+.lecture-practice .text-ink, .lecture-practice .text-ink-soft { color: #1f2430 !important; }
+.lecture-practice .text-ink-faint { color: #6b7686 !important; }
+.lecture-practice .bg-surface { background: #fbfdff !important; }
+.lecture-practice .bg-muted { background: #eef2f7 !important; }
+.lecture-practice .border-border { border-color: #e3ebf3 !important; }
+.lecture-practice h3 { color: #1d4e79; }
+.lecture-practice .q-stem { color: #1f2430; }
+
+/* 打印：只留讲义纸面，侧栏/工具栏/按钮不进入 PDF */
+@media print {
+  body * { visibility: hidden !important; }
+  .lecture-print-area, .lecture-print-area * { visibility: visible !important; }
+  .lecture-print-area {
+    position: absolute !important; inset: 0 !important;
+    width: 100% !important; max-width: none !important;
+    border: 0 !important; box-shadow: none !important;
+    background: #fff !important;
+  }
+  .no-print { display: none !important; }
+  .lecture { box-shadow: none !important; border-radius: 0 !important; }
+}
+
+/* 讲义末尾的「易错点与总结」 */
+.lecture .lec-extra-row { display: flex; gap: 10px; margin: 10px 0; align-items: flex-start; }
+.lecture .lec-tag { flex: none; border: 1px solid #cfe0ee; background: #eef5fb; color: #1d4e79;
+  border-radius: 4px; padding: 1px 8px; font-size: 12px; line-height: 1.6; }
+.lecture .lec-extra-row:first-of-type .lec-tag { border-color: #f0d6a8; background: #fdf6e7; color: #a16207; }
+.lecture .lec-extra-list { margin: 0; padding-left: 18px; list-style: disc; }
+.lecture .lec-extra-list li { margin: 3px 0; }
+.lecture .lec-rel { margin-top: 14px; padding-top: 10px; border-top: 1px dashed #d8e3ee;
+  color: #4b5563; font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lecture .lec-rel span { color: #8a97a6; margin-left: 4px; }
+.lecture .lec-rel i { font-style: normal; background: #eef3f8; border-radius: 4px; padding: 1px 8px; }
+
+/* 网页版讲义的「教材溯源」框（LaTeX 里是 tcolorbox） */
+.lecture .tcolorbox { border: 1px solid #b9cfe8; background: #f4f8fd; border-radius: 6px;
+  padding: 10px 14px; margin: 14px 0; }
+.lecture .tcolorbox h2 { font-size: 13.5px; margin: 0 0 6px; padding: 0; border: 0; color: #1d4e79; }
+.lecture .tcolorbox p { margin: 4px 0; }
+
+/* ── 开源小初讲义阅读版式 ───────────────────────────────────────
+   内容来自 MIT / LPPL 的开源项目，阅读页保持"纸"的白底深字，
+   不跟深色主题翻转——长文阅读优先。 */
+.open-lecture {
+  max-width: 860px;
+  margin: 0 auto;
+  background: #ffffff;
+  color: #1f2430;
+  border: 1px solid #ececf0;
+  border-radius: 20px;
+  padding: 38px 46px 46px;
+  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  font-size: 15px;
+  line-height: 1.95;
+  box-shadow: 0 1px 2px rgb(16 16 18 / .035), 0 24px 60px -40px rgb(16 16 18 / .25);
+}
+@media (max-width: 760px) {
+  .open-lecture { padding: 24px 18px 30px; border-radius: 16px; font-size: 14px; }
+}
+.open-lecture h1, .open-lecture h2, .open-lecture h3,
+.open-lecture h4 { font-family: var(--font-sans); color: #0f172a; letter-spacing: -.02em; }
+.open-lecture h1 { font-size: 26px; line-height: 1.35; margin: 0 0 22px; font-weight: 700; }
+.open-lecture h2 { font-size: 19px; margin: 34px 0 12px; padding-bottom: 7px;
+  border-bottom: 1px solid #eef2f7; font-weight: 650; }
+.open-lecture h3 { font-size: 16px; margin: 24px 0 8px; font-weight: 650; }
+.open-lecture p { margin: 12px 0; }
+.open-lecture strong { color: #0f172a; font-weight: 650; }
+.open-lecture ul, .open-lecture ol { margin: 12px 0; padding-left: 1.7em; }
+.open-lecture li { margin: 5px 0; }
+.open-lecture blockquote {
+  margin: 18px 0; padding: 12px 18px;
+  border-left: 3px solid #bfdbfe; border-radius: 0 12px 12px 0;
+  background: #f8faff; color: #334155;
+}
+.open-lecture blockquote p { margin: 4px 0; }
+.open-lecture img {
+  display: block; max-width: 100%; height: auto; margin: 20px auto;
+  border: 1px solid #ececf0; border-radius: 12px; background: #fff;
+}
+.open-lecture hr { border: 0; border-top: 1px solid #eef2f7; margin: 30px 0; }
+.open-lecture a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 3px; }
+.open-lecture table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+.open-lecture th, .open-lecture td { border: 1px solid #e5e9f2; padding: 7px 10px; text-align: left; }
+.open-lecture th { background: #f8faff; font-family: var(--font-sans); font-weight: 600; }
+.open-lecture code {
+  font-family: var(--font-mono); font-size: .92em;
+  background: #f1f5f9; border-radius: 5px; padding: 1px 5px;
+}
+.open-lecture pre {
+  background: #0f172a; color: #e2e8f0; border-radius: 12px;
+  padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.7;
+}
+.open-lecture pre code { background: transparent; padding: 0; color: inherit; }
+.open-lecture .math.inline { white-space: nowrap; }
+.open-lecture .math.inline .katex { font-size: 1.02em; }

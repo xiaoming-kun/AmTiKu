@@ -5,6 +5,93 @@
 
 ---
 
+## v3.0.0 · 内容库 / 检索与学段工作台（2026-11-09）
+
+本版汇总此前未发布的**学段工作台、讲义、审阅、AI 录题**等改动，以及本轮
+**内容库 / 公式检索 / 相似题 / 重复题**。
+
+### 新增
+
+* `amti/content_store.py`：派生内容库（SQLite）。详情主键读约 **2ms**；
+  `math_strict/math_loose` 供公式召回，`math_q` 只存题面（供相似题），
+  `block_hash` 供增量重建（全量 11s，改一道题约 1s）。
+* `amti/recall.py`：统一召回（中文 FTS / 公式 / 混合），列表与组卷共用。
+* 公式检索：`cosB`、`cos B`、`\cos(B)` 归一；`1/2` ↔ `0.5`、
+  `(x+1)^2` ↔ `x^2+2x+1` 走 SymPy 有界等价。
+* `amti/similar.py` + `/api/questions/{key}/similar`：相似题；详情页入口。
+* `amti/duplicates.py` + `/api/questions/{key}/duplicates`：重复题标注/查重，
+  合并 `duplicate_group` / `dup_of` / 完全同指纹三路，**只提示不合并**。
+* Windows 打包补 `--collect-all sympy`；`requirements.txt` 增 `sympy`。
+
+### 验证
+
+* `python3 amti.py accept`：四层全绿（31,505 题，快照内容变化 0）。
+* `python3 测试/接口测试.py`：96/96 通过。
+* `cd web && npx tsc --noEmit ... && npm run build`：通过。
+* 详情 1.47s → 2.1ms；内容库改一道题重建 11.1s → 1.04s（仅 2 次 `math_text`）。
+
+### 未完成
+
+* 搜索语法（`amti/query_syntax.py`）与搜索历史：下一步接入，未包含在本版提交。
+
+---
+
+## 未发布 · 审阅工作台（2026-11-07）
+
+### 新增
+
+* 左侧「管理 → 审阅」：风险队列、分层抽样、通过/需修改/存疑、复核人/备注、
+  抽样批次错误率 + Wilson 95% CI、当前清单 CSV。
+* `/api/review/stats`、`/api/review/queue`、`/api/review/sample`、`/api/review/decision`。
+* 审阅卡片右上角「去题库改源码」：跳到题库详情并自动打开源码编辑器；
+  改完保存后原复核会因正文变化自动标成 `stale`。
+* `amti/review.py`：`review_status` / `reviewed_hash` 与 `edited_at` 分离；
+  正文变化后旧复核自动派生 `stale`；风险规则全部带原因，不做黑箱评分。
+* `amti/review.py` 自检加入 `amti.py accept`；接口回归新增 queue/sample/decision/stale 用例。
+
+### 修复
+
+* **“已复核 212”虚高**：旧代码改答案/解析时会顺手写 `reviewed_at`，
+  212 道里 210 道只是编辑自动戳。现在按 `reviewed_at == edited_at` 视为 stale；
+  真正独立复核约 2 道。体检页的“待审题”改为有效待审数。
+* **重复题筛选恒为 0**：读模型/回退路径读 `duplicate_group`，数据实际写的是
+  `dup_of`；已统一，`quality=dup` 现在返回 4,883 道同型/重复题。
+* **解析来源不可见**：详情页只对 `solution_source=human` 显示“人工录的”，
+  现在答案/解析/考点/难度四个来源都显示徽标，`无` 不再冒充“历史存量”。
+
+### 修复 · 卷面排版（2026-11-07）
+
+用户报「题目输出的时候，有时候排版很难看」。抽查 60 题/份的真实卷子后，修了四处：
+
+* **选择题的（　）单独掉到下一行**（约一半选择题）：exam-zh 默认
+  `paren/type=hfill` 会把放不下的括号推到下一行最右侧，孤零零一个。
+  改成 `paren/type=none`；xeCJK 在 `）` 与 `（` 之间插的胶也是断点，
+  所以括号前再加 `\unskip\nobreak\hskip 0.2em`，60 题里 0 处再发生。
+* **配图左对齐贴着页边**（库里 2690 道带图题，只有 86 道自己写了 `center`）：
+  独立成行的 `\includegraphics` 统一包 `center`（表格单元格里不包——那里是
+  LR 模式，包了会 `Not allowed in LR mode` 编译失败），并加 `0.32\textheight`
+  高度上限。句子中间/选项里的图原样不动；并排的几张图也算"独立成行"。
+* **四个图选项把题拆到两页**：选项图 2×2 时整块 8–12cm，6 行的预留挡不住，
+  出现过"题干和 A/B 在这页、C/D 从下一页开头"。图选项 ≥3 个时把每张图宽压到
+  `0.30\linewidth`，并按半页预留；节标题也跟首题一起留，不再孤零零留在页底。
+* **选项撑满整行**：`A. 1  B. 2  C. 3  D. 4` 被摊到四个 4cm 宽的格子里。
+  把"最终列宽"改成 `min(模板列宽, 自然最大宽度)`：短选项紧排，长选项照旧折行
+  （只取自然宽度会让 245 字宽的长选项冲出纸面 518pt——实测踩过）。
+* **解答题留白导致页底两块白**：`\vspace*{5cm}` 改成
+  `5cm plus 1fill minus 0.8cm`——页底剩余纸面归入作答区，且差一两厘米的
+  两道大题能挤进同一页（实测 12 页的卷子 11 页）。
+
+### 验证
+
+* `python3 -m amti.review`：18/18。
+* `python3 测试/接口测试.py`：新增审阅用例；全量回归以实际输出为准。
+* 排版：`pytest 测试/接口测试.py -k layout`（新增 `test_pdf_layout_bracket_and_figure`：
+  括号前 `\unskip\nobreak`、独立配图居中、`0.32\textheight` 上限）；另用 60 题/份的
+  卷子逐页看图，括号 0 处单独成行、配图居中，含表格图的 46 道题整份可编译。
+* `python3 amti.py accept`：四层全绿（接口回归含一次审阅写库并还原）。
+* `cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run build`。
+* 浏览器走查 `?view=review`：遮罩/决定/下一题/统计/CSV 正常。
+
 ## v2.0.0 · 首个双平台发行版（2026-11-05）
 
 > 破坏性：**知识清单 / 考点本功能整体下线**。其余功能不变。

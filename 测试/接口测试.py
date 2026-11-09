@@ -63,11 +63,31 @@ def test_limit_under_min_rejected():
 
 
 def test_list_is_lite_but_stem_present():
-    """列表瘦身（审查报告 💡#3）：只带题干块 IR，答案/解析留给详情。"""
+    """列表瘦身：题干 + 答案块留下，长解析仍留给详情。
+
+    答案块很小，却是卡片「显示答案」的必需数据；不带它就会退化成
+    每题一次 /answer 请求（公式题尤其慢）。解析块仍然不带。
+    """
     it = client.get("/api/questions?limit=1").json()["items"][0]
     assert it.get("lite") is True
     assert "stem" in it["blocks"] and it["blocks"]["stem"], "题干块不能为空"
-    assert "answer" not in it["blocks"] and "solution" not in it["blocks"]
+    assert "answer" in it["blocks"], "答案块要随列表带下来"
+    assert "solution" not in it["blocks"], "解析块仍留给详情"
+
+
+def test_answer_blocks_endpoint_for_list_preview():
+    """列表「显示答案」只取答案块；公式答案不能被前端当源码显示。"""
+    key = client.get("/api/questions?limit=1").json()["items"][0]["key"]
+    r = client.get(f"/api/questions/{_enc(key)}/answer")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["key"] == key
+    assert isinstance(d["blocks"], list) and d["blocks"], d
+    # 详情路由不能被更具体的 /answer 抢掉
+    assert client.get(f"/api/questions/{_enc(key)}").status_code == 200
+    # 列表 lite 也带答案块：卡片「显示」不需要再逐题发请求
+    items = client.get("/api/questions?limit=10").json()["items"]
+    assert any((x.get("blocks") or {}).get("answer") for x in items), "列表缺少答案块"
 
 
 def test_detail_has_full_blocks():
@@ -104,6 +124,117 @@ def test_facets_shape():
     assert any(p["value"].startswith("1.1") for p in d["points"])
     # 出处（卷别）也要有计数——否则「出处」筛选项没有数据源
     assert d["sources"] and all(x["value"] and "n" in x for x in d["sources"])
+
+
+def test_map_shape():
+    r"""知识地图：三学段齐全、按教材顺序、高中节点从考点库取名字。
+
+    客户提的第一条是「没有小学初中的知识点」——这个接口就是那条的交付物，
+    所以节点数、学段、教材顺序都要能被回归测住。
+    """
+    d = client.get("/api/map").json()
+    stages = {s["key"]: s for s in d["stages"]}
+    assert set(stages) == {"primary", "junior", "senior"}, stages.keys()
+    assert stages["primary"]["n"] >= 250
+    assert stages["junior"]["n"] >= 150
+    assert stages["senior"]["n"] == 152            # 与 知识点.json 的考点数一致
+    # 教材顺序：小学按 1→6 年级、上→下 册排
+    books = stages["primary"]["books"]
+    assert [b["grade"] for b in books] == sorted(b["grade"] for b in books)
+    # 高中节点必须补出名称/星级（只存 id 会露馅成空标题）
+    first = stages["senior"]["books"][0]["chapters"][0]["points"][0]
+    assert first["id"] and first["title"] and "stars" in first
+    # 小学知识点必须带一句话说明，否则界面只剩一串光秃秃的名词
+    p = stages["primary"]["books"][0]["chapters"][0]["points"][0]
+    assert p["id"].startswith("x") and p["note"]
+    # 前后关系：客户第二条反馈就是「图谱要有前置后置」，这里守两件事——
+    # ① 边不能引用不存在的点（否则界面画出断头线）；② 每条边都要有语义。
+    ids = {pt["id"] for s in d["stages"] for b in s["books"]
+           for c in b["chapters"] for pt in c["points"]}
+    edges = d["edges"]
+    assert len(edges) >= 800, len(edges)
+    assert all(e["from"] in ids and e["to"] in ids for e in edges)
+    assert all(e["from"] != e["to"] for e in edges)
+    assert {e["strength"] for e in edges} <= {"hard", "soft"}
+    assert {e["kind"] for e in edges} <= {"prereq", "order"}
+    assert d["stats"]["edges"] == len(edges)
+    assert d["stats"]["covered"] >= 550
+
+
+def test_map_questions():
+    """小学/初中的诊断题：能按知识点取到，题干和答案都不空。"""
+    d = client.get("/api/map").json()
+    pt = next(p for s in d["stages"] for b in s["books"] for c in b["chapters"]
+              for p in c["points"] if p.get("q"))
+    r = client.get("/api/map/questions/" + pt["id"])
+    assert r.status_code == 200, r.text
+    qs = r.json()["qs"]
+    assert qs and all(q.get("prompt") and q.get("answer") for q in qs)
+    assert client.get("/api/map/questions/没有这个点").status_code == 404
+
+
+def test_topics():
+    r"""考点专题：列表、详情（讲义 + 精选题）、讲义 PDF 三件套。"""
+    d = client.get("/api/topics").json()
+    assert d["topics"], "一个专题都没有"
+    t = d["topics"][0]
+    body = client.get("/api/topics/" + t["id"]).json()
+    assert body["topic"]["id"] == t["id"]
+    qs = body["questions"]
+    assert qs and qs[0]["blocks"]["stem"], "精选题没带题干块"
+    assert qs[0]["blocks"].get("answer"), "精选题没带答案块"
+    pdf = client.get("/api/topics/" + t["id"] + "/pdf")
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"].startswith("application/pdf")
+    assert client.get("/api/topics/没有这个专题").status_code == 404
+
+
+def test_open_lectures():
+    """章节讲义：按知识图谱册/章返回，不再按来源分系列。"""
+    d = client.get("/api/open-lectures?stage=primary").json()
+    assert d["total"] == 10, d
+    assert d["unmapped"] == 0, d
+    first_book = d["books"][0]
+    assert first_book["name"] == "二年级下册"
+    chapter = first_book["chapters"][0]
+    assert chapter["chapter"] == "第三单元 万以内数的认识"
+    lid = chapter["lecture"]["id"]
+    detail = client.get(f"/api/open-lectures/{lid}").json()
+    assert detail["map"]["chapter"] == "第三单元 万以内数的认识"
+    assert "位值制" in detail["article_title"]
+
+    import re
+    m = re.search(r'src="(/api/open-lectures/[^"]+/asset/[^"]+)"', detail["html"])
+    if m:
+        asset = client.get(m.group(1))
+        assert asset.status_code == 200, asset.text
+        assert asset.headers["content-type"].startswith("image/"), asset.headers
+
+    j = client.get("/api/open-lectures?stage=junior").json()
+    assert j["total"] == 34, j
+    assert j["unmapped"] == 0 and j["missing_chapters"] == 0, j
+    pairs = {(b["name"], c["chapter"]) for b in j["books"] for c in b["chapters"]}
+    assert ("七年级上册", "第一章 有理数") in pairs
+    assert ("七年级上册", "第二章 有理数的运算") in pairs
+    assert ("八年级上册", "第十四章 全等三角形") in pairs
+    assert ("九年级下册", "第三十四章 随机事件的概率") in pairs
+    concise = [c for b in j["books"] for c in b["chapters"]]
+    assert len(concise) == 34
+    assert all(c["lecture"]["chars"] < 900 for c in concise)
+
+    assert client.get("/api/open-lectures/没有这份").status_code == 404
+
+
+def test_topic_export():
+    """专题导出：讲义 + 练习编成一份 PDF（教师版/学生版）。"""
+    import shutil
+    if not shutil.which("xelatex"):
+        return                      # 没装 LaTeX 的环境跳过：导出本来就依赖它
+    t = client.get("/api/topics").json()["topics"][0]
+    r = client.get(f"/api/topics/{t['id']}/export?answers=0")
+    assert r.status_code == 200, r.text[:300]
+    assert r.headers["content-type"].startswith("application/pdf")
+    assert r.content[:4] == b"%PDF"
 
 
 def test_search_covers_source_and_points():
@@ -665,7 +796,7 @@ def test_source_edit_serializes_metadata_and_body_in_sync():
     """
     import json
     from amti import store
-    from amti.web.server import _source_candidate
+    from amti.web.routers.questions import _source_candidate
 
     key = client.get("/api/questions?has=解析&limit=1").json()["items"][0]["key"]
     tex = client.get(f"/api/questions/{_enc(key)}").json()["tex"]
@@ -887,7 +1018,7 @@ def test_rename_migrates_ledger_and_meta_refs():
       一条对不上就整批不执行；
     - `dup_of` / `also_in` / `merged_keys` 不迁 → 查重提示/孪生题对账指向空。
     """
-    from amti.web import server as srv
+    from amti.web.routers import questions as srv
 
     assert "数据/订正台账.json" in srv._KEY_REF_FILES, "改名落点漏了订正台账"
 
@@ -911,7 +1042,7 @@ def test_migrate_key_refs_rewrites_ledger_json_safely():
     并且**改完仍是合法 JSON**（改坏了宁可不写）。"""
     import json
     import tempfile
-    from amti.web import server as srv
+    from amti.web.routers import questions as srv
 
     d = Path(tempfile.mkdtemp())
     f = d / "台账.json"
@@ -933,7 +1064,7 @@ def test_migrate_key_refs_rewrites_ledger_json_safely():
 def test_retry_on_concurrent_retries_then_succeeds():
     r"""装饰器要真的能接住 `store.ConcurrentWrite` —— 端点里先转成 409 的话它永远接不到。"""
     from amti.store import ConcurrentWrite
-    from amti.web.server import retry_on_concurrent
+    from amti.web.retry import retry_on_concurrent
 
     calls = {"n": 0}
 
@@ -1496,6 +1627,8 @@ def test_batch_patch_stars_roundtrip():
         assert r.status_code == 200, r.text
         j = r.json()
         assert j["changed"] == 1 and j["partial"] is True, j
+        # 没改出处 → 不应有改名映射；字段本身必须存在（前端靠它迁移卷子引用）
+        assert j.get("renames") == [], j
         assert client.get(f"/api/questions/{_enc(key)}").json()["meta"].get("stars") == 1
         # 批量复核：标记 → 取消，和单题接口共用 same reviewed_at
         r = client.post("/api/questions/batch", json={"keys": [key], "reviewed": True})
@@ -1511,6 +1644,10 @@ def test_batch_patch_stars_roundtrip():
 def test_batch_patch_rejects_bad_input():
     key = client.get("/api/questions?limit=1").json()["items"][0]["key"]
     r = client.post("/api/questions/batch", json={"keys": [key], "points": ["9.9.9"]})
+    assert r.status_code == 400, r.text
+    # 考点操作模式只认 replace/add/remove；传错直接 400（这一步不写盘）
+    r = client.post("/api/questions/batch",
+                    json={"keys": [key], "points": [], "point_mode": "swap"})
     assert r.status_code == 400, r.text
     # 正文不能从批量接口进（Pydantic extra=forbid）
     r = client.post("/api/questions/batch", json={"keys": [key], "stem": "改题干"})
@@ -1560,6 +1697,92 @@ def test_reviewed_filter_and_toggle():
             f.unlink(missing_ok=True)
 
 
+def test_review_stats_and_queue():
+    """审阅工作台：统计与队列口径一致，队列只出待审/失效。"""
+    s = client.get("/api/review/stats").json()
+    assert s["total"] >= 17249, s["total"]
+    assert s["reviewed"] == s["approved"] + s["needs_fix"] + s["flagged"]
+    assert s["pending"] == s["total"] - s["reviewed"], (s["pending"], s["total"], s["reviewed"])
+    q = client.get("/api/review/queue", params={"limit": 3}).json()
+    assert q["total"] == s["pending"], (q["total"], s["pending"])
+    assert q["items"], "队列不应该为空"
+    for it in q["items"]:
+        assert it["review"]["status"] in ("pending", "stale"), it["review"]
+        assert 0 <= it["review"]["risk"] <= 100
+        assert isinstance(it["review"]["reasons"], list)
+        assert it["blocks"]["stem"], "审阅要看题干块"
+
+
+def test_review_sample_is_stratified_and_deterministic():
+    a = client.post("/api/review/sample", json={"n": 8, "seed": 123}).json()
+    b = client.post("/api/review/sample", json={"n": 8, "seed": 123}).json()
+    assert a["batch_id"] and a["population"] >= 1
+    assert len(a["items"]) <= 8 and len(a["items"]) == len(b["items"])
+    assert [x["key"] for x in a["items"]] == [x["key"] for x in b["items"]]
+    assert len({x["key"] for x in a["items"]}) == len(a["items"])
+    assert a["strata"] and sum(x["sample"] for x in a["strata"]) == len(a["items"])
+
+
+def test_review_decision_roundtrip_and_stale():
+    """通过 → 写复核指纹；收回 → 回到待审；正文变化 → 派生 stale。"""
+    from amti.review import effective_status
+    from amti.schema import Question
+
+    sample = client.post("/api/review/sample", json={"n": 6, "seed": 7}).json()
+    item = next((x for x in sample["items"]
+                 if x["review"]["status"] == "pending"), None)
+    if item is None:
+        print("    （样本里没有纯待审题，跳过写库用例）")
+    else:
+        key = item["key"]
+        try:
+            r = client.post("/api/review/decision", json={
+                "items": [{"key": key, "status": "approved", "note": "接口测试"}],
+                "reviewer": "测试", "batch_id": sample["batch_id"]})
+            assert r.status_code == 200, r.text
+            d = client.get("/api/questions/" + _enc(key)).json()
+            assert d["review"]["status"] == "approved", d["review"]
+            assert d["review"]["reviewed_hash"], d["review"]
+            assert d["review"]["reviewed_by"] == "测试"
+            assert d["review"]["batch"] == sample["batch_id"]
+            y = client.get("/api/questions", params={"reviewed": "yes", "limit": 1}).json()
+            assert y["total"] >= 1
+            client.post("/api/review/decision", json={
+                "items": [{"key": key, "status": "pending"}]})
+            d = client.get("/api/questions/" + _enc(key)).json()
+            assert d["review"]["status"] == "pending", d["review"]
+        finally:
+            client.post("/api/review/decision", json={
+                "items": [{"key": key, "status": "pending"}]})
+
+    q = Question(key="review/t1", type="single_choice",
+                 stem="已知 $x=1$，则 $x+1=$\\paren[B]",
+                 options=[], answer="B", solution="因为 $1+1=2$，故选 B。",
+                 meta={"answer_source": "human", "solution_source": "human",
+                       "point_source": "human"})
+    from amti.review import apply_decision
+    apply_decision(q, "approved", reviewer="测试")
+    assert effective_status(q) == "approved"
+    q.answer = "C"
+    assert effective_status(q) == "stale", "改答案后旧复核必须失效"
+    q2 = Question(key="review/t2", type="single_choice", stem="x",
+                  options=[], answer="A", solution="略",
+                  meta={"reviewed_at": "2026-01-01 10:00",
+                        "edited_at": "2026-01-01 10:00"})
+    assert effective_status(q2) == "stale", "旧的编辑自动戳不能算复核"
+
+
+def test_review_decision_rejects_bad_status():
+    sample = client.post("/api/review/sample", json={"n": 1, "seed": 1}).json()
+    key = sample["items"][0]["key"]
+    r = client.post("/api/review/decision", json={
+        "items": [{"key": key, "status": "stale"}]})
+    assert r.status_code == 400, r.text
+    r = client.post("/api/review/decision", json={
+        "items": [{"key": "没有这道题", "status": "approved"}]})
+    assert r.status_code == 404, r.text
+
+
 def test_search_fts_status():
     """FTS5 索引：一次搜索后应已建好、条数与题库一致。"""
     client.get("/api/questions", params={"q": "函数", "limit": 1})
@@ -1590,12 +1813,12 @@ def test_pdf_brand_header_footer():
     q = next(iter(store.load_all()))
     tex = paper.render_paper([q], mode="test", title="品牌页眉")
     assert r"\fancyhead[L]" in tex and r"\fancyhead[R]" in tex
-    assert "AmTiKu" in tex and "高中数学题库" in tex
+    assert "AmTiKu" in tex and "K12 数学题库" in tex
     assert r"\fancyfoot[C]" in tex and r"\pageref{LastPage}" in tex
     # 讲义走的是另一个文档类（elegantnote），版式也必须同一份
     h = paper.render_paper([q], mode="handout", title="品牌讲义")
     assert r"\fancyhead[L]" in h and "AmTiKu" in h
-    assert "高中数学讲义" in h
+    assert "K12 数学讲义" in h
 
 
 def test_generate_target_minutes_note():
@@ -1604,6 +1827,71 @@ def test_generate_target_minutes_note():
                           "target_minutes": 1}).json()
     notes = d["report"].get("notes") or []
     assert any("比目标 1 分钟多" in x for x in notes), notes
+
+
+def test_list_and_generate_filters_agree():
+    r"""列表与组卷必须用**同一个** `QuestionFilter`。
+
+    工程化重构的回归保护：以前 `/api/questions` 和 `/api/generate` 各写
+    一遍 15 个筛选维度，列表新增「地区/完整度/星级/质检」后组卷没跟上，
+    用户筛到 300 道、组卷却从没筛的池子里挑。现在两边共用
+    `amti/web/query.py`，这里用几个有代表性的组合钉住“池子大小一致”。
+    """
+    combos = [
+        {"point": "1.1.1"},
+        {"paper_state": "partial"},
+        {"quality": "lowres"},
+        {"region_scope": "multi"},
+        # `小问` 不在元数据读模型的 flags 列里；必须回退 Python 过滤，
+        # 否则列表会忽略这个条件、和组卷的池子对不上。
+        {"point": "1.1.1", "has": "小问"},
+    ]
+    for f in combos:
+        listed = client.get("/api/questions", params={**f, "limit": 1}).json()["total"]
+        r = client.post("/api/generate",
+                        json={**f, "mode": "test", "max_items": 5000})
+        assert r.status_code == 200, (f, r.text)
+        keys = r.json().get("keys") or []
+        assert len(keys) == listed, (f, listed, len(keys))
+
+
+def test_generate_region_filter_actually_applies():
+    """`region` 以前只解析、没进循环——地区选择器实际不起作用。
+
+    组卷的 `region` 是精确匹配 `meta.region`；只要选了，入卷的题必须都在
+    这个地区。用 facets 里的第一个地区做样本，最多取 200 道。
+    """
+    f = client.get("/api/facets").json()
+    regions = f.get("regions") or []
+    if not regions:
+        print("    （facets 没有地区，跳过）")
+        return
+    region = regions[0].get("value")
+    if not region:
+        return
+    r = client.post("/api/generate",
+                    json={"mode": "test", "region": region, "max_items": 200})
+    assert r.status_code == 200, r.text
+    items = r.json().get("items") or []
+    assert items, region
+    assert all((x.get("meta") or {}).get("region") == region for x in items)
+
+
+def test_papers_and_trash_routers_registered():
+    """路由从 server.py 拆到 routers/ 后，路径和响应形状不能变。"""
+    for path in ("/api/papers", "/api/trash", "/api/trash/reasons"):
+        r = client.get(path)
+        assert r.status_code == 200, (path, r.text)
+        assert "items" in r.json(), (path, r.json())
+
+
+def test_meta_and_stats_routers_registered():
+    """meta/stats 从 server.py 拆出后，路径与顶层字段不能变。"""
+    assert client.get("/api/stats").json()["total"] > 0
+    assert "items" in client.get("/api/changes").json()
+    assert "基线" in client.get("/api/baseline").json()
+    assert client.get("/api/settings").json()["out_dir"]
+    assert "current" in client.get("/api/search/status").json()
 
 
 def test_generate_has_constraints_and_minutes():
@@ -1621,8 +1909,213 @@ def test_detailed_layout_continuous():
     tex = paper.render_paper(dets, mode="test", title="连续排", problem_blank_cm=5)
     # 已删除“一页一题”选项：解答题连续排，按 problem_blank_cm 固定留白
     assert "\\vspace*{\\fill}" not in tex
-    assert "\\vspace*{5.00cm}" in tex
+    # **可伸缩**：`plus 1fill` 让页底剩余纸面归入作答区（不再"留白之外另有一块白"），
+    # `minus 0.8cm` 让差一两厘米的两道大题能挤进同一页。
+    assert "\\vspace*{5.00cm plus 1fill minus 0.8cm}" in tex
     assert "\\filbreak" in tex
+
+
+def test_pdf_layout_bracket_and_figure():
+    r"""卷面观感的三条硬约束（用户报的"排版很难看"）：
+
+    1. 选择题的（　）**不许右对齐**——exam-zh 默认 `paren/type=hfill` 会把
+       放不下的括号甩到下一行最右侧，孤零零一个（　）。抽查里约一半选择题这样。
+    2. **独立成行的配图要居中**：库里 97% 的图是单独一行、左对齐贴页边。
+    3. 配图要有**高度上限**，一张图不能占掉半页。
+    """
+    from amti import paper, store
+    qs = store.load_all()
+    choice = next(q for q in qs if q.type == "single_choice")
+    tex = paper.render_paper([choice], mode="gaokao", title="括号")
+    assert "paren/type=none" in tex, "答题括号必须紧跟题干，不能右对齐"
+    # 括号前面还要 `\unskip\nobreak`：xeCJK 在 `）` 与 `（` 之间插的胶是断点，
+    # 只靠 `paren/type=none` 仍会 1/60 的概率让括号单独起一行。
+    assert "\\unskip\\nobreak\\hskip 0.2em\\paren[" in tex, "括号不能自己起一行"
+    assert "paren/type=hfill" not in tex.replace(" ", "")
+
+    fig = next(q for q in qs
+               if "\\includegraphics" in q.stem
+               and any(line.strip().startswith("\\includegraphics")
+                       for line in q.stem.splitlines()))
+    ftex = paper.render_paper([fig], mode="gaokao", title="配图")
+    assert "\\begin{center}\n\\includegraphics" in ftex, "独立成行的配图要居中"
+    assert "height=0.32\\textheight" in ftex, "配图要有高度上限"
+
+
+def test_pdf_image_options_not_split():
+    r"""**四个图选项的题不许被拆到两页**（2010 广东卷（理）第 6 题实测）。
+
+    措施两条，缺一不可：
+    1. 图选项 ≥3 个时，把 `width=0.4\linewidth` 压到 0.30（整块从 12.4cm 收到 8cm）；
+    2. 这类题按半页预留（`\needspace{0.5\textheight}`），节标题跟首题一起留
+       （`0.58\textheight`），否则会留下孤零零一行「一、选择题」。
+    """
+    from amti import paper, store
+    qs = store.load_all()
+    # 2010 广东卷（理）第 6 题：四个 TikZ 选项图、每个 0.4\linewidth——实测被拆页的那道
+    q = store.find("高考真题汇编/2010/广东卷（理）#6")
+    if q is None:      # 数据万一改了名：退化成"随便找一道图选项题"，不让这条假红
+        q = next(x for x in qs if paper._image_option_question(x))
+    if paper._image_option_question(q) and sum(
+            1 for o in q.options
+            if "includegraphics" in (o.text or "") or "tikzpicture" in (o.text or "")) >= 3:
+        tex = paper.render_paper([q], mode="gaokao", title="图选项")
+        assert "\\needspace{0.5\\textheight}" in tex
+        assert "width=0.30\\linewidth" in tex, "三个图选项以上要收到 0.30 行宽"
+        assert "width=0.4\\linewidth" not in tex.split("\\begin{choices}", 1)[1]
+
+    # 表格单元格里的图不包 center（LR 模式会报 Not allowed in LR mode）
+    from amti.paper import center_figures
+    s = "\\begin{tabular}{cc}\n\\includegraphics{a.png}\n\\end{tabular}"
+    assert "center" not in center_figures(s), "表格单元格里不许包 center"
+    # 并排的几张图（同一行）要一起居中
+    s2 = "\\includegraphics{a.png}\\quad\\includegraphics{b.png}"
+    assert center_figures(s2).startswith("\\begin{center}")
+
+
+# ── AI 录题（DeepSeek）接口边界 ────────────────────────────────
+#
+# **一条都不写配置、不发网络请求**：这些用例跑在用户真实的环境里，
+# 写进一个假 key 或改掉 base_url 就是把人家的软件改坏了。
+# 所以只测"只读端点 + 会被拒绝的请求"。
+
+def test_ai_status_never_leaks_key():
+    """状态端点只回"配没配 + 末四位"。明文 key 一旦出现在响应里，
+    任何一个本地脚本都能读走——这是这个功能的红线。"""
+    r = client.get("/api/ai/status")
+    assert r.status_code == 200
+    d = r.json()
+    assert isinstance(d.get("configured"), bool)
+    assert "api_key" not in d, d
+    assert "key_hint" in d
+
+
+def test_ai_run_rejects_empty_and_bad_base64():
+    assert client.post("/api/ai/run", json={"name": "x.pdf", "data": ""}).status_code == 400
+    assert client.post("/api/ai/run",
+                       json={"name": "x.pdf", "data": "这不是base64"}).status_code == 400
+
+
+def test_ai_job_unknown():
+    assert client.get("/api/ai/job/不存在的任务").status_code == 404
+    assert client.post("/api/ai/job/不存在的任务/cancel").status_code == 404
+
+
+def test_ai_cancel_sets_flag_and_state():
+    """取消端点只置位 + 改状态，不碰网络；用一个假任务验证。"""
+    import threading
+    import time
+    from amti.web import server as _srv
+    jid = "ai-test-cancel"
+    ev = threading.Event()
+    _srv._AI_JOBS[jid] = {"state": "running", "done": 1, "total": 2,
+                          "msg": "正在读", "at": time.time(),
+                          "result": None, "error": ""}
+    _srv._AI_CANCELS[jid] = ev
+    try:
+        r = client.post("/api/ai/job/%s/cancel" % jid)
+        assert r.status_code == 200, r.text
+        assert r.json()["state"] == "cancelling"
+        assert ev.is_set()
+        assert client.get("/api/ai/job/%s" % jid).json()["state"] == "cancelling"
+    finally:
+        _srv._AI_JOBS.pop(jid, None)
+        _srv._AI_CANCELS.pop(jid, None)
+
+
+def test_ai_cancel_end_to_end_keeps_partial():
+    """真开一个任务（run 被替换成假实现，不发网络），取消后应落到 cancelled。"""
+    import base64
+    import threading
+    import time
+    from amti import aiingest as _ai
+    from amti.web import server as _srv
+    if not client.get("/api/ai/status").json().get("configured"):
+        return                                  # 没配 key 时 /run 本来就 400
+
+    started = threading.Event()
+
+    def fake_run(data, **kw):
+        started.set()
+        stop = kw.get("should_stop") or (lambda: False)
+        for _ in range(500):
+            if stop():
+                return {"ok": True, "latex": "", "title": "", "cancelled": True,
+                        "crop_dir": "",
+                        "stats": {"pages": 1, "ok": 0, "cancelled": True},
+                        "pending": [], "problems": [], "warnings": ["任务已取消"]}
+            time.sleep(0.01)
+        return {"ok": True, "latex": "", "title": "", "cancelled": False,
+                "crop_dir": "", "stats": {"pages": 1, "ok": 0},
+                "pending": [], "problems": [], "warnings": []}
+
+    old = _ai.run
+    _ai.run = fake_run
+    job = ""
+    try:
+        data = base64.b64encode(b"%PDF-1.4 fake").decode()
+        r = client.post("/api/ai/run", json={"name": "x.pdf", "data": data})
+        assert r.status_code == 200, r.text
+        job = r.json()["job"]
+        assert started.wait(2.0), "后台任务没起来"
+        assert client.post("/api/ai/job/%s/cancel" % job).status_code == 200
+        j = {}
+        for _ in range(200):
+            j = client.get("/api/ai/job/%s" % job).json()
+            if j.get("state") in ("cancelled", "done", "error"):
+                break
+            time.sleep(0.01)
+        assert j.get("state") == "cancelled", j
+        assert (j.get("result") or {}).get("cancelled") is True, j
+    finally:
+        _ai.run = old
+        if job:
+            _srv._AI_JOBS.pop(job, None)
+            _srv._AI_CANCELS.pop(job, None)
+
+
+def test_ai_config_rejects_bad_url_without_writing():
+    """非法地址要当场拒绝，**且不能留下半份配置**。"""
+    before = client.get("/api/ai/status").json()
+    r = client.post("/api/ai/config", json={"base_url": "ftp://example.com"})
+    assert r.status_code == 400, r.text
+    after = client.get("/api/ai/status").json()
+    assert after["base_url"] == before["base_url"]
+    assert after["configured"] == before["configured"]
+
+
+def test_similar_questions_ready():
+    """相似题：不返回自身，按相似度降序；内容库没建好时跳过。"""
+    from amti import content_store
+    if not content_store.current():
+        return
+    d = client.get("/api/questions?limit=20").json()
+    key = d["items"][0]["key"]
+    r = client.get("/api/questions/%s/similar" % _enc(key), params={"limit": 5})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["key"] == key
+    assert got["ready"] is True
+    items = got["items"]
+    assert isinstance(items, list)
+    for it in items:
+        assert it["key"] != key
+        assert 0 <= it.get("similarity", 0) <= 1
+    scores = [it.get("similarity", 0) for it in items]
+    assert scores == sorted(scores, reverse=True), scores
+
+
+def test_duplicates_endpoint():
+    """重复题：只返回同组、不含自身；没有组也不能报错。"""
+    d = client.get("/api/questions?limit=10").json()
+    key = d["items"][0]["key"]
+    r = client.get("/api/questions/%s/duplicates" % _enc(key))
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["key"] == key
+    assert isinstance(got["items"], list)
+    for it in got["items"]:
+        assert it["key"] != key
 
 
 # ── 无 pytest 时的运行器 ──────────────────────────────────────

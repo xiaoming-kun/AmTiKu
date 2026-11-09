@@ -26,3 +26,8 @@ export function optionRange(q: { options: { label: string }[] }): string {
   const last = q.options[q.options.length - 1].label
   return first === last ? first : `${first}–${last}`
 }
+
+/** 考点标题里常带「1.2 」「2.4.3 」这种教材编号。列表/卷面里它会被误读成
+ *  题号（「2 基本不等式」看起来像第 2 题），显示时统一去掉；教材位置由
+ *  知识地图/详情里的册章负责，不需要在标题里再背一遍。 */
+export const dispPoint = (t: string) => (t || '').replace(/^\d+(?:\.\d+)*\s+/, '')

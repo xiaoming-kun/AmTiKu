@@ -18,7 +18,7 @@ import { Plus, Check, ChevronDown, Flame, TriangleAlert, Loader2, Maximize2 } fr
 import type { Q } from '@/lib/types'
 import { Highlight, renderBlocks } from '@/lib/render'
 import { api, reportErr } from '@/lib/api'
-import { DIFF_STARS, hasImageOptions, optionRange, starsLabel } from '@/lib/display'
+import { DIFF_STARS, dispPoint, hasImageOptions, optionRange, starsLabel } from '@/lib/display'
 import { Flags } from '@/app/ui'
 
 /** 题干到底有没有被截断。
@@ -66,7 +66,7 @@ function answerPreview(ans: string): string {
 
 export default function Card({
   q, active, inPaper, selectMode, checked, dense, maskAns, kw,
-  onOpen, onDetail, onAdd, onToggle,
+  onSelect, onDetail, onAdd, onToggle,
 }: {
   q: Q; active: boolean; inPaper: boolean
   /** 答案是否遮住（「显示」菜单里可统一切换） */
@@ -75,7 +75,10 @@ export default function Card({
   /** 紧凑模式：题干一行、不要选项预览、内边距收小。
    *  挑题时要的是"一屏多扫几道"，读题时才需要宽松（Notion/Linear 同款开关）。 */
   dense?: boolean
-  onOpen: () => void; onDetail: () => void
+  /** 点卡片：只移光标；详情是否跟着换由上层决定（抽屉开着才跟）。 */
+  onSelect: () => void
+  /** 右上角 ✎：明确打开详情。 */
+  onDetail: () => void
   onAdd: () => void
   /** `shift` 为真时从上次勾选的那道连选过来 */
   onToggle: (shift?: boolean) => void
@@ -84,6 +87,21 @@ export default function Card({
 }) {
   const [open, setOpen] = useState(false)
   const [full, setFull] = useState<Q | null>(null)
+  // 卡片正文（题干/选项）含 KaTeX，是列表最贵的一块。
+  // 只渲染接近视口的卡片，屏外先放骨架；滚动到时再补。
+  const cardRef = useRef<HTMLElement>(null)
+  const [showBody, setShowBody] = useState(false)
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    if (typeof IntersectionObserver === 'undefined') { setShowBody(true); return }
+    const root = el.closest('[aria-label="题目列表"]')
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setShowBody(true); io.disconnect() }
+    }, { root, rootMargin: '180px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [q.key])
 
   // 展开时才去拉全量。列表接口只带题干的块 IR，
   // 答案/解析要按 key 补一次（服务端有缓存，重复点开几乎不花时间）。
@@ -98,14 +116,14 @@ export default function Card({
   useEffect(() => { setFull(null); setOpen(false); setPeek(false) }, [q.key])
 
   /**
-   * 点卡片 = **只看**（详情跟着换）。
+   * 点卡片 = **移光标**（详情抽屉已经开着时跟着换；关着时不硬拽出来）。
    *
    * 之前是"打开详情 + 顺手勾选"，于是列表里看过的每一道都被记成"已选"，
    * 表头那个「已选 N 道」记录的其实是浏览历史；这时候点「加入卷子」，
    * 一堆没打算要的题就进去了。**看题和挑题是两件事**，勾选只走左边的方框、
    * 空格键，或 Shift 连选。
    */
-  const pick = () => onOpen()
+  const pick = () => onSelect()
 
   /** 题干「展开全文」。截断是为了能扫，但**解答题常常有两问**，
    *  只给两行会把第二问整个吃掉——所以给一个随时能看全的出口。
@@ -114,13 +132,36 @@ export default function Card({
   /** 答案**遮罩**：列表常常是投屏给学生看的，答案直接摊在每一行底部，
    *  看一眼这道题就废了。点「显示」或展开才给。 */
   const [peek, setPeek] = useState(false)
-  useEffect(() => { setStemOpen(false) }, [q.key])
+  /** 公式答案的块 IR：列表接口不为性能带答案块，显示时才按需取。 */
+  const [ansBlocks, setAnsBlocks] = useState<any[] | null>(null)
+  const [ansLoading, setAnsLoading] = useState(false)
+  useEffect(() => {
+    setStemOpen(false); setAnsBlocks(null); setAnsLoading(false)
+  }, [q.key])
+  // 全局「显示」是一个开关，不是一次性动作：从显示切回遮住时，
+  // 之前逐卡点过的“显示”也必须一起收回去，否则菜单看起来毫无变化。
+  useEffect(() => { setPeek(false) }, [maskAns])
   const [clampRef, over] = useClamped([q.key, dense, stemOpen])
   const clamped = over && !stemOpen
 
   const ans = answerPreview(q.answer)
+  const ansShown = peek || !maskAns
+  const ansBlock = full?.blocks?.answer?.length ? full.blocks.answer
+    : q.blocks?.answer?.length ? q.blocks.answer : ansBlocks
+
   const hasSol = !!q.flags['解析']
   const hasAns = !!q.flags['答案']
+  // 全局「显示」且答案含公式：只取答案块，不拉整份解析。
+  useEffect(() => {
+    if (maskAns || !hasAns || ans || !ansShown || full || ansBlock) return
+    let alive = true
+    setAnsLoading(true)
+    api.answer(q.key)
+      .then((d: any) => { if (alive) setAnsBlocks(d?.blocks || []) })
+      .catch(() => { if (alive) setAnsBlocks([]) })
+      .finally(() => { if (alive) setAnsLoading(false) })
+    return () => { alive = false }
+  }, [maskAns, hasAns, ans, ansShown, full, ansBlock, q.key])
   const stars = DIFF_STARS[q.difficulty] || q.stars || 0
   const src = q.meta?.source_label || q.meta?.book || ''
   const year = q.meta?.year || ''
@@ -142,6 +183,7 @@ export default function Card({
 
   return (
     <article
+      ref={cardRef}
       onClick={pick}
       /* 键盘光标停在这一张上时，屏幕阅读器也该知道（↑↓ 移的是它，不是 DOM 焦点） */
       aria-current={active ? 'true' : undefined}
@@ -149,8 +191,10 @@ export default function Card({
          不是看窗口多宽（列表栏宽度会被筛选面板/详情抽屉改来改去）。
          以前用 `sm:grid-cols-2`（视口断点），栏很窄时两列挤成一团、
          栏很宽时两列又离得老远。 */
-      className={`@container q-card card-lift group cursor-pointer overflow-hidden rounded-[var(--radius-card)]
-                  border bg-surface shadow-[var(--shadow-card)] ${
+      data-on={active ? '1' : '0'}
+      data-qkey={q.key}
+      className={`@container q-card question-card card-lift group cursor-pointer overflow-hidden
+                  rounded-[20px] border ${
         checked ? 'border-brand-line ring-2 ring-brand/25'
         : active ? 'border-brand-line'
                  : 'border-border'}`}>
@@ -184,11 +228,11 @@ export default function Card({
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]">
           {q.point_titles?.length ? (
             q.point_titles.map((t, i) => (
-              <span key={i} title={q.point_titles.join('、')}
+              <span key={i} title={q.point_titles.map(dispPoint).join('、')}
                 className={`shrink-0 rounded-full px-1.5 py-[1px] text-[11px] font-medium ${
                   i === 0 ? 'bg-brand-soft text-brand-ink' : 'bg-muted text-ink-soft'}`}>
                 {i === 0 && <span className="mr-0.5 text-[9.5px] font-normal opacity-70">主</span>}
-                <Highlight text={t} kw={kw} />
+                <Highlight text={dispPoint(t)} kw={kw} />
               </span>
             ))
           ) : (
@@ -228,13 +272,14 @@ export default function Card({
             <Maximize2 size={12} />
           </button>
           <button onClick={(e) => { e.stopPropagation(); onAdd() }}
+            disabled={inPaper}
             title={inPaper ? '已在卷子里' : '加入卷子（⌘↵）'}
-            className={`press flex h-[26px] items-center gap-1 rounded-lg border px-2.5 text-[11.5px]
-                        font-medium transition-colors ${inPaper
+            className={`press flex h-[26px] items-center gap-1 rounded-lg border px-2 text-[11.5px] sm:px-2.5
+                        font-medium transition-all ${inPaper
                           ? 'border-has-line bg-has-soft text-has'
-                          : 'border-solid bg-solid text-solid-ink hover:bg-solid/85'}`}>
+                          : 'grad-primary border-transparent text-white shadow-[var(--shadow-brand)] hover:brightness-110'}`}>
             {inPaper ? <Check size={12} strokeWidth={2.8} /> : <Plus size={12} strokeWidth={2.8} />}
-            {inPaper ? '已入卷' : '加入组卷'}
+            <span className="hidden sm:inline">{inPaper ? '已入卷' : '加入组卷'}</span>
           </button>
         </div>
       </div>
@@ -248,7 +293,9 @@ export default function Card({
         {q.meta?.paper_complete === false && (
           <Tag title={`该卷仅录入 ${q.meta?.paper_size ?? '?'} 题，按节选处理`}>试卷节选</Tag>
         )}
-        {q.meta?.duplicate_group && <Tag title="与另一题逐字重复">重复题</Tag>}
+        {(q.meta?.duplicate_group || q.meta?.dup_of) && (
+          <Tag title="与库内另一题重复/疑似重复；只提示，不自动合并">重复题</Tag>
+        )}
         {q.meta?.figure_low_res && <Tag title="配图宽度小于 400px">低清图</Tag>}
         <Tag title={stars > 0 ? `难度：${q.difficulty}` : '星级未评级'}>
           <span className={`tracking-tight ${stars > 0 ? 'text-warn' : 'text-ink-faint'}`}>
@@ -269,6 +316,7 @@ export default function Card({
         )}
       </div>
 
+      {showBody ? (<>
       {/* ── ③ 题干 + 选项 ── */}
       <div className={`${dense ? 'px-3.5 pt-2' : 'px-4 pt-2.5'}`}>
         <div className="q-stem q-compact text-[14.5px] text-ink">
@@ -323,7 +371,7 @@ export default function Card({
           <span className="shrink-0 font-semibold text-ink-faint">答案</span>
           {hasAns ? (
             ans ? (
-              (peek || !maskAns) ? (
+              ansShown ? (
                 <span className="rounded bg-has-soft px-1.5 py-[1px] font-mono text-[12px]
                                  font-semibold text-has">{ans}</span>
               ) : (
@@ -335,7 +383,28 @@ export default function Card({
                   显示
                 </button>
               )
-            ) : <span className="text-[11.5px] text-ink-faint">含公式，展开看</span>
+            ) : ansShown ? (
+              ansBlock ? (
+                <span className="min-w-0 truncate rounded bg-has-soft px-1.5 py-[1px]
+                                 text-[12px] font-medium text-has">
+                  {renderBlocks(ansBlock, kw)}
+                </span>
+              ) : ansLoading ? (
+                <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-faint">
+                  <Loader2 size={12} className="animate-spin" />加载答案…
+                </span>
+              ) : (
+                <span className="text-[11.5px] text-ink-faint">含公式，展开看</span>
+              )
+            ) : (
+              <button type="button" title="点击显示答案"
+                onClick={(e) => { e.stopPropagation(); setPeek(true) }}
+                className="press rounded border border-dashed border-border-strong bg-muted
+                           px-1.5 py-[1px] text-[11px] font-medium text-ink-faint
+                           transition-colors hover:border-brand-line hover:text-brand-ink">
+                显示
+              </button>
+            )
           ) : (
             <span className="rounded bg-warn-soft px-1.5 py-[1px] text-[11px] font-medium text-warn">缺答案</span>
           )}
@@ -356,7 +425,8 @@ export default function Card({
         {open && (
           <div className="reveal" onClick={(e) => e.stopPropagation()}>
             <div>
-              <div className="border-t border-border/70 bg-surface-2 px-4 py-3">
+              <div className="b-scroll max-h-[min(340px,45vh)] overflow-y-auto overscroll-contain
+                              border-t border-border/70 bg-surface-2 px-4 py-3">
                 {!full ? (
                   <div className="flex items-center gap-2 py-1 text-[12px] text-ink-faint">
                     <Loader2 size={13} className="animate-spin" />正在取答案与解析…
@@ -385,6 +455,13 @@ export default function Card({
           </div>
         )}
       </div>
+      </>) : (
+        <div className="px-4 pb-4 pt-3" aria-hidden>
+          <div className="skeleton h-3.5 w-[92%]" />
+          <div className="skeleton mt-2 h-3.5 w-[74%]" />
+          <div className="mt-3 h-5" />
+        </div>
+      )}
     </article>
   )
 }

@@ -5,16 +5,29 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertTriangle, Check, ChevronDown, ChevronRight, FileCode2,
-  Loader2, Pencil, Plus, Save, Search, Trash2, X,
+  AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronRight,
+  FileCode2, FileText, Info, Loader2, Pencil, Plus, Save, Search, Sparkles, Tags, Trash2, X,
 } from 'lucide-react'
 import { Highlight, renderBlocks } from '@/lib/render'
 import type { Q, SavedHandler } from '@/lib/types'
+
 import { api, reportErr } from '@/lib/api'
 import { Flags } from '@/app/ui'
 import SourceEditor from '@/app/SourceEditor'
 import BusyOverlay from '@/app/BusyOverlay'
-import { DIFF_STARS, hasImageOptions, optionRange, starsLabel } from '@/lib/display'
+import { DIFF_STARS, hasImageOptions, optionRange, starsLabel, dispPoint } from '@/lib/display'
+
+function srcLabel(v?: string): string {
+  if (v === 'human' || v === 'manual') return '人工'
+  if (v === 'workbuddy' || v === 'llm' || v === 'deepseek') return '模型'
+  if (v === 'legacy') return '历史存量'
+  if (v === 'answer_sheet') return '答案册'
+  if (v === 'model') return '模型推定'
+  if (v === 'point') return '按考点'
+  if (v === '库里同题' || v === 'dup') return '库内同题'
+  if (!v || v === '无') return '未登记'
+  return v
+}
 
 /** 直接录 LaTeX 解析与答案，**经规范审查后**才写入。
  *
@@ -155,23 +168,32 @@ export function SolutionEditor({ q, onSaved, onCancel }: {
   )
 }
 
-export function Detail({ q, onSaved, facets, onFindPoint, onDeleteAsk, refreshing = false, kw }: {
+export function Detail({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPick, refreshing = false, kw, loadingFull = false, autoSourceKey = '', autoSourceN = 0 }: {
   q: Q | null
   onSaved: SavedHandler
   facets: any
   /** 搜索词：详情里的题干/答案/解析也高亮命中（可选） */
   kw?: string
+  /** 完整题目还在拉取（答案/解析的块还没到） */
+  loadingFull?: boolean
   /** 列表正在重新拉取（标签保存后的自动刷新）。详情顶部给一条进度条，
    *  让人看见"页面正在刷新"，而不是数据悄悄换了。 */
   refreshing?: boolean
   /** 透传给 DetailBody：点考点 → 去列表看同类题 */
   onFindPoint?: (pid: string, title: string) => void
   onDeleteAsk?: () => void
+  /** 相似题：点一条就切到那道题（由 App 负责选中）。 */
+  onPick?: (q: Q) => void
+  /** 审阅页跳过来：匹配 key 且序号变过，就自动打开改源码。 */
+  autoSourceKey?: string
+  autoSourceN?: number
 }) {
   if (!q) return <div className="flex h-full items-center justify-center text-[13px] text-ink-faint">选一道题</div>
 
   return <DetailBody q={q} onSaved={onSaved} facets={facets} refreshing={refreshing}
-                     onFindPoint={onFindPoint} onDeleteAsk={onDeleteAsk} kw={kw} />
+                     onFindPoint={onFindPoint} onDeleteAsk={onDeleteAsk} onPick={onPick} kw={kw}
+                     loadingFull={loadingFull}
+                     autoSourceKey={autoSourceKey} autoSourceN={autoSourceN} />
 }
 
 /** 出处输入框的统一样式（三行共用，别再各写一份）。 */
@@ -372,7 +394,7 @@ export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }:
                   <span key={i} className={`rounded-full px-1.5 py-[1px] text-[11px] font-medium ${
                     i === 0 ? 'bg-brand-soft text-brand-ink' : 'bg-muted text-ink-soft'}`}>
                     {i === 0 && <span className="mr-0.5 text-[9.5px] font-normal opacity-70">主</span>}
-                    <Highlight text={t} kw={searchKw} />
+                    <Highlight text={dispPoint(t)} kw={searchKw} />
                   </span>
                 ))}
             {q.meta?.point_source && (
@@ -407,7 +429,7 @@ export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }:
                   i === 0 ? 'border-brand-line bg-brand-soft text-brand-ink'
                           : 'border-border bg-surface text-ink-soft'}`}>
                 {i === 0 && <span className="text-[9.5px] font-normal opacity-70">主</span>}
-                <Highlight text={t} kw={searchKw} />
+                <Highlight text={dispPoint(t)} kw={searchKw} />
                 {off && (
                   <span className="rounded-full bg-warn-soft px-1 text-[9.5px] font-normal text-warn"
                     title="与主考点不在同一章，留神是不是标错了">
@@ -563,12 +585,16 @@ export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }:
   )
 }
 
-export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refreshing = false, kw }: {
+export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPick, refreshing = false, kw, loadingFull = false, autoSourceKey = '', autoSourceN = 0 }: {
   q: Q; onSaved: SavedHandler; facets: any
   refreshing?: boolean
   kw?: string
+  loadingFull?: boolean
   onFindPoint?: (pid: string, title: string) => void
   onDeleteAsk?: () => void
+  onPick?: (q: Q) => void
+  autoSourceKey?: string
+  autoSourceN?: number
 }) {
   // 改答案。用户的原话：「看到解析了，但是没有答案，我随手就给写进去了」——
   // 所以入口要显眼，别藏在抽屉里。
@@ -592,14 +618,124 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refre
   // 改源码：**整道题的 LaTeX 正文**（不是只改答案/解析）。入口要显眼，
   // 题干里的公式写坏时不用再去找 `题目/*.tex`。
   const [srcEdit, setSrcEdit] = useState(false)
+  const autoSourceDone = useRef(0)
+  useEffect(() => {
+    if (!autoSourceN || autoSourceKey !== q.key) return
+    if (autoSourceDone.current === autoSourceN) return
+    autoSourceDone.current = autoSourceN
+    setSrcEdit(true)
+  }, [autoSourceKey, autoSourceN, q.key])
   const [ansEdit, setAnsEdit] = useState(false)
   const [ansText, setAnsText] = useState('')
   const [ansBusy, setAnsBusy] = useState(false)
   const [ansErr, setAnsErr] = useState('')
   const [reviewBusy, setReviewBusy] = useState(false)
+  const [simOpen, setSimOpen] = useState(false)
+  const [simItems, setSimItems] = useState<Q[]>([])
+  const [simLoading, setSimLoading] = useState(false)
+  const [simReady, setSimReady] = useState(true)
+  const [simErr, setSimErr] = useState('')
+  const simKeyRef = useRef('')
+  useEffect(() => {
+    simKeyRef.current = q.key
+    setSimOpen(false); setSimItems([]); setSimErr('')
+    setSimLoading(false); setSimReady(true)
+  }, [q.key])
+  const loadSimilar = () => {
+    setSimOpen(true); setDupOpen(false)
+    if (simLoading) return
+    const key = q.key
+    simKeyRef.current = key
+    setSimLoading(true); setSimErr('')
+    api.similar(key, 8)
+      .then((d: any) => {
+        if (simKeyRef.current !== key) return
+        setSimItems((d?.items || []) as Q[])
+        setSimReady(d?.ready !== false)
+      })
+      .catch((e: any) => {
+        if (simKeyRef.current === key) setSimErr(String(e.message || e))
+      })
+      .finally(() => {
+        if (simKeyRef.current === key) setSimLoading(false)
+      })
+  }
+  const openSimilar = () => {
+    if (simOpen) { setSimOpen(false); return }
+    if (simItems.length) { setSimOpen(true); setDupOpen(false); return }
+    loadSimilar()
+  }
+  const [dupOpen, setDupOpen] = useState(false)
+  const [dupItems, setDupItems] = useState<Q[]>([])
+  const [dupN, setDupN] = useState(0)
+  const [dupLoading, setDupLoading] = useState(false)
+  const [dupErr, setDupErr] = useState('')
+  const dupKeyRef = useRef('')
+  useEffect(() => {
+    dupKeyRef.current = q.key
+    setDupOpen(false); setDupItems([]); setDupN(0)
+    setDupErr(''); setDupLoading(false)
+  }, [q.key])
+  const loadDuplicates = () => {
+    setDupOpen(true); setSimOpen(false)
+    if (dupLoading) return
+    const key = q.key
+    dupKeyRef.current = key
+    setDupLoading(true); setDupErr('')
+    api.duplicates(key)
+      .then((d: any) => {
+        if (dupKeyRef.current !== key) return
+        setDupItems((d?.items || []) as Q[])
+        setDupN(Number(d?.n || 0))
+      })
+      .catch((e: any) => {
+        if (dupKeyRef.current === key) setDupErr(String(e.message || e))
+      })
+      .finally(() => {
+        if (dupKeyRef.current === key) setDupLoading(false)
+      })
+  }
+  const openDuplicates = () => {
+    if (dupOpen) { setDupOpen(false); return }
+    if (dupItems.length || dupN) { setDupOpen(true); setSimOpen(false); return }
+    loadDuplicates()
+  }
+  const [activeSec, setActiveSec] = useState('stem')
+  const sectionTabs = [
+    ['stem', '题干'], ['answer', '答案'], ['solution', '解析'],
+    ...(q.points.length ? [['points', '考点'] as const] : []),
+    ['info', '信息'],
+  ] as const
+  const jumpToSection = (key: string) => {
+    const el = document.getElementById(`detail-${key}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setActiveSec(key)
+  }
+  useEffect(() => {
+    const root = document.querySelector<HTMLElement>('[data-detail-scroll]')
+    if (!root) return
+    const ids = ['stem', 'answer', 'solution', 'points', 'info']
+    const onScroll = () => {
+      const line = root.getBoundingClientRect().top + 96
+      let cur = 'stem'
+      for (const k of ids) {
+        const el = document.getElementById(`detail-${k}`)
+        if (el && el.getBoundingClientRect().top <= line) cur = k
+      }
+      setActiveSec(cur)
+    }
+    root.addEventListener('scroll', onScroll, { passive: true })
+    const t = window.setTimeout(onScroll, 60)
+    return () => {
+      root.removeEventListener('scroll', onScroll)
+      window.clearTimeout(t)
+    }
+  }, [q.key])
+  const reviewedNow = !!q.review && ['approved', 'needs_fix', 'flagged'].includes(q.review.status)
   const toggleReview = () => {
     setReviewBusy(true)
-    api.patch(q.key, { reviewed: !q.meta?.reviewed_at })
+    api.patch(q.key, { reviewed: !reviewedNow })
       .then((d) => onSaved(d, { refreshList: true, silent: true }))
       .catch(reportErr)
       .finally(() => setReviewBusy(false))
@@ -623,11 +759,16 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refre
     'press inline-flex h-[32px] items-center gap-1.5 rounded-lg border border-border bg-surface ' +
     'px-3 text-[12.5px] text-ink-soft transition-colors hover:border-border-strong ' +
     'hover:text-ink disabled:opacity-40'
-  const sectionTitle = 'text-[11px] font-semibold tracking-[0.08em] text-ink-faint'
   const panel = 'pop rounded-[var(--radius-card)] border border-border bg-surface p-3 ' +
     'shadow-[var(--shadow-card)]'
+  // 详情里的每一块都像中间那道题一样有独立边框，而不是一条长线切到底。
+  const card = 'rounded-[18px] border border-border/80 bg-surface p-3.5 ' +
+    'shadow-[var(--shadow-card)]'
+  const cardHead = 'mb-2.5 flex flex-wrap items-center gap-2'
+  const cardTitle = 'text-[11.5px] font-semibold tracking-[0.06em] text-ink-soft'
+  const cardIcon = 'grid h-6 w-6 shrink-0 place-items-center rounded-md'
   return (
-    <div className="h-full overflow-y-auto px-5 py-4">
+    <div data-detail-scroll className="h-full overflow-y-auto px-5 py-4">
       {/* **页面正在刷新**：标签保存后列表会带着筛选重新拉一遍。
           数据变化本身是无声的，所以给一条不定长进度条——不假装知道百分比，
           只说明"还在动"。sticky 保证滚到解析中段时也看得见。 */}
@@ -666,6 +807,30 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refre
                      transition-colors hover:border-brand-line hover:bg-brand-soft/50
                      hover:text-brand-ink">
           <FileCode2 size={13} />改源码
+        </button>
+        {onPick && (
+          <button onClick={openSimilar}
+            title="同考点 / 同公式结构"
+            className="press inline-flex items-center gap-1.5 rounded-full border border-border
+                       bg-surface px-2.5 py-[5px] text-[12.5px] text-ink-faint
+                       transition-colors hover:border-brand-line hover:bg-brand-soft/50
+                       hover:text-brand-ink">
+            <Sparkles size={13} />相似题
+          </button>
+        )}
+        {(q.meta?.duplicate_group || q.meta?.dup_of) && (
+          <span title="与库内另一题重复/疑似重复；只提示，不自动合并"
+            className="inline-flex items-center gap-1 rounded-full border border-border
+                       bg-warn-soft px-2.5 py-[5px] text-[12px] font-medium text-warn">
+            <AlertTriangle size={12} />重复题
+          </span>
+        )}
+        <button onClick={openDuplicates}
+          title="查同指纹 / 同 duplicate_group / dup_of 的题"
+          className="press inline-flex items-center gap-1.5 rounded-full border border-border
+                     bg-surface px-2.5 py-[5px] text-[12.5px] text-ink-faint
+                     transition-colors hover:border-warn/50 hover:bg-warn-soft/40 hover:text-warn">
+          <AlertTriangle size={13} />查重
         </button>
         <span className="ml-auto font-mono text-[10.5px] text-ink-faint">#{q.hash}</span>
       </div>
@@ -715,9 +880,123 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refre
         </div>
       )}
 
+      {simOpen && (
+        <section className={`${card} mb-3`}>
+          <div className={cardHead}>
+            <span className={`${cardIcon} bg-brand-soft text-brand`}><Sparkles size={13} /></span>
+            <span className={cardTitle}>相似题</span>
+            <span className="ml-1 text-[10.5px] text-ink-faint">同考点 / 同公式结构</span>
+            <button onClick={() => setSimOpen(false)} title="收起"
+              className="icon-btn ml-auto h-6 w-6"><X size={12} /></button>
+          </div>
+          {simLoading ? (
+            <div className="flex items-center gap-2 py-3 text-[12px] text-ink-faint">
+              <Loader2 size={13} className="animate-spin" />正在找相似题…
+            </div>
+          ) : simErr ? (
+            <div className="flex items-start gap-1.5 py-2 text-[11.5px] text-warn">
+              <X size={12} className="mt-[2px] shrink-0" />{simErr}
+            </div>
+          ) : !simReady ? (
+            <div className="py-3 text-[12px] text-ink-faint">
+              内容索引正在构建，约 10 秒后
+              <button onClick={loadSimilar}
+                className="ml-1 text-brand-ink underline-offset-2 hover:underline">重试</button>
+            </div>
+          ) : simItems.length === 0 ? (
+            <div className="py-3 text-[12px] text-ink-faint">没有找到明显相似的题。</div>
+          ) : (
+            <ul className="space-y-1">
+              {simItems.map((it) => (
+                <li key={it.key}>
+                  <button onClick={() => { onPick?.(it); setSimOpen(false) }}
+                    className="w-full rounded-lg border border-border/70 bg-bg/50 px-2.5 py-2 text-left
+                               transition-colors hover:border-brand-line hover:bg-brand-soft/40">
+                    <div className="flex items-center gap-1.5 text-[10.5px] text-ink-faint">
+                      <span className="rounded-full bg-muted px-1.5 py-[1px]">{it.type_label}</span>
+                      <span>{it.difficulty || '未评级'}</span>
+                      <span className="ml-auto tnum">{Math.round((it.similarity || 0) * 100)}%</span>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
+                      {renderBlocks(it.blocks?.stem, kw)}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {dupOpen && (
+        <section className={`${card} mb-3`}>
+          <div className={cardHead}>
+            <span className={`${cardIcon} bg-warn-soft text-warn`}><AlertTriangle size={13} /></span>
+            <span className={cardTitle}>重复题</span>
+            <span className="ml-1 text-[10.5px] text-ink-faint">
+              {dupN > 1 ? `同组共 ${dupN} 道（含本题）· 只提示，不自动合并` : '同指纹 / 同组'}
+            </span>
+            <button onClick={() => setDupOpen(false)} title="收起"
+              className="icon-btn ml-auto h-6 w-6"><X size={12} /></button>
+          </div>
+          {dupLoading ? (
+            <div className="flex items-center gap-2 py-3 text-[12px] text-ink-faint">
+              <Loader2 size={13} className="animate-spin" />正在查重…
+            </div>
+          ) : dupErr ? (
+            <div className="flex items-start gap-1.5 py-2 text-[11.5px] text-warn">
+              <X size={12} className="mt-[2px] shrink-0" />{dupErr}
+            </div>
+          ) : dupN <= 1 || dupItems.length === 0 ? (
+            <div className="py-3 text-[12px] text-ink-faint">未发现重复题。</div>
+          ) : (
+            <ul className="space-y-1">
+              {dupItems.map((it) => (
+                <li key={it.key}>
+                  <button onClick={() => { onPick?.(it); setDupOpen(false) }}
+                    className="w-full rounded-lg border border-border/70 bg-bg/50 px-2.5 py-2 text-left
+                               transition-colors hover:border-warn/40 hover:bg-warn-soft/30">
+                    <div className="flex items-center gap-1.5 text-[10.5px] text-ink-faint">
+                      <span className="rounded-full bg-muted px-1.5 py-[1px]">{it.type_label}</span>
+                      <span>{it.difficulty || '未评级'}</span>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
+                      {renderBlocks(it.blocks?.stem, kw)}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* ── 快速定位 ──
+          详情是一条长滚动；把「题干/答案/解析/考点/信息」钉在顶部，
+          滚到解析中段也能一键回到题干。当前区块用 scroll spy 高亮。 */}
+      <div className="sticky top-0 z-20 -mx-5 mb-3 flex items-center gap-1
+                      border-b border-border/70 bg-surface px-5 py-2">
+        <span className="mr-1 hidden text-[10px] font-semibold tracking-[0.08em]
+                         text-ink-faint sm:inline">定位</span>
+        {sectionTabs.map(([key, label]) => (
+          <button key={key} onClick={() => jumpToSection(key)}
+            aria-pressed={activeSec === key}
+            className={`press rounded-full px-2.5 py-[4px] text-[11px] font-medium
+                        transition-colors ${activeSec === key
+                          ? 'bg-brand-soft text-brand-ink'
+                          : 'text-ink-faint hover:bg-muted hover:text-ink'}`}>
+            {label}
+          </button>
+        ))}
+        <span className="ml-auto text-[10px] text-ink-faint">↑↓ 切题</span>
+      </div>
+
       {/* ── 题干 ── */}
-      <div className="mb-5">
-        <div className={`mb-1.5 ${sectionTitle}`}>题干</div>
+      <section id="detail-stem" className={`${card} mb-3 scroll-mt-24`}>
+        <div className={cardHead}>
+          <span className={`${cardIcon} bg-brand-soft text-brand`}><FileText size={13} /></span>
+          <span className={cardTitle}>题干</span>
+        </div>
         <div className="q-stem text-ink">{renderBlocks(q.blocks?.stem, kw)}</div>
         {q.options.length > 0 && !hasImageOptions(q) && (
           <ul className="q-options mt-3 space-y-1">
@@ -734,41 +1013,44 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refre
             选项见图（{optionRange(q)}，图片在题干中）
           </div>
         )}
-      </div>
+      </section>
 
-      {/* **答案**：可以直接改。
-          用户的原话是「看到解析了，但是没有答案，我随手就给写进去了」——
-          所以① 没答案时按钮要显眼（不是藏在抽屉里）；
-          ② 输入随手写没问题（全角、小写、带顿号都认），由后端统一规整；
-          ③ 规整不了就**明确报错**，不猜、不硬塞。 */}
-      <div className="mb-5">
-        <div className="mb-1.5 flex items-center gap-2">
-          <span className="text-[11px] font-semibold tracking-[0.08em] text-danger">答案</span>
-          {!ansEdit && (
-            <button onClick={() => { setAnsEdit(true); setAnsText(q.answer || ''); setAnsErr('') }}
-              className={`press inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px]
-                          text-[11.5px] transition-colors ${
-                q.answer ? 'border-border bg-surface text-ink-faint hover:border-border-strong hover:text-ink'
-                         : 'border-warn-line bg-warn-soft text-warn hover:bg-warn-soft/70'}`}>
-              {q.answer ? <Pencil size={13} /> : <Plus size={13} />}
-              {q.answer ? '改' : '补答案'}
+      {/* **答案**：可以直接改。 */}
+      <section id="detail-answer" className={`${card} mb-3 scroll-mt-24`}>
+        <div className={cardHead}>
+          <span className={`${cardIcon} bg-danger-soft text-danger`}><CheckCircle2 size={13} /></span>
+          <span className={`${cardTitle} text-danger`}>答案</span>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {!ansEdit && (
+              <button onClick={() => { setAnsEdit(true); setAnsText(q.answer || ''); setAnsErr('') }}
+                className={`press inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px]
+                            text-[11.5px] transition-colors ${
+                  q.answer ? 'border-border bg-surface text-ink-faint hover:border-border-strong hover:text-ink'
+                           : 'border-warn-line bg-warn-soft text-warn hover:bg-warn-soft/70'}`}>
+                {q.answer ? <Pencil size={13} /> : <Plus size={13} />}
+                {q.answer ? '改' : '补答案'}
+              </button>
+            )}
+            {q.meta?.answer_source && (
+              <span className="rounded-full border border-border px-1.5 py-[1px] text-[10px] text-ink-faint"
+                title="答案来源：human=人工改过 / workbuddy=模型生成 / legacy=历史存量 / 无=未登记">
+                {srcLabel(q.meta.answer_source)}
+              </span>
+            )}
+            <button onClick={toggleReview} disabled={reviewBusy}
+              title={q.review
+                ? `${q.review.label}${q.review.reviewed_at ? `：${q.review.reviewed_at}` : ''}${q.review.note ? `\n${q.review.note}` : ''}`
+                : '快速通过（逐题审阅请去「审阅」页）'}
+              className={`press rounded-full border px-1.5 py-[1px] text-[10px] transition-colors ${
+                reviewedNow
+                  ? 'border-has-line bg-has-soft text-has'
+                  : q.review?.status === 'stale'
+                    ? 'border-warn-line bg-warn-soft text-warn'
+                    : 'border-border bg-surface text-ink-faint hover:border-brand-line hover:text-brand-ink'}`}>
+              {reviewedNow ? q.review?.short || '已审'
+                : q.review?.status === 'stale' ? '原复核失效' : '快速通过'}
             </button>
-          )}
-          {q.meta?.answer_source && (
-            <span className="rounded-full border border-border px-1.5 py-[1px] text-[10px] text-ink-faint"
-              title="答案来源：human=人工改过 / workbuddy=模型生成 / legacy=历史存量">
-              {q.meta.answer_source === 'human' ? '人工'
-                : q.meta.answer_source === 'workbuddy' ? '模型' : '历史存量'}
-            </span>
-          )}
-          <button onClick={toggleReview} disabled={reviewBusy}
-            title={q.meta?.reviewed_at ? `已复核：${q.meta.reviewed_at}` : '标记为已复核（答案和解析都看过了）'}
-            className={`press rounded-full border px-1.5 py-[1px] text-[10px] transition-colors ${
-              q.meta?.reviewed_at
-                ? 'border-has-line bg-has-soft text-has'
-                : 'border-border bg-surface text-ink-faint hover:border-brand-line hover:text-brand-ink'}`}>
-            {q.meta?.reviewed_at ? '已复核' : '标记复核'}
-          </button>
+          </div>
         </div>
         {ansEdit ? (
           <div className={panel}>
@@ -800,89 +1082,110 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refre
               </div>
             )}
           </div>
-        ) : q.answer ? (
-          // 答案**标红**（用户要求：要一眼看到）。学生版/题目列表不受影响。
+        ) : q.blocks?.answer?.length ? (
           <div className="text-[14.5px] font-semibold leading-relaxed text-danger">
-            {renderBlocks(q.blocks?.answer, kw)}
+            {renderBlocks(q.blocks.answer, kw)}
+          </div>
+        ) : q.answer ? (
+          // 答案通常很短：详情还在拉，也先把它显示出来，别让人等空白。
+          <div className="text-[14.5px] font-semibold leading-relaxed text-danger">
+            {q.answer}
+          </div>
+        ) : loadingFull ? (
+          <div className="space-y-2 py-1">
+            <div className="skeleton h-3.5 w-24" />
+            <div className="skeleton h-3.5 w-16" />
           </div>
         ) : (
           <div className="text-[12.5px] text-ink-faint">（暂时没有答案）</div>
         )}
-      </div>
+      </section>
 
       {/* ── 解析 ── */}
-      <div className="mb-1">
-        <div className="mb-1.5 flex items-center gap-2">
-          <span className={sectionTitle}>解析</span>
-          {!solEdit && (
-            <button onClick={() => setSolEdit(true)}
-              className={`press inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px]
-                          text-[11.5px] transition-colors ${
-                q.solution ? 'border-border bg-surface text-ink-faint hover:border-border-strong hover:text-ink'
-                           : 'border-warn-line bg-warn-soft text-warn hover:bg-warn-soft/70'}`}>
-              {q.solution ? <Pencil size={13} /> : <Plus size={13} />}
-              {q.solution ? '改' : '录解析'}
-            </button>
-          )}
-          {q.meta?.solution_source === 'human' && (
-            <span className="text-[11px] text-ink-faint">人工录的</span>
-          )}
+      <section id="detail-solution" className={`${card} mb-3 scroll-mt-24`}>
+        <div className={cardHead}>
+          <span className={`${cardIcon} bg-[#f5f3ff] text-[#7c3aed]`}><BookOpen size={13} /></span>
+          <span className={cardTitle}>解析</span>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {!solEdit && (
+              <button onClick={() => setSolEdit(true)}
+                className={`press inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px]
+                            text-[11.5px] transition-colors ${
+                  q.solution ? 'border-border bg-surface text-ink-faint hover:border-border-strong hover:text-ink'
+                             : 'border-warn-line bg-warn-soft text-warn hover:bg-warn-soft/70'}`}>
+                {q.solution ? <Pencil size={13} /> : <Plus size={13} />}
+                {q.solution ? '改' : '录解析'}
+              </button>
+            )}
+            {q.meta?.solution_source && (
+              <span className="rounded-full border border-border px-1.5 py-[1px] text-[10px] text-ink-faint"
+                title="解析来源：human=人工 / workbuddy=模型 / legacy=历史存量 / 无=未登记">
+                解析 · {srcLabel(q.meta.solution_source)}
+              </span>
+            )}
+          </div>
         </div>
         {solEdit
           ? <SolutionEditor q={q} onSaved={onSaved} onCancel={() => setSolEdit(false)} />
-          : q.solution
-            ? <div className="q-solution text-ink-soft">{renderBlocks(q.blocks?.solution, kw)}</div>
-            : <div className="text-[12.5px] text-ink-faint">（暂时没有解析）</div>}
-      </div>
+          : q.blocks?.solution?.length
+            ? <div className="q-solution text-ink-soft">{renderBlocks(q.blocks.solution, kw)}</div>
+            : loadingFull
+              ? (
+                <div className="space-y-2 py-1">
+                  <div className="skeleton h-3.5 w-[92%]" />
+                  <div className="skeleton h-3.5 w-[84%]" />
+                  <div className="skeleton h-3.5 w-[62%]" />
+                </div>
+              )
+              : q.solution
+                ? <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-soft">{q.solution}</div>
+                : <div className="text-[12.5px] text-ink-faint">（暂时没有解析）</div>}
+      </section>
 
-      <div className="mt-5 space-y-3 border-t border-border pt-4">
-        {/* 考点与难度：**下拉抽屉**，点开才占地方。
-            详情页本来就窄，两个常驻控件会把解析挤没。 */}
-        {/* **考点行**：常驻、可点。点一下就把列表切成「只看这个考点」——
-            这是从一道题跳到同类题最直接的一条路。
-            不做进下面的抽屉里：抽屉要展开才看得见，而这条动线是高频的。 */}
-        {q.points.length > 0 && (
-          <div>
-            <div className={`mb-1.5 ${sectionTitle}`}>考点</div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {q.points.map((pid, i) => {
-                const t = (facets?.points || []).find((x: any) => x.value === pid)
-                const title = t?.title || pid
-                return (
-                  <button key={pid} onClick={() => onFindPoint?.(pid, title)}
-                    title={`找「${title}」的全部题目`}
-                    className={`press inline-flex items-center gap-1 rounded-full border px-2.5 py-[4px]
-                                text-[11.5px] transition-colors ${
-                      i === 0 ? 'border-brand-line bg-brand-soft font-medium text-brand-ink hover:bg-brand-soft/70'
-                              : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
-                    {i === 0 && <span className="text-[9.5px] font-semibold opacity-70">主</span>}
-                    {title}
-                    <span className="inline-flex items-center gap-0.5 text-[10.5px] opacity-60">
-                      找同类
-                      <ChevronRight size={11} />
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+      {q.points.length > 0 && (
+        <section id="detail-points" className={`${card} mb-3 scroll-mt-24`}>
+          <div className={cardHead}>
+            <span className={`${cardIcon} bg-brand-soft text-brand`}><Tags size={13} /></span>
+            <span className={cardTitle}>考点</span>
+            <span className="ml-auto text-[10px] text-ink-faint">{q.points.length} 个</span>
           </div>
-        )}
-        <TagsEditor q={q} onSaved={onSaved} facets={facets} refreshing={refreshing} searchKw={kw} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            {q.points.map((pid, i) => {
+              const t = (facets?.points || []).find((x: any) => x.value === pid)
+              const title = t?.title || pid
+              return (
+                <button key={pid} onClick={() => onFindPoint?.(pid, title)}
+                  title={`找「${title}」的全部题目`}
+                  className={`press inline-flex items-center gap-1 rounded-full border px-2.5 py-[4px]
+                              text-[11.5px] transition-colors ${
+                    i === 0 ? 'border-brand-line bg-brand-soft font-medium text-brand-ink hover:bg-brand-soft/70'
+                            : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                  {i === 0 && <span className="text-[9.5px] font-semibold opacity-70">主</span>}
+                  {title}
+                  <span className="inline-flex items-center gap-0.5 text-[10.5px] opacity-60">
+                    找同类
+                    <ChevronRight size={11} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      <TagsEditor q={q} onSaved={onSaved} facets={facets} refreshing={refreshing} searchKw={kw} />
+
+      <section id="detail-info" className={`${card} mt-3 scroll-mt-24`}>
+        <div className={cardHead}>
+          <span className={`${cardIcon} bg-muted text-ink-faint`}><Info size={13} /></span>
+          <span className={cardTitle}>题目信息</span>
+        </div>
         {q.missing.length > 0 && (
-          <div className="flex items-center gap-1.5 text-[11.5px] text-warn">
+          <div className="mb-2 flex items-center gap-1.5 text-[11.5px] text-warn">
             <AlertTriangle size={12} className="shrink-0" />缺：{q.missing.join('、')}
           </div>
         )}
-        {/* **删除**：唤起弹窗。原因、口令、删的是哪道题，弹窗里一次看全。 */}
-        {onDeleteAsk && (
-          <button onClick={onDeleteAsk}
-            className="press inline-flex items-center gap-1.5 rounded-lg border border-border
-                       bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-faint transition-colors
-                       hover:border-warn-line hover:bg-warn-soft hover:text-warn">
-            <Trash2 size={13} />删除这道题…
-          </button>
-        )}
-        <div className="text-[11.5px] text-ink-faint">
+        <div className="text-[11.5px] leading-relaxed text-ink-faint">
           {q.meta.solved_by && (
             <span className="mr-1.5 inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-[2px] text-[11px]"
               title={q.meta.solved_at || ''}>AI 求解</span>
@@ -897,7 +1200,15 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, refre
           {q.meta.source_label || q.meta.book}
           {q.meta.year ? ` · ${q.meta.year}` : ''} · <code className="font-mono">{q.key}</code>
         </div>
-      </div>
+        {onDeleteAsk && (
+          <button onClick={onDeleteAsk}
+            className="press mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border
+                       bg-surface px-2.5 py-1.5 text-[11.5px] text-ink-faint transition-colors
+                       hover:border-warn-line hover:bg-warn-soft hover:text-warn">
+            <Trash2 size={13} />删除这道题…
+          </button>
+        )}
+      </section>
 
       {/* 源码编辑器用 portal 挂到 body（详情抽屉带 transform 动画，
           `fixed` 留在里面会以抽屉为参照跑偏），这里只负责开关。 */}

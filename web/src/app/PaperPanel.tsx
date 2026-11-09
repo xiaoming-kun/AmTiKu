@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp, RefreshCw, SlidersHorizontal, X } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { SECTION_LABEL, scoreOf } from '@/lib/paper'
-import { DIFF_STARS } from '@/lib/display'
+import { DIFF_STARS, dispPoint } from '@/lib/display'
 import { Flags } from '@/app/ui'
 import SwapDialog from '@/app/SwapDialog'
 
@@ -62,7 +62,7 @@ export default function PaperPanel({ paper, onOpen, onRemove, onMove, onSwap, on
                                  hover:border-brand-line hover:bg-brand-soft/30">
                       <span className="tnum w-4 shrink-0 text-right text-[11.5px] text-ink-faint">{i + 1}</span>
                       <span className="min-w-0 flex-1 truncate text-[12.5px]">
-                        {it.point_titles?.[0] || it.key}
+                        {dispPoint(it.point_titles?.[0] || '') || it.key}
                       </span>
                       {it.difficulty && (
                         <span title={it.difficulty}

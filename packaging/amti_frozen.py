@@ -25,10 +25,16 @@ def _root() -> Path:
 
 def _ensure_data(root: Path) -> None:
     r"""第一次运行时，把随包的 demo 题库放到 exe 旁边（已有题库则不动）。"""
-    if (root / "题目").exists():
-        return
     bundle = Path(getattr(sys, "_MEIPASS", root))
     demo = bundle / "demo数据"
+    # 知识地图是**随包的静态数据**（不是用户题库）：缺了就补。
+    # 不能放在下面那个 `return` 之后——老用户升级时 `题目/` 已存在，
+    # 否则「知识地图」页会永远空白。
+    for name in ("知识地图.json", "小初诊断题.json"):
+        if (demo / name).exists() and not (root / name).exists():
+            shutil.copy2(demo / name, root / name)
+    if (root / "题目").exists():
+        return
     if not (demo / "题目").exists():
         return
     print("首次运行：放入 demo 题库（15 秒后自动打开浏览器）...")

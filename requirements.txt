@@ -13,3 +13,5 @@ pydantic==2.13.4
 pillow==12.2.0
 numpy==2.4.6
 pymupdf==1.28.2
+mistune==3.2.1
+sympy==1.14.0

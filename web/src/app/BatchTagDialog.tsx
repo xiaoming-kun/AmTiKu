@@ -17,14 +17,18 @@ import { toast } from '@/app/Toast'
 type Field = 'points' | 'difficulty' | 'stars' | 'year' | 'region' | 'source' | 'reviewed'
 
 const DIFFS = ['简单题', '中档题', '难题']
+/** 和后端 `/api/questions/batch` 的上限保持一致（服务端也会再挡一次）。 */
+const MAX_BATCH = 500
 
 export default function BatchTagDialog({
-  keys, facets, onClose, onDone,
+  keys, facets, onClose, onDone, onTrimTo,
 }: {
   keys: string[]
   facets: Facets | null
   onClose: () => void
   onDone: (res: any) => void
+  /** 勾选超过上限时，把勾选裁到前 N 道（由 App 改 checkedMap）。 */
+  onTrimTo?: (n: number) => void
 }) {
   const [on, setOn] = useState<Set<Field>>(new Set())
   const [form, setForm] = useState({
@@ -33,6 +37,18 @@ export default function BatchTagDialog({
   })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [pointMode, setPointMode] = useState<'replace' | 'add' | 'remove'>('replace')
+  const [pointKw, setPointKw] = useState('')
+  const tooMany = keys.length > MAX_BATCH
+  const allPoints = facets?.points || []
+  const kw = pointKw.trim()
+  const pointOptions = allPoints.filter((p) =>
+    !kw || p.title.includes(kw) || p.value.includes(kw))
+  // 选中项要在“搜索把选项筛没了”时仍然显示，否则 select 会变成空白。
+  const selectedPoint = form.point ? allPoints.find((p) => p.value === form.point) : undefined
+  if (selectedPoint && !pointOptions.some((p) => p.value === selectedPoint.value)) {
+    pointOptions.unshift(selectedPoint)
+  }
 
   useEffect(() => {
     // **capture 阶段**：App 的全局 Esc 会先关详情抽屉并同步重渲染，
@@ -58,6 +74,7 @@ export default function BatchTagDialog({
     setForm((s) => ({ ...s, [k]: v }))
 
   const submit = async () => {
+    if (tooMany) { setErr(`一次最多改 ${MAX_BATCH} 道，当前 ${keys.length} 道`); return }
     if (!on.size) { setErr('先至少勾一个要改的字段'); return }
     if (on.has('points') && !form.point) { setErr('勾了考点，但没选考点'); return }
     if (on.has('source') && (!form.book.trim() || !form.label.trim())) {
@@ -66,7 +83,10 @@ export default function BatchTagDialog({
     setBusy(true); setErr('')
     try {
       const body: Parameters<typeof api.batchPatch>[0] = { keys }
-      if (on.has('points')) body.points = [form.point]
+      if (on.has('points')) {
+        body.points = [form.point]
+        body.point_mode = pointMode
+      }
       if (on.has('difficulty')) body.difficulty = form.difficulty
       if (on.has('stars')) body.stars = Number(form.stars)
       if (on.has('year')) body.year = form.year.trim()
@@ -110,14 +130,56 @@ export default function BatchTagDialog({
         </div>
 
         <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
+          {tooMany && (
+            <div className="rounded-xl border border-warn-line bg-warn-soft px-3 py-2.5
+                            text-[11.5px] leading-relaxed text-warn">
+              <div className="font-medium">
+                一次最多改 {MAX_BATCH} 道，当前已选 <span className="tnum">{keys.length}</span> 道。
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span>请先减少勾选，或只改前 {MAX_BATCH} 道。</span>
+                {onTrimTo && (
+                  <button onClick={() => onTrimTo(MAX_BATCH)}
+                    className="press rounded-md border border-warn-line bg-surface px-2 py-[3px]
+                               text-[11px] font-medium text-warn hover:bg-warn-soft/70">
+                    只保留前 {MAX_BATCH} 道
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <Row label="考点" on={on.has('points')} onToggle={() => toggle('points')}>
+            <div className={`mb-1.5 flex gap-1 rounded-lg bg-muted p-1 ${
+              on.has('points') ? '' : 'opacity-50'}`}>
+              {([['replace', '替换'], ['add', '追加'], ['remove', '移除']] as const).map(([v, label]) => (
+                <button key={v} type="button" disabled={!on.has('points')}
+                  aria-pressed={pointMode === v}
+                  onClick={() => setPointMode(v)}
+                  className={`press flex-1 rounded-md py-1 text-[11.5px] transition-colors ${
+                    pointMode === v
+                      ? 'bg-surface font-medium text-brand-ink shadow-[var(--shadow-card)]'
+                      : 'text-ink-faint hover:text-ink'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <input value={pointKw} onChange={(e) => setPointKw(e.target.value)}
+              disabled={!on.has('points')} placeholder="搜考点名或编号，如「椭圆」或 5.2.1"
+              className={CTRL + ' mb-1.5 h-[30px]'} />
             <select value={form.point} onChange={(e) => set('point', e.target.value)}
               disabled={!on.has('points')} className={CTRL}>
-              <option value="">选择考点…</option>
-              {(facets?.points || []).map((p) => (
+              <option value="">
+                {pointMode === 'remove' ? '选择要移除的考点…' : '选择考点…'}
+              </option>
+              {pointOptions.map((p) => (
                 <option key={p.value} value={p.value}>{p.title}（{p.value}）</option>
               ))}
             </select>
+            <div className="mt-1 text-[10.5px] leading-snug text-ink-faint">
+              {pointMode === 'replace' ? '整组替换成这一个考点'
+                : pointMode === 'add' ? '在原考点上追加这一个（自动去重）'
+                  : '从原考点里移除这一个；移除主考点后，下一个自动升为主考点'}
+            </div>
           </Row>
 
           <Row label="难度" on={on.has('difficulty')} onToggle={() => toggle('difficulty')}>
@@ -157,14 +219,18 @@ export default function BatchTagDialog({
             </div>
           </Row>
 
-          <Row label="复核" on={on.has('reviewed')} onToggle={() => toggle('reviewed')}>
+          <Row label="审阅" on={on.has('reviewed')} onToggle={() => toggle('reviewed')}>
             <select value={form.reviewed} onChange={(e) => set('reviewed', e.target.value)}
               disabled={!on.has('reviewed')} className={CTRL}>
-              <option value="yes">标记已复核</option>
-              <option value="no">取消复核</option>
+              <option value="yes">快速标记通过（不推荐）</option>
+              <option value="no">收回审阅（改回待审）</option>
             </select>
           </Row>
 
+          <div className="rounded-lg border border-warn-line bg-warn-soft/40 px-2.5 py-2 text-[11px] leading-relaxed text-warn">
+            批量“快速通过”不逐题看答案，只写复核时间和正文指纹；真正的审阅请走左侧「审阅」页的
+            风险队列/分层抽样，否则复核率数字不可信。
+          </div>
           <div className="rounded-lg border border-border bg-bg px-2.5 py-2 text-[11px] leading-relaxed text-ink-faint">
             批量改书名/卷名时，key 只在“本来就是 <code>书/卷名#号</code> 拼出来的”题上跟着改；
             像 <code>高考真题汇编/2024/新高考I卷#1</code> 这种多一层目录的，只改标签、不动身份。
@@ -180,7 +246,8 @@ export default function BatchTagDialog({
           <button onClick={() => !busy && onClose()}
             className="press rounded-lg border border-border bg-surface px-3 py-[6px]
                        text-[12.5px] text-ink-soft hover:bg-surface-2">取消</button>
-          <button onClick={submit} disabled={busy}
+          <button onClick={submit} disabled={busy || tooMany}
+            title={tooMany ? `一次最多改 ${MAX_BATCH} 道` : ''}
             className="press flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-[6px]
                        text-[12.5px] font-medium text-white shadow-[var(--shadow-brand)]
                        hover:brightness-105 disabled:opacity-60">

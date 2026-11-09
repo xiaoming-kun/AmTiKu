@@ -1,0 +1,478 @@
+@layer components {
+/* ── BoardUI 风格基元 ──────────────────────────────────────────────
+   只写跨页面复用的形状：按钮、卡片、输入、徽章、看板列、表格。
+   页面特有的排版仍写在组件里，避免这里变成第二个 Tailwind。
+   颜色全部走 index.css 的语义 token，暗色自动跟随。 */
+
+.b-nav {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 38px;
+  align-items: center;
+  gap: 10px;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-ink-soft);
+  transition: background-color 160ms var(--ease-soft), color 160ms var(--ease-soft),
+              border-color 160ms var(--ease-soft), box-shadow 160ms var(--ease-soft);
+}
+.b-nav:hover { background: color-mix(in srgb, var(--color-ink) 6%, transparent); color: var(--color-ink); }
+/* Apple 侧栏选中：一块**带色的填充**，不是白卡片 + 左侧竖条。
+   竖条在 macOS 的 Finder / 设置里已经不用了；填充更安静，也更能一眼扫到。 */
+.b-nav-on {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-ink);
+  font-weight: 600;
+  border-color: transparent;
+  box-shadow: none;
+}
+.b-nav-on::before { display: none; }
+.b-nav-on:hover { background: var(--color-brand-soft); color: var(--color-brand-ink); }
+.dark .b-nav-on {
+  background: color-mix(in srgb, var(--color-brand) 16%, var(--color-surface));
+  color: var(--color-ink);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.b-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  border-radius: var(--radius-btn);
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 140ms var(--ease-soft), border-color 140ms var(--ease-soft),
+              color 140ms var(--ease-soft), box-shadow 140ms var(--ease-soft),
+              filter 140ms var(--ease-soft);
+}
+.b-btn:active { transform: translateY(0.5px); }
+.b-btn:disabled { opacity: .45; pointer-events: none; }
+.b-btn-primary {
+  background: var(--color-brand);
+  color: #fff;
+  box-shadow: var(--shadow-brand), inset 0 1px 0 rgb(255 255 255 / .2);
+}
+.b-btn-primary:hover { filter: brightness(1.06); }
+.b-btn-secondary {
+  border: 1px solid var(--color-border);
+  background: var(--color-glass-2);
+  color: var(--color-ink-soft);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.b-btn-secondary:hover { border-color: var(--color-border-strong); color: var(--color-ink);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .05); }
+.b-btn-ghost { color: var(--color-ink-soft); }
+.b-btn-ghost:hover { background: var(--color-muted); color: var(--color-ink); }
+.b-btn-soft { background: var(--color-brand-soft); color: var(--color-brand-ink); }
+.b-btn-soft:hover { background: color-mix(in srgb, var(--color-brand) 12%, var(--color-surface)); }
+.b-btn-danger { border: 1px solid var(--color-warn-line); background: var(--color-surface); color: var(--color-warn); }
+.b-btn-danger:hover { background: var(--color-warn-soft); }
+.b-btn-sm { height: 28px; padding: 0 9px; font-size: 11.5px; border-radius: 8px; }
+.b-btn-lg { height: 38px; padding: 0 16px; font-size: 13px; }
+
+.b-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--grad-surface), var(--color-surface);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+.b-card-hover { transition: border-color 150ms var(--ease-soft), box-shadow 150ms var(--ease-soft); }
+.b-card-hover:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-hover); }
+
+.b-input {
+  height: 34px;
+  width: 100%;
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--color-border);
+  background: var(--color-glass-2);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 140ms var(--ease-soft), box-shadow 140ms var(--ease-soft);
+}
+.b-input::placeholder { color: var(--color-ink-faint); }
+.b-input:focus { border-color: var(--color-brand-line); box-shadow: 0 0 0 3px var(--color-brand-soft); }
+
+.b-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-glass-2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 3px 9px;
+  font-size: 11.5px;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+}
+.b-chip:hover { border-color: var(--color-border-strong); color: var(--color-ink); }
+.b-chip-on {
+  border-color: var(--color-brand-line);
+  background: var(--color-brand-soft);
+  color: var(--color-brand-ink);
+  font-weight: 600;
+}
+
+.b-eyebrow {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  color: var(--color-ink-faint);
+}
+.b-kpi { font-size: 28px; font-weight: 650; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.b-kpi-sm { font-size: 20px; font-weight: 650; letter-spacing: -.015em; line-height: 1; font-variant-numeric: tabular-nums; }
+
+.b-progress { height: 6px; overflow: hidden; border-radius: 999px; background: var(--color-muted); }
+.b-progress > i { display: block; height: 100%; border-radius: inherit; background: var(--color-brand); }
+.b-progress-soft > i { background: color-mix(in srgb, var(--color-brand) 55%, var(--color-surface)); }
+
+.b-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-card);
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--color-ink-faint);
+}
+
+.b-scroll { scrollbar-gutter: stable; overscroll-behavior: contain; }
+.b-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.b-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong); border-radius: 6px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+
+.b-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
+.b-table th {
+  padding: 8px 10px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  color: var(--color-ink-faint); border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-2); white-space: nowrap;
+}
+.b-table td { padding: 8px 10px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.b-table tr:last-child td { border-bottom: 0; }
+.b-table tbody tr:hover { background: var(--color-surface-2); }
+
+.b-divider { height: 1px; background: var(--color-border); }
+
+.b-board-col {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface-2);
+  padding: 10px;
+}
+.b-board-card {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.b-sheet {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pop);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-pop);
+}
+
+/* 内容页通用：最大宽度 + 呼吸感 */
+.b-page { width: 100%; max-width: 1280px; margin: 0 auto; padding: 22px 24px 40px; }
+@media (max-width: 900px) { .b-page { padding: 16px 14px 32px; } }
+
+/* ── 极光 / 深空 ──────────────────────────────────────────────────
+   背景不是一张大图：三个径向光斑 + 一层 64px 网格，全部用 CSS 画。
+   固定定位是为了滚动时"背景不动、内容在玻璃上滑"，这是高端后台的
+   常见空间感；暗色下网格几乎不可见，只剩很淡的点阵纹理。 */
+.app-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--color-bg);
+}
+.app-aurora {
+  position: absolute;
+  inset: 0;
+  background: var(--grad-aurora);
+  opacity: 1;
+}
+.app-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-ink) 7%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 20%, transparent 75%);
+  opacity: .45;
+}
+.dark .app-grid { opacity: .28; }
+.orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(110px);
+  opacity: .55;
+  animation: orb-float 18s ease-in-out infinite alternate;
+}
+.orb-cyan { width: 520px; height: 520px; left: -160px; top: -180px;
+  background: radial-gradient(circle, rgb(191 219 254 / .55), transparent 65%); }
+.orb-violet { width: 560px; height: 560px; right: -140px; top: -220px;
+  background: radial-gradient(circle, rgb(221 214 254 / .50), transparent 65%); animation-delay: -6s; }
+.orb-magenta { width: 620px; height: 620px; left: 30%; bottom: -420px;
+  background: radial-gradient(circle, rgb(251 207 232 / .32), transparent 65%); animation-delay: -12s; }
+.dark .orb-cyan { background: radial-gradient(circle, rgb(34 211 238 / .28), transparent 65%); }
+.dark .orb-violet { background: radial-gradient(circle, rgb(139 92 246 / .26), transparent 65%); }
+.dark .orb-magenta { background: radial-gradient(circle, rgb(236 72 153 / .16), transparent 65%); }
+@keyframes orb-float {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(20px, 18px, 0) scale(1.06); }
+}
+
+/* 玻璃：深色下是半透明黑玻璃，浅色下是磨砂白玻璃 */
+.glass {
+  background: var(--color-glass);
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+.glass-2 {
+  background: var(--color-glass-2);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  border: 1px solid var(--color-border);
+}
+.glass-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--grad-surface), var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+.glass-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgb(255 255 255 / .9), transparent 38%),
+              linear-gradient(315deg, color-mix(in srgb, var(--color-brand) 10%, transparent), transparent 55%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: .9;
+}
+.dark .glass-card::before {
+  background: linear-gradient(135deg, rgb(255 255 255 / .16), transparent 32%, transparent 70%, rgb(34 211 238 / .14));
+}
+.dark .glass-card { background: linear-gradient(180deg, rgb(255 255 255 / .055), rgb(255 255 255 / .012)), #0b101c; }
+.glass-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-hover); }
+
+.hero-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background: var(--grad-hero);
+  box-shadow: var(--shadow-card);
+}
+.hero-panel::after {
+  content: "";
+  position: absolute;
+  width: 460px;
+  height: 460px;
+  right: -140px;
+  top: -200px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(196 181 253 / .38), transparent 65%);
+  filter: blur(28px);
+  pointer-events: none;
+}
+.dark .hero-panel {
+  background:
+    radial-gradient(80% 120% at 0% 0%, rgb(34 211 238 / .16), transparent 55%),
+    radial-gradient(70% 120% at 100% 0%, rgb(139 92 246 / .18), transparent 55%),
+    linear-gradient(180deg, rgb(255 255 255 / .04), rgb(255 255 255 / .01)),
+    var(--color-surface);
+}
+.dark .hero-panel::after {
+  background: radial-gradient(circle, rgb(34 211 238 / .18), transparent 65%);
+}
+
+.grad-primary {
+  background: var(--grad-primary);
+  color: #fff;
+  box-shadow: var(--shadow-brand), inset 0 1px 0 rgb(255 255 255 / .22);
+}
+.grad-primary:hover { filter: brightness(1.1); }
+.grad-text {
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.grad-bar {
+  background: var(--grad-primary);
+  box-shadow: 0 0 18px rgb(34 211 238 / .25);
+}
+.neon-icon {
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #fff;
+  background: var(--grad-primary);
+  box-shadow: 0 8px 24px -10px rgb(34 211 238 / .55), inset 0 1px 0 rgb(255 255 255 / .25);
+}
+.glow-cyan { box-shadow: var(--glow-cyan); }
+.glow-violet { box-shadow: var(--glow-violet); }
+
+.aurora-border {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
+    var(--grad-primary) border-box;
+}
+.aurora-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-brand-ink);
+  background: var(--color-brand-soft);
+  border: 1px solid var(--color-brand-line);
+}
+.live-dot {
+  width: 6px; height: 6px; border-radius: 999px;
+  background: var(--color-brand);
+  box-shadow: 0 0 0 0 var(--color-brand);
+  animation: live-pulse 2.2s ease-out infinite;
+}
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.stat-num {
+  font-size: clamp(26px, 2.4vw, 38px);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+.sheen {
+  position: relative;
+  overflow: hidden;
+}
+.sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgb(255 255 255 / .09) 45%, transparent 60%);
+  transform: translateX(-120%);
+  transition: transform .7s var(--ease-soft);
+  pointer-events: none;
+}
+.sheen:hover::after { transform: translateX(120%); }
+
+/* ══ 内容卡片：Apple 的“内容层” ═══════════════════════════════
+   Liquid Glass 在 Apple 的体系里是**导航/控件层**的材质，不是阅读内容
+   的材质。列表卡片装的是题干和答案，必须保持实色、清晰；玻璃感留在
+   侧栏、顶栏、工具栏这些“框架”上。这样更接近 macOS / iOS 原生界面，
+   也不会出现整页彩色玻璃导致题目看不清。 */
+.question-card {
+  position: relative;
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .85),
+    var(--shadow-card);
+  transition: transform .2s var(--ease-spring), border-color .2s var(--ease-soft),
+              box-shadow .2s var(--ease-soft);
+}
+.question-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-border-strong);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .9),
+    var(--shadow-hover);
+}
+.question-card[data-on="1"] {
+  border-color: color-mix(in srgb, var(--color-brand) 44%, var(--color-border)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-brand) 9%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / .9),
+    var(--shadow-hover);
+}
+.dark .question-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .055),
+    var(--shadow-card);
+}
+.dark .question-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .07),
+    var(--shadow-hover);
+}
+.dark .question-card[data-on="1"] {
+  border-color: color-mix(in srgb, var(--color-brand) 62%, var(--color-border)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-brand) 12%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / .07),
+    var(--shadow-hover);
+}
+
+/* ── 导航/控件层：只有这一层用玻璃 ─────────────────────────────
+   侧栏、顶栏、列表工具栏、纸张栏。它们浮在内容之上，透出的是背景
+   而不是题目正文，因此可以安全使用 blur + saturate + 顶部高光。 */
+.app-chrome {
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+.app-chrome-top {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .55);
+}
+.dark .app-chrome-top {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .question-card { transition: none; }
+  .question-card:hover { transform: none; }
+}
+}

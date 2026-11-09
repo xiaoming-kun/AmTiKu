@@ -128,6 +128,28 @@ function pickCls(on: boolean) {
     : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`
 }
 
+/** 「开关胶囊」：`<label>` 里套一个 `sr-only` 的 checkbox（印出处 / 答案 / 密封线…）。
+ *
+ *  ⚠️ `relative` 是**功能性的，别删** —— 这个 bug 踩过：
+ *  Tailwind 的 `sr-only` 是 `position:absolute`，而弹窗里从 label 往上**没有一个
+ *  定位元素**（弹窗自己是 static），于是这个 1px 的输入框把锚点一路找到了
+ *  *弹窗外的遮罩层*（它是 `fixed`）。它的矩形就落在左栏正文的**原始 Y** 上，
+ *  经常在弹窗可视区之外（实测比弹窗底边低 295px）。
+ *  点胶囊 → 浏览器「把焦点滚进可视区」→ 它挑中的滚动容器是**弹窗自己**
+ *  （`overflow-hidden` 也是滚动容器）；弹窗没有滚动条，滚了回不去：
+ *  整个弹窗永久上移 295px，标题栏消失、底部一片白，只能按 Esc 关掉重开。
+ *  给 label 加 `relative` 后锚点就回到胶囊身上，弹窗再没有可滚的"幽灵内容"。 */
+const PILL = 'press relative inline-flex cursor-pointer items-center gap-1.5 rounded-full border ' +
+  'px-2.5 py-[5px] text-[12.5px] font-medium transition-colors ' +
+  'focus-within:ring-2 focus-within:ring-brand/25'
+
+/** 开关胶囊的选中/未选两态（未选的也共用一套 hover，避免每处再抄一遍）。 */
+function pillCls(on: boolean) {
+  return `${PILL} ${on
+    ? 'border-brand bg-brand text-white'
+    : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`
+}
+
 type Mode = 'gaokao' | 'test' | 'coverage' | 'handout'
 
 /** 卷型对应的默认卷面标题。
@@ -538,8 +560,13 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
   return (
     <div className={`${closing ? 'anim-fade-out' : 'anim-fade-in'} fixed inset-0 z-50
                     flex items-center justify-center bg-scrim p-5 backdrop-blur-[2px]`}>
+      {/* `overflow-clip` 而不是 `overflow-hidden`：两者裁切效果一样，但 hidden
+          仍然是个**滚动容器**——只要里头有东西探出弹窗（定位元素、1px 隐藏输入框…），
+          浏览器就可能"把焦点滚进来"，把整块内容顶上去；而这里没有滚动条，顶上去
+          就回不来了（见上面 `PILL` 那段注释）。clip 根本不可滚，堵死这条路。
+          三栏各自 `overflow-y-auto`，弹窗本身不需要滚动。 */}
       <div className={`${closing ? 'anim-pop-out' : 'pop-c'} flex h-[min(880px,92vh)]
-                      w-[min(1220px,95vw)] flex-col overflow-hidden
+                      w-[min(1220px,95vw)] flex-col overflow-clip
                       rounded-[var(--radius-pop)] border border-border bg-surface
                       shadow-[var(--shadow-pop)]`}>
 
@@ -620,11 +647,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                   <input value={cov} onChange={(e) => setCov(e.target.value)}
                     className={`${INPUT} tnum`} />
                 </label>
-                <label className={`press inline-flex cursor-pointer items-center gap-1.5 rounded-full
-                                   border px-2.5 py-[5px] text-[12.5px] font-medium transition-colors
-                                   focus-within:ring-2 focus-within:ring-brand/25 ${
-                  keepStruct ? 'border-brand bg-brand text-white'
-                             : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                <label className={pillCls(keepStruct)}>
                   <input type="checkbox" checked={keepStruct}
                     onChange={(e) => setKeepStruct(e.target.checked)} className="sr-only" />
                   <Check size={12} strokeWidth={2.8}
@@ -804,11 +827,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                    用户原话：「比如这个第几题，完全没必要」；出处则有时要、
                    有时不要，所以做成可记忆的开关。 */}
             <Group title="题目信息">
-              <label className={`press inline-flex cursor-pointer items-center gap-1.5 rounded-full
-                                 border px-2.5 py-[5px] text-[12.5px] font-medium transition-colors
-                                 focus-within:ring-2 focus-within:ring-brand/25 ${
-                showSource ? 'border-brand bg-brand text-white'
-                           : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+              <label className={pillCls(showSource)}>
                 <input type="checkbox" checked={showSource}
                   onChange={(e) => setShowSource(e.target.checked)} className="sr-only" />
                 <Check size={12} strokeWidth={2.8} className={showSource ? 'shrink-0' : 'shrink-0 opacity-30'} />
@@ -827,11 +846,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                 答案与解析
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className={`press inline-flex cursor-pointer items-center gap-1.5 rounded-full
-                                   border px-2.5 py-[5px] text-[12.5px] font-medium transition-colors
-                                   focus-within:ring-2 focus-within:ring-brand/25 ${
-                  showAns ? 'border-brand bg-brand text-white'
-                          : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                <label className={pillCls(showAns)}>
                   <input type="checkbox" checked={showAns}
                     onChange={(e) => { setShowAns(e.target.checked)
                                         if (e.target.checked) setAnsAtEnd(false) }}
@@ -839,11 +854,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                   <Check size={12} strokeWidth={2.8} className={showAns ? 'shrink-0' : 'shrink-0 opacity-30'} />
                   答案印在题目上（讲义卷）
                 </label>
-                <label className={`press inline-flex cursor-pointer items-center gap-1.5 rounded-full
-                                   border px-2.5 py-[5px] text-[12.5px] font-medium transition-colors
-                                   focus-within:ring-2 focus-within:ring-brand/25 ${
-                  ansAtEnd ? 'border-brand bg-brand text-white'
-                           : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`}>
+                <label className={pillCls(ansAtEnd)}>
                   <input type="checkbox" checked={ansAtEnd}
                     onChange={(e) => { setAnsAtEnd(e.target.checked)
                                         if (e.target.checked) setShowAns(false) }}
@@ -856,9 +867,8 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                 </label>
               </div>
               {mode !== 'handout' && (
-                <label className="press inline-flex cursor-pointer items-center gap-1.5 rounded-full
-                                  border border-border bg-surface px-2.5 py-[5px] text-[12.5px]
-                                  text-ink-soft hover:border-brand-line hover:bg-brand-soft/50">
+                <label className={`${PILL} border-border bg-surface text-ink-soft
+                                   hover:border-brand-line hover:bg-brand-soft/50`}>
                   <input type="checkbox" checked={scoreSeal}
                     onChange={(e) => setScoreSeal(e.target.checked)} className="sr-only" />
                   <Check size={12} strokeWidth={2.8} className={scoreSeal ? 'shrink-0' : 'shrink-0 opacity-30'} />

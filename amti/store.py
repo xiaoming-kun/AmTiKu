@@ -118,7 +118,7 @@ def load_for_update() -> tuple[list[Question], tuple]:
     return qs, sig
 
 
-def update(fn, *, dry_run: bool = False):
+def update(fn, *, dry_run: bool = False, changed_keys: list[str] | None = None):
     r"""**改库的首选形态**：在同一把锁里完成「读全库 → `fn(qs)` → 整库写回」。
 
         done = []
@@ -150,7 +150,8 @@ def update(fn, *, dry_run: bool = False):
         out = fn(qs)
         if out is NO_WRITE:
             return {"skipped": True}
-        report = _rewrite_all_locked(list(qs if out is None else out), dry_run=dry_run)
+        report = _rewrite_all_locked(list(qs if out is None else out), dry_run=dry_run,
+                                     changed_keys=changed_keys)
         return report
 
 
@@ -252,11 +253,11 @@ def vol_count(path: Path) -> int:
 #
 #     题目/备份/20260913_120530/001.tex …
 #
-# 一卷 10 MB 上下、整库 36 MB，留 3 代也就 100 MB——**比丢数据的代价便宜太多**。
+# 一卷 10 MB 上下、整库 36 MB，留 1 代也就 36 MB——**比丢数据的代价便宜太多**。
 # `store.restore_backup()` / `python3 amti.py backup --restore` 能把它放回去。
 
 BACKUP_DIR = TOPIC_DIR / "备份"
-KEEP_BACKUPS = 3
+KEEP_BACKUPS = 1
 
 
 def backup_dir_for(stamp: str) -> Path:
@@ -525,8 +526,30 @@ def _sig_text(sig: tuple) -> str:
 _last_dup_dropped = [0]
 
 
+# 卷头索引缓存：卷路径 → (mtime_ns, size, inode, keys)。
+#
+# `_volume_keys()` 要把整卷 14–19MB 读进来、切成 5000 个题块、再从每块的
+# `%% @q` 行里抠 key。单卷约 0.04 秒，7 卷 0.6 秒；而 `find()` / `read_one()`
+# 每开一道题都会把 7 卷走一遍——详情页 1.4 秒的等待就出在这里。
+# 键取「mtime+size+inode」：任何一次写盘（原子 replace 会换 inode）都会失效，
+# 不写盘就一直复用。只缓存 key 列表（约几 MB），不缓存正文。
+_KEYS_CACHE: dict[str, tuple[tuple, list[str]]] = {}
+
+
 def _volume_keys(path: Path) -> list[str]:
-    """一卷里所有题的 key，**按文件顺序**。只读元数据行，不解析正文。"""
+    """一卷里所有题的 key，**按文件顺序**。只读元数据行，不解析正文。
+
+    结果按文件签名缓存；返回的是缓存里的 list，调用方**只读**，别原地改。
+    """
+    try:
+        st = path.stat()
+        sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+    except OSError:
+        sig = None
+    if sig is not None:
+        hit = _KEYS_CACHE.get(str(path))
+        if hit and hit[0] == sig:
+            return hit[1]
     out: list[str] = []
     for block in split_questions(path.read_text(encoding="utf-8")):
         if GRAVE_MARK in block:
@@ -540,6 +563,8 @@ def _volume_keys(path: Path) -> list[str]:
             k = ""
         if k:
             out.append(k)
+    if sig is not None:
+        _KEYS_CACHE[str(path)] = (sig, out)
     return out
 
 
@@ -1014,10 +1039,238 @@ def load_unique() -> list[Question]:
 
 
 def find(key: str) -> Question | None:
-    for _f, q in iter_questions():
-        if q.key == key:
-            return q
+    r"""按 key 取一道题：**先查卷头索引定位卷，再只解析那一卷**。
+
+    以前是线性遍历全库，把 7 卷 195MB 的正文全部解析成 Question 再比对
+    key——实测 1.4 秒/次。详情页每开一道题都调它，于是每次都要等 1.4 秒；
+    而库越大越慢（和题目数量成正比，和"只看一道题"这件事无关）。
+
+    现在走 `read_one()`：卷头 key 列表按文件签名缓存，热路径只解析目标卷
+    （约 0.1 秒），首调用还要读一遍 7 卷卷头（约 0.6 秒）。
+
+    返回的仍是**新解析出来的对象**，调用方可以放心原地改；不能原地改的
+    共享缓存是 `load_cached()`，两者不要混。
+    """
+    one = read_one(key)
+    return one[0] if one else None
+
+
+def _load_volume(no: int) -> list[Question]:
+    """只解析第 `no` 卷。读全库的 1/7 左右，用于单题热路径。"""
+    path = volume_path(no)
+    if not path.exists():
+        return []
+    out: list[Question] = []
+    for block in split_questions(path.read_text(encoding="utf-8")):
+        if GRAVE_MARK in block:
+            continue
+        q = question_from_block(block)
+        if q is not None:
+            out.append(q)
+    return out
+
+
+
+def read_many_map(keys: list[str]) -> tuple[
+        dict[str, Question], dict[str, int], dict[int, list[Question]], tuple]:
+    r"""按 key 集合读题，同时带回每道题的卷号、已解析的整卷和全库签名。
+
+    批量改标签只动这些题所在的卷；拿到 (题目, 卷号, 整卷) 后，`write_many`
+    可以直接复用已解析的卷，不必再读一次。返回的签名用于写锁内并发校验。
+    """
+    want = set(k for k in keys if k)
+    by: dict[str, Question] = {}
+    vols: dict[str, int] = {}
+    chunks: dict[int, list[Question]] = {}
+    if not want:
+        return by, vols, chunks, _vol_signature()
+    sig = _vol_signature()
+    for p in existing_volumes():
+        try:
+            ks = _volume_keys(p)
+        except (OSError, ValueError):
+            continue
+        if not want.intersection(ks):
+            continue
+        try:
+            no = int(p.stem)
+        except ValueError:
+            continue
+        chunk = _load_volume(no)
+        chunks[no] = chunk
+        for q in chunk:
+            if q.key in want:
+                by[q.key] = q
+                vols[q.key] = no
+        if len(by) >= len(want):
+            break
+    return by, vols, chunks, sig
+
+
+def read_many(keys: list[str]) -> dict[str, Question]:
+    r"""按 key 集合读题：**只解析命中的卷**，不解析全库。"""
+    return read_many_map(keys)[0]
+
+
+def write_many(changed: list[Question], *, volumes: dict[str, int],
+               chunks: dict[int, list[Question]],
+               expect_hashes: dict[str, str], expect_sig: tuple) -> dict:
+    r"""批量只重写**受影响的卷**（批量改标签的热路径）。
+
+    调用方从 `read_many_map()` 拿到 `volumes/chunks/sig`，在内存里改完
+    Question 后调这里。写锁内核对全库签名 / 每题内容指纹 / key 不变；
+    多卷先全部写 `.tmp`、统一备份、再改名；任何一步失败都回滚备份。
+    """
+    if not changed:
+        return {"volumes": 0, "count": 0, "changed": [], "partial": True}
+    with lib_lock():
+        now = _vol_signature()
+        if now != expect_sig:
+            raise ConcurrentWrite(
+                "库在读取之后被别的进程改过（卷签名 %s → %s），"
+                "拒绝用这份快照覆盖。" % (_sig_text(expect_sig), _sig_text(now)))
+        groups: dict[int, list[Question]] = {}
+        for q in changed:
+            vol = volumes.get(q.key)
+            if vol is None:
+                raise ConcurrentWrite("这道题不在已读的卷里：%s" % q.key)
+            groups.setdefault(vol, []).append(q)
+        tmps: dict[int, Path] = {}
+        replaced = False
+        try:
+            for vol, qs in sorted(groups.items()):
+                chunk = chunks.get(vol)
+                if chunk is None:
+                    raise ConcurrentWrite("第 %d 卷没有读到" % vol)
+                for q in qs:
+                    idx = next((i for i, x in enumerate(chunk) if x.key == q.key), None)
+                    if idx is None:
+                        raise ConcurrentWrite("这道题已经不在原卷里：%s" % q.key)
+                    cur = chunk[idx]
+                    if expect_hashes.get(q.key) and                             cur.content_hash() != expect_hashes[q.key]:
+                        raise ConcurrentWrite("这道题在别处被改过：%s" % q.key)
+                    if q.key != cur.key:
+                        raise ValueError("write_many 不允许改 key（%s → %s）"
+                                         % (cur.key, q.key))
+                    chunk[idx] = q
+                tmps[vol] = _tmp_verified(chunk, vol)
+            _backup_volumes()
+            for vol, tmp in tmps.items():
+                tmp.replace(volume_path(vol))
+                replaced = True
+            for vol, qs in sorted(groups.items()):
+                if _volume_keys(volume_path(vol)) != [x.key for x in chunks[vol]]:
+                    raise ValueError("第 %d 卷写盘后 key 顺序不符" % vol)
+        except Exception:
+            for tmp in tmps.values():
+                tmp.unlink(missing_ok=True)
+            if replaced:
+                restore_backup()
+            raise
+        return {
+            "volumes": len(groups),
+            "count": len(changed),
+            "changed": [q.key for q in changed],
+            "reports": [{"volume": volume_path(v).name,
+                         "count": len(chunks[v]),
+                         "changed": [q.key for q in qs]}
+                        for v, qs in sorted(groups.items())],
+            "partial": True,
+        }
+
+
+def read_one(key: str) -> tuple[Question, int, tuple, list[Question]] | None:
+    r"""只读一道题：先扫卷头定位卷号，再只解析那一卷。
+
+    用于“改一道题的标签/答案”这种只动一卷的热路径。返回时把**已解析的整卷**
+    一起带回去，`write_one` 可以直接复用；签名对得上就不必再解析一遍。
+    扫描卷头要走所有卷，但 `_volume_keys()` 按文件签名缓存了 key 列表：
+    首调用读 7 卷卷头（约 0.6 秒），之后只是 7 次内存查找；真正解析的
+    只有命中那一卷（约 0.1 秒）。比 `load_all()` 省一大截 CPU。
+    返回 `(题目, 卷号, 全库卷签名, 整卷)`，签名交给 `write_one()` 做并发校验。
+
+    找不到返回 None。
+    """
+    sig = _vol_signature()
+    for p in existing_volumes():
+        try:
+            keys = _volume_keys(p)
+        except (OSError, ValueError):
+            continue
+        if key not in keys:
+            continue
+        try:
+            no = int(p.stem)
+        except ValueError:
+            continue
+        chunk = _load_volume(no)
+        for q in chunk:
+            if q.key == key:
+                return q, no, sig, chunk
+        return None
     return None
+
+
+def write_one(q: Question, *, volume: int, expect_hash: str,
+              expect_sig: tuple, chunk: list[Question] | None = None) -> dict:
+    r"""只重写**一道题所在的那一卷**，用于高频的单题改标签/改答案。
+
+    比 `rewrite_all(changed_keys=[key])` 少两步：
+      · 不 `load_all()` 把 3 万道题全解析一遍（只解析目标卷）；
+      · 不重新分卷（要求 key 不变、卷数不变，因此分卷边界不可能移动）。
+
+    `chunk` 可由 `read_one()` 带回；签名对得上时直接复用，不再解析一遍。
+
+    安全边界：
+      · 写锁内先核对**全库卷签名**，别人改过就抛 `ConcurrentWrite`；
+      · 写前核对题目内容指纹，别人改过这道题也抛；
+      · 只允许**不改 key**；
+      · 目标卷走和整库写同一套 `_tmp_verified` 回读校验；
+      · 写前留整份备份，回读失败自动 `restore_backup()`。
+    """
+    key = q.key
+    with lib_lock():
+        now = _vol_signature()
+        if now != expect_sig:
+            raise ConcurrentWrite(
+                "库在读取之后被别的进程改过（卷签名 %s → %s），"
+                "拒绝用这份快照覆盖。" % (_sig_text(expect_sig), _sig_text(now)))
+        path = volume_path(volume)
+        if not path.exists():
+            raise ConcurrentWrite("目标卷已不存在：%s" % path.name)
+        if chunk is None:
+            chunk = _load_volume(volume)
+        idx = next((i for i, x in enumerate(chunk) if x.key == key), None)
+        if idx is None:
+            raise ConcurrentWrite("这道题已经不在原卷里：%s" % key)
+        current = chunk[idx]
+        if expect_hash and current.content_hash() != expect_hash:
+            raise ConcurrentWrite("这道题在别处被改过：%s" % key)
+        if q.key != current.key:
+            raise ValueError("write_one 不允许改 key（%s → %s）"
+                             % (current.key, q.key))
+        chunk[idx] = q
+        tmp = _tmp_verified(chunk, volume)
+        try:
+            _backup_volumes()
+            tmp.replace(path)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
+        try:
+            if _volume_keys(path) != [x.key for x in chunk]:
+                raise ValueError("第 %d 卷写盘后 key 顺序不符" % volume)
+        except Exception:
+            restore_backup()
+            raise
+        return {
+            "volumes": 1,
+            "count": len(chunk),
+            "changed": [key],
+            "reports": [{"volume": path.name, "count": len(chunk),
+                         "changed": [key]}],
+            "partial": True,
+        }
 
 
 # ── 变更检测 ──────────────────────────────────────────────────────────
