@@ -422,7 +422,11 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
       setGenMsg(`Word 已导出：${d.docx_rel || d.docx_abs || '已生成'}`
         + (d.warnings ? '（有转换提示，复杂公式建议对 PDF）' : ''))
     } catch (e) {
-      setErr(String((e as any)?.message || e))
+      const msg = String((e as any)?.message || e)
+      // 前后端版本错位时旧进程没有这个路由，FastAPI 只回一个裸 Not Found。
+      setErr(msg === 'Not Found'
+        ? '后端没有 /api/export/docx：8899 还是旧进程，重启服务后再导出 Word'
+        : msg)
     } finally { setBusyKind('none') }
   }
 
