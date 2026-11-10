@@ -75,6 +75,116 @@ def chk_env(text: str):
     return ("有 `\\begin{%s}` 没闭合" % stack[-1]) if stack else None
 
 
+_TAB_BEGIN = re.compile(r"\\begin\{(array|tabular)\}\{((?:[^{}]|\{[^{}]*\})*)\}")
+_COLCHAR = re.compile(r"[clrmbpX]")
+
+
+def _tab_cols(spec: str) -> int:
+    """数一列声明里有几列。`@{}` 是间距、`|` 是竖线，都不算列。"""
+    s = re.sub(r"@\{[^{}]*\}", "", spec)
+    s = s.replace("|", "").replace("!", "")
+    n = 0
+    for m in re.finditer(r"\*\{(\d+)\}\{([^{}]*)\}", s):
+        n += int(m.group(1)) * len(_COLCHAR.findall(m.group(2)))
+    s = re.sub(r"\*\{\d+\}\{[^{}]*\}", "", s)
+    return n + len(_COLCHAR.findall(s))
+
+
+def _tab_rows(body: str) -> list[int]:
+    r"""按 `\\` 切行、数每行几个 `&`。
+
+    **只数表格自己那一层**：`\text{a & b}` 在花括号里、`\begin{cases}a&b\\c&d\end{cases}`
+    在子环境里，都不算——否则合法的嵌套会被判成"多一列"。
+    """
+    rows, cells = [], 1
+    brace = env = 0
+    i = 0
+    while i < len(body):
+        c = body[i]
+        if c == "\\":
+            if i + 1 < len(body) and body[i + 1] == "&":   # 转义的 \&
+                i += 2
+                continue
+            if body.startswith("\\\\", i) and brace == 0 and env == 0:
+                rows.append(cells)
+                cells = 1
+                i += 2
+                # 跳过行距参数 `\\[2mm]`
+                m = re.match(r"\s*\[[^\]]*\]", body[i:])
+                if m:
+                    i += m.end()
+                continue
+            if body.startswith("\\begin{", i):
+                env += 1
+            elif body.startswith("\\end{", i):
+                env = max(0, env - 1)
+            i += 1
+            continue
+        if c == "{":
+            brace += 1
+        elif c == "}":
+            brace = max(0, brace - 1)
+        elif c == "&" and brace == 0 and env == 0:
+            cells += 1
+        i += 1
+    rows.append(cells)
+    return rows
+
+
+def chk_table_cols(text: str):
+    r"""表格列数：**某一行比列声明多**。
+
+    LaTeX 对少格子是宽容的（`\multicolumn`、空列都合法），只有多格子会报
+    `Extra alignment tab has been changed to \cr`，且**整卷编译失败**。
+    2026-11 全库导出时 18 道题栽在这上面（`{|c|c|c|}` 里写了 5 格），
+    所以从"编译才炸"提前到"录入就报"。
+    """
+    pos = 0
+    while True:
+        m = _TAB_BEGIN.search(text, pos)
+        if not m:
+            return None
+        env, spec = m.group(1), m.group(2)
+        begin, end = f"\\begin{{{env}}}", f"\\end{{{env}}}"
+        depth, scan, body_end = 1, m.end(), -1
+        while depth:
+            b = text.find(begin, scan)
+            e = text.find(end, scan)
+            if e < 0:                      # 没闭合：交给"环境配对"报，这里不重复
+                return None
+            if 0 <= b < e:
+                depth += 1
+                scan = b + len(begin)
+            else:
+                depth -= 1
+                if depth == 0:
+                    body_end = e
+                scan = e + len(end)
+        declared = _tab_cols(spec)
+        if declared:
+            for i, n in enumerate(_tab_rows(text[m.end():body_end]), 1):
+                if n > declared:
+                    return ("表格列数不匹配：声明 %d 列，第 %d 段有 %d 格"
+                            "（xelatex 会报 Extra alignment tab）" % (declared, i, n))
+        pos = scan
+    return None
+
+
+def chk_option_display_math(q: Question):
+    r"""选项里的行间公式。
+
+    `exam-zh` 的 `choices` 环境里塞 `\[…\]` 会报 `Missing $ inserted`，整卷编不出来
+    （2026-11 全库导出时踩过一道：选项 C 里放了分布列的推导）。
+    行内 `$…$` 没问题，只有**行间**的 `\[…\]` / `$$…$$` 会炸。
+    """
+    for o in q.options:
+        if re.search(r"(?<!\\)\\\[", o.text) or re.search(r"(?<!\\)\\\]", o.text):
+            return "选项 %s 里有行间公式 `\\[…\\]`，choices 环境会报 Missing $，请改成 `$…$`" % o.label
+        if "$$" in o.text:
+            return "选项 %s 里用了 `$$…$$`，choices 环境会报 Missing $，请改成 `$…$`" % o.label
+    return None
+
+
 def chk_delim(text: str):
     r"""定界符配对（先剥**转义的** `\$`）。
 
@@ -515,6 +625,7 @@ def chk_slash_parallel(text: str):
 
 CHECKS = [
     ("环境配对", chk_env, "text"),
+    ("表格列数", chk_table_cols, "text"),
     ("美元符落单", chk_double_dollar, "text"),
     ("定界符配对", chk_delim, "text"),
     ("行内公式定界符", chk_inline_delim, "text"),
@@ -524,6 +635,7 @@ CHECKS = [
     ("注释残留", chk_comment, "text"),
     ("列表选项", chk_enum_opt, "text"),
     ("答案写法", chk_answer_write, "q"),
+    ("选项行间公式", chk_option_display_math, "q"),
     ("填空位数", chk_fillin_count, "q"),
     ("图片引用", chk_figures, "q", True),      # 需要 image_resolver
     ("空括号残留", chk_blank_leftover, "q"),
@@ -647,9 +759,25 @@ def _qpt(text, **kw):
     return _q(text, **kw)
 
 
+def _qopt(text):
+    """只关心**选项**的检查的样本。"""
+    from .schema import Option
+    return _q("$x$", options=[Option(label="A", text=text)])
+
+
 _CONTROLS: list[tuple[str, object, object]] = [
     ("环境配对", _qs(r"\begin{question} 少了结尾"),
      _qs(r"\begin{question} 正常 \end{question}")),
+    # 表格列数：坏样本照抄真实事故（声明 3 列、写了 5 格的分布列）。
+    # 干净样本放三种**容易误报的合法写法**：
+    #   · 声明 3 列、实际 3 格（正常）；
+    #   · `\text{a & b}` 里的 `&` 在花括号里，不算；
+    #   · 嵌套 `cases` 里的 `&` 和 `\\` 属于子环境，不算。
+    ("表格列数",
+     _qs(r"\begin{array}{|c|c|c|}\hline X & 0 & 1 & 2 & 3 \\ \hline\end{array}"),
+     _qs(r"\begin{array}{|c|c|c|}\hline X & 0 & 1 \\ \hline\end{array}"
+         r"\begin{tabular}{cc} a & b \\ c & d \end{tabular}"
+         r"\begin{array}{|c|c|}\hline \text{甲 & 乙} & \begin{cases} a & b \\ c & d \end{cases} \\ \hline\end{array}")),
     ("定界符配对", _qs("$x$ 与 $y"), _qs("$x$ 与 $y$")),
     # 行内公式定界符：规范是 `$…$`，`\( \)` 要报（用户要求从严）。
     # 注意坏样本要用**转义写法**拼，别直接写进源码——`"\(` 在 Python 里
@@ -672,6 +800,9 @@ _CONTROLS: list[tuple[str, object, object]] = [
     ("列表选项", _qs(r"\begin{enumerate}[label=x] \item a \end{enumerate}"),
      _qs(r"\begin{enumerate} \item a \end{enumerate}")),
     ("答案写法", _qpt(r"$A\cap B=$（\quad）"), _qpt(r"$A\cap B=$\paren[B]")),
+    # 选项行间公式：坏样本照抄真实事故（选项 C 里塞了分布列推导）。
+    # 干净样本是同一段公式改成行内——`$…$` 在 choices 里是合法的。
+    ("选项行间公式", _qopt(r"\[f^2(x)-(b+1)f(x)+b=0\]"), _qopt(r"$f^2(x)-(b+1)f(x)+b=0$")),
     # 坏样本：**两个空位、答案只有一段**（真实踩过：2025 北京卷#12 漏了一个空位）
     ("填空位数",
      _qpt(r"$x=$ \fillin{} 且 $y=$ \fillin{}"),
