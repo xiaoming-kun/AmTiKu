@@ -189,13 +189,25 @@ case "${1:-all}" in
     vision_up && c_ok "读图模型  :1235"                || c_bad "读图模型没跑（拖图片时自动起）"
     solve_up && c_ok "求解任务  在跑"                   || c_bad "求解任务没跑"
     echo
-    "$PY" - <<'PY' 2>/dev/null
-import sys; sys.path.insert(0, '.')
-from amti import store
-qs = store.load_all()
-done = [q for q in qs if q.kind == '模拟' and q.solution.strip()]
-print("  库内 %d 道   模拟题已解 %d / %d" % (len(qs), len(done),
-      sum(1 for q in qs if q.kind == '模拟')))
+    # 只读派生库直接数，不再 `store.load_all()` 解析全库——
+  # 状态查询从 1.7 秒降到几毫秒（派生库没建好才回退全量解析）。
+  "$PY" - <<'PY' 2>/dev/null
+import sqlite3
+try:
+    c = sqlite3.connect('file:数据/缓存/readmodel.sqlite?mode=ro', uri=True)
+    n = c.execute("select count(*) from questions").fetchone()[0]
+    sim = c.execute("select count(*) from questions where kind='模拟'").fetchone()[0]
+    done = c.execute("select count(*) from questions where kind='模拟'"
+                     " and has_solution=1").fetchone()[0]
+    c.close()
+    print("  库内 %d 道   模拟题已解 %d / %d" % (n, done, sim))
+except Exception:
+    import sys; sys.path.insert(0, '.')
+    from amti import store
+    qs = store.load_all()
+    print("  库内 %d 道   模拟题已解 %d / %d" % (len(qs),
+          sum(1 for q in qs if q.kind == '模拟' and q.solution.strip()),
+          sum(1 for q in qs if q.kind == '模拟')))
 PY
     ;;
   all)

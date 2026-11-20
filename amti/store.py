@@ -29,6 +29,9 @@ import shutil
 import subprocess
 import sys
 import time
+import threading
+import pickle
+from dataclasses import fields as _dc_fields
 import re
 from contextlib import contextmanager
 from pathlib import Path
@@ -1044,7 +1047,67 @@ def load_all() -> list[Question]:
 # 读接口每次都这么干，页面就卡。缓存键取「卷文件的修改时间+大小」——
 # 只要文件没被写，内存里那份就还是对的；求解任务写盘后 mtime 变，
 # 下一次请求自动重读。**不是定时过期，是写盘才失效**，不会读到旧数据。
-_CACHE: dict = {"key": (), "qs": []}
+_CACHE: dict = {"key": (), "qs": [], "from_disk": False}
+_CACHE_LOCK = threading.Lock()
+
+# 解析结果落盘缓存：启动时直接反序列化（约 0.15s），不用再解析 195MB 的
+# .tex（约 1.6s）。按卷签名失效；版本变了/文件坏了就回退重解析并重写。
+# 只在服务启动预热完成后写一次，运行期写盘不改它（改一道题就重写 58MB
+# 不划算），下次冷启动自然按签名判断是否可用。
+# 缓存格式版本。改 parse_question 的**语义**（不是加字段）时手动把第一个数 +1；
+# 加/删 Question 字段会自动令第二个数变化，旧缓存自然作废。
+_CACHE_VERSION = (1, tuple(f.name for f in _dc_fields(Question)))
+_CACHE_FILE = ROOT / "数据" / "缓存" / "题库缓存.pkl"
+
+
+def _cache_read(sig: tuple) -> list[Question] | None:
+    if os.environ.get("AMTIKU_ROOT"):        # 隔离根是临时目录，不碰共享缓存
+        return None
+    try:
+        with _CACHE_FILE.open("rb") as f:
+            head = pickle.load(f)
+            if not isinstance(head, dict):
+                return None
+            if head.get("v") != _CACHE_VERSION or tuple(head.get("sig") or ()) != sig:
+                return None
+            return pickle.load(f)
+    except Exception:
+        return None
+
+
+def _cache_write(sig: tuple, qs: list[Question]) -> None:
+    if os.environ.get("AMTIKU_ROOT"):
+        return
+    tmp = _CACHE_FILE.with_suffix(".pkl.%d.tmp" % os.getpid())
+    try:
+        _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with tmp.open("wb") as f:
+            pickle.dump({"v": _CACHE_VERSION, "sig": list(sig)}, f,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(qs, f, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp.replace(_CACHE_FILE)
+    except Exception:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def save_cache_snapshot() -> None:
+    """把内存里的全库写进解析缓存（服务预热完成后调一次；已是最新则跳过）。"""
+    with _CACHE_LOCK:
+        sig, qs = _CACHE["key"], _CACHE["qs"]
+    if not sig or not qs:
+        return
+    try:
+        with _CACHE_FILE.open("rb") as f:
+            head = pickle.load(f)
+        if (isinstance(head, dict) and head.get("v") == _CACHE_VERSION
+                and tuple(head.get("sig") or ()) == sig):
+            return
+    except Exception as e:
+        log.debug("解析缓存头读不出来，按需重写：%s", e)
+    _cache_write(sig, qs)
 
 
 def _vol_signature() -> tuple:
@@ -1064,15 +1127,25 @@ def load_cached() -> list[Question]:
     写路径必须读最新的，所以不缓存——反正一次只有一道题在写。
     """
     sig = _vol_signature()
-    if _CACHE["key"] != sig:
-        _CACHE["qs"] = load_all()
-        _CACHE["key"] = sig
-    return _CACHE["qs"]
+    if _CACHE["key"] == sig:
+        return _CACHE["qs"]
+    # **加锁**：服务启动时预热线程和首个请求可能同时进来；不锁就会把全库
+    # 各解析一遍（实测冷启动因此从 2 秒变成 3.5 秒）。
+    with _CACHE_LOCK:
+        if _CACHE["key"] == sig:             # 另一个线程刚读完
+            return _CACHE["qs"]
+        qs = _cache_read(sig)
+        _CACHE["from_disk"] = qs is not None
+        if qs is None:
+            qs = load_all()
+        _CACHE["qs"], _CACHE["key"] = qs, sig
+    return qs
 
 
 def cache_clear() -> None:
     _CACHE["key"] = ()
     _CACHE["qs"] = []
+    _CACHE["from_disk"] = False
 
 
 def load_unique() -> list[Question]:

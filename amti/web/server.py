@@ -223,6 +223,38 @@ def _sync_lite_cache() -> None:
         print("  lite 缓存同步失败（不影响使用）：%s" % e)
 
 
+def _open_when_ready(url: str, *, timeout: float = 30.0) -> None:
+    r"""等服务真的开始监听再开浏览器。
+
+    早先这里是 `Timer(1.2, webbrowser.open)`：服务还在预热（全库解析 1–3 秒），
+    端口没绑上，浏览器先打开——用户看到的是"打不开"；而且页面从没 ping 过，
+    `--exit-with-browser` 的看门狗到点就把服务收了。改成轮询端口，连上才开。
+    """
+    import socket
+    import webbrowser
+    from urllib.parse import urlparse
+
+    u = urlparse(url)
+    host, port = u.hostname or "127.0.0.1", u.port or 80
+
+    def _run() -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            s = socket.socket()
+            s.settimeout(0.3)
+            try:
+                s.connect((host, port))
+            except OSError:
+                time.sleep(0.2)
+            else:
+                webbrowser.open(url)
+                return
+            finally:
+                s.close()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def main() -> int:
     import argparse
     import uvicorn
@@ -250,6 +282,11 @@ def main() -> int:
             # 列表/搜索会在后台按需增量/回退，首屏先出来。
             n = len(store.load_cached())
             _seq_of("")
+            try:
+                store.save_cache_snapshot()   # 下次启动直接反序列化（~0.15s）
+            except Exception:
+                pass
+            log.info("录入序号表已预热：%s 道", len(_SEQ))
             print("  已载入 %d 道（%.1fs）" % (n, time.time() - t0))
         except Exception as e:
             print("  预热失败（不影响使用）：%s" % e)
@@ -262,15 +299,11 @@ def main() -> int:
         print("  页面关闭后会自动退出")
 
     if a.open:
-        import webbrowser
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+        _open_when_ready(url)
 
-    # 预热「录入序号」表：原本首个列表请求要全库走一遍才建好
-    try:
-        _seq_of("")
-        log.info("录入序号表已预热：%s 道", len(_SEQ))
-    except Exception:
-        log.warning("预热录入序号表失败（不影响启动）", exc_info=True)
+    # 录入序号表在 `_warm` 线程里建，**不在这里同步做**——同步做会把端口
+    # 绑定推迟到全库解析完（实测 3.6 秒才可响应，用户看到的是"打不开"）。
+    # 端口先绑上、静态页先能开，数据请求在预热完成前稍等即可。
 
     log.info("AmTiKu 服务启动：http://%s:%s", a.host, a.port)
     # 服务退了就把**我们自己起的**读图服务一并收掉，否则它会变成孤儿进程
