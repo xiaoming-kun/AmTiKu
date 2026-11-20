@@ -24,6 +24,7 @@ from __future__ import annotations
 import atexit
 import io
 import shutil
+import time
 import zipfile
 
 import sys
@@ -44,8 +45,31 @@ client = TestClient(app)
 # 存量"；反过来说，时间戳变了就会被记成「界面补录」。测试不是人，它盖的戳
 # 属于噪音——accept 层④ 读的正是这份 diff，噪音多了真报警就没人看了。
 # 只在**指纹没变**时还原：内容若真被改坏，宁可让 diff 报出来，也不替它掩盖。
-_STAMP_FIELDS = ("solved_at", "upgraded_at", "edited_at", "migrated_at", "fixed_at")
+_STAMP_FIELDS = ("solved_at", "upgraded_at", "edited_at", "migrated_at",
+                 "fixed_at", "content_changed_at", "content_changed_by")
 _STAMPS: dict[str, tuple[str, dict[str, str]]] = {}
+
+
+def _audit_day_snapshot():
+    """今天的「界面改标签」台账原文（不存在返回 None）。
+
+    台账 2026-11-20 起按日聚合（一次改标签一行），测试跑完要把它还原，
+    否则每跑一次测试就往今天那份里多塞几行。
+    """
+    from amti.audit import CHANGE_DIR
+    f = CHANGE_DIR / (time.strftime("%Y%m%d") + "_界面改标签.md")
+    return f, (f.read_text(encoding="utf-8") if f.exists() else None)
+
+
+def _audit_day_restore(snap) -> None:
+    f, text = snap
+    try:
+        if text is None:
+            f.unlink(missing_ok=True)
+        else:
+            f.write_text(text, encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _stamp_begin() -> None:
@@ -790,21 +814,22 @@ def test_patch_difficulty_roundtrip():
             print("       （多半是残留，不是有意的）")
     # 这个接口会写一份「变更记档」，测试跑完要把**自己产生的**记档删掉，
     # 否则每跑一次测试就往仓库里丢两个文件。
-    audit_dir = ROOT / "变更记录"
-    before_logs = set(audit_dir.glob("*界面改标签*")) if audit_dir.exists() else set()
+    audit_snap = _audit_day_snapshot()
     try:
         r = client.patch(f"/api/questions/{enc}", json={"difficulty": "难题"})
         assert r.status_code == 200, r.status_code
         d = r.json()
         assert d["key"] == key and d["difficulty"] == "难题"
         assert "tex" in d and "blocks" in d, "PATCH 也要回完整记录"
+        # 台账按日聚合：当天那份里应当多出这道题的一行
+        day = audit_snap[0]
+        assert day.exists() and key in day.read_text(encoding="utf-8"), \
+            "改标签没有写进当天台账"
     finally:
         # 无论断言成败都还原，别把测试的痕迹留在题库里
         back = client.patch(f"/api/questions/{enc}", json={"difficulty": orig or ""})
         assert back.status_code == 200, back.status_code
-        # 清掉本次新产生的记档文件
-        for f in set(audit_dir.glob("*界面改标签*")) - before_logs:
-            f.unlink(missing_ok=True)
+        _audit_day_restore(audit_snap)
 
 
 # ── 改源码（详情页「改源码」）──────────────────────────────────
@@ -1959,8 +1984,7 @@ def test_reviewed_filter_and_toggle():
     pick = client.get("/api/questions", params={"reviewed": "no", "limit": 1}).json()
     assert pick["items"], "应该还有未复核的题"
     key = pick["items"][0]["key"]
-    audit = ROOT / "变更记录"
-    before = set(audit.glob("*界面改标签*")) if audit.exists() else set()
+    audit_snap = _audit_day_snapshot()
     try:
         r = client.patch(f"/api/questions/{_enc(key)}", json={"reviewed": True})
         assert r.status_code == 200, r.text
@@ -1972,8 +1996,7 @@ def test_reviewed_filter_and_toggle():
         assert y["total"] == c1["yes"], (y["total"], c1)
     finally:
         client.patch(f"/api/questions/{_enc(key)}", json={"reviewed": False})
-        for f in set(audit.glob("*界面改标签*")) - before:
-            f.unlink(missing_ok=True)
+        _audit_day_restore(audit_snap)
 
 
 def test_review_stats_and_queue():

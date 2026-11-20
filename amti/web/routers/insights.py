@@ -180,7 +180,7 @@ def facets(stage: str = "", rm: bool = True) -> dict:
         scopes[scope] += 1
         papers["partial" if q.meta.get("paper_complete") is False else "complete"] += 1
         stars["rated" if q.stars > 0 else "unrated"] += 1
-        if q.meta.get("duplicate_group") or q.meta.get("dup_of"):
+        if q.meta.get("duplicate_group"):
             quals["dup"] += 1
         if q.meta.get("figure_low_res"):
             quals["lowres"] += 1

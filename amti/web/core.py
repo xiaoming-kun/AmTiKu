@@ -275,7 +275,7 @@ def _readmodel_row(q, stage_map=None, usage=None, seq_map=None) -> dict:
         "region_scope": m.get("region_scope")
         or ("single" if m.get("region") else "unknown"),
         "paper_complete": m.get("paper_complete") is not False,
-        "dup": bool(m.get("duplicate_group") or m.get("dup_of")),
+        "dup": bool(m.get("duplicate_group")),
         "lowres": bool(m.get("figure_low_res")),
         "point_source": m.get("point_source") or "",
         "answer_source": m.get("answer_source") or "无",

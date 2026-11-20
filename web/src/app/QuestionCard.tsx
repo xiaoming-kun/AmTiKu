@@ -331,8 +331,8 @@ export default function Card({
         {q.meta?.paper_complete === false && (
           <Tag title={`该卷仅录入 ${q.meta?.paper_size ?? '?'} 题，按节选处理`}>试卷节选</Tag>
         )}
-        {(q.meta?.duplicate_group || q.meta?.dup_of) && (
-          <Tag title="与库内另一题重复/疑似重复；只提示，不自动合并">重复题</Tag>
+        {q.meta?.duplicate_group && (
+          <Tag title="与库内另一题逐字重复；只提示，不自动合并">重复题</Tag>
         )}
         {q.meta?.figure_low_res && <Tag title="配图宽度小于 400px">低清图</Tag>}
         <Tag title={stars > 0 ? `难度：${q.difficulty}` : '星级未评级'}>

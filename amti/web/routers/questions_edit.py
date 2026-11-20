@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import urllib.parse
 
@@ -161,24 +162,31 @@ def _convert_type(q, new_type: str) -> str:
     return "%s → %s" % (QTYPE_LABEL[old], QTYPE_LABEL[new_type])
 
 
-def _audit_tag_change(q, *, before: str, fields) -> None:
-    r"""把「界面改标签」记一份档。
+_AUDIT_LOCK = threading.Lock()
 
-    只记标签变化，不记正文 —— 正文根本走不到这里（指纹校验会拦住）。
-    记档失败**不阻断**修改，但必须留下日志：审查报告 Important #3 指出，
-    原本全项目 0 处 logging，"改了但没记录"这种事没人知道。
+
+def _audit_tag_change(q, *, before: str, fields) -> None:
+    r"""把「界面改标签」记进**当天**的台账（一行一条）。
+
+    以前一次改标签写一个文件（到 2026-11-20 已攒 2,849 份），目录既难 grep
+    也难按天回看；现在按日聚合，一天一份。只记标签变化，不记正文——
+    正文根本走不到这里（指纹校验会拦住）。
+    记档失败**不阻断**修改，但必须留下日志。
     """
     from amti.audit import CHANGE_DIR
     try:
         CHANGE_DIR.mkdir(parents=True, exist_ok=True)
-        f = CHANGE_DIR / ("%s_界面改标签.md" % time.strftime("%Y%m%d_%H%M%S"))
-        f.write_text(
-            "# 界面改标签\n\n"
-            "- 时间：%s\n- 题目：`%s`\n- 改动：%s\n"
-            "- 内容指纹：%s → %s（**没变**，改的只是标签）\n"
-            % (time.strftime("%Y-%m-%d %H:%M:%S"), q.key,
-               "、".join(sorted(fields)), before, q.content_hash()),
-            encoding="utf-8")
+        f = CHANGE_DIR / ("%s_界面改标签.md" % time.strftime("%Y%m%d"))
+        with _AUDIT_LOCK:
+            if not f.exists():
+                f.write_text(
+                    "# 界面改标签\n\n"
+                    "| 时间 | 题目 | 改动 | 内容指纹 |\n|---|---|---|---|\n",
+                    encoding="utf-8")
+            with f.open("a", encoding="utf-8") as fh:
+                fh.write("| %s | `%s` | %s | %s → %s（没变） |\n"
+                         % (time.strftime("%Y-%m-%d %H:%M:%S"), q.key,
+                            "、".join(sorted(fields)), before, q.content_hash()))
     except Exception:
         log.warning("标签变更记档失败（修改已生效）：%s", q.key, exc_info=True)
 
@@ -287,10 +295,11 @@ def _migrate_meta_refs(qs, old, new: str | None = None) -> int:
     n = 0
     for x in qs:
         m = x.meta if isinstance(getattr(x, "meta", None), dict) else {}
-        nk = hit(m.get("dup_of"))
-        if nk is not None:
-            m["dup_of"] = nk
-            n += 1
+        for f in ("dup_of", "similar_of"):
+            nk = hit(m.get(f))
+            if nk is not None:
+                m[f] = nk
+                n += 1
         nk = hit(m.get("merged_from"))
         if nk is not None:
             m["merged_from"] = nk
@@ -543,7 +552,8 @@ def patch_question(key: str, body: dict) -> dict:
         content_before = _content_outside_answer(q)
         _apply_question_patch(q, body, before=before, content_before=content_before)
         store.write_one(q, volume=vol, expect_hash=before, expect_sig=sig,
-                        chunk=chunk, expect_record=before_record)
+                        chunk=chunk, expect_record=before_record,
+                        by="界面改标签")
         fulltext.apply([k], {q.key: q})
         _rm_apply([k], sig, {q.key: q})
         _audit_tag_change(q, before=before, fields=body)
@@ -843,7 +853,8 @@ def batch_patch(body: BatchTagBody) -> dict:
     # 批量改名会改别的题 meta；跨卷引用必须整库写回。
     if fast:
         rep = store.write_many(touched, volumes=vols, chunks=chunks,
-                               expect_hashes=before_hashes, expect_sig=sig)
+                               expect_hashes=before_hashes, expect_sig=sig,
+                               by="界面批量改标签")
     else:
         rep = store.rewrite_all(qs, based_on=sig,
                                 changed_keys=(None if renamed else all_changed))

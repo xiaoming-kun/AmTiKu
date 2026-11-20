@@ -246,7 +246,7 @@ class QuestionFilter:
                 return False
         if self.qualities:
             ok = (("dup" in self.qualities
-                   and (item.meta.get("duplicate_group") or item.meta.get("dup_of")))
+                   and item.meta.get("duplicate_group"))
                   or ("lowres" in self.qualities
                       and item.meta.get("figure_low_res")))
             if not ok:

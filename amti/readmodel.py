@@ -22,7 +22,9 @@ from .paths import ROOT
 DB = ROOT / "数据" / "缓存" / "readmodel.sqlite"
 _LOCK = threading.Lock()
 _CACHE: dict = {"sig": None, "ok": False}
-_SCHEMA = 5
+# 6：`dup` 口径从「duplicate_group 或 dup_of」收紧为「只认 duplicate_group」
+#（相似不再算重复，2026-11-20）。改口径必须 bump，否则旧行的 dup=1 会留下。
+_SCHEMA = 6
 
 
 def _sig_of(sig: tuple) -> str:

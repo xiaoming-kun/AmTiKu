@@ -365,8 +365,9 @@ def scan(q, by_key):
         provs = region_of_label(label)
         if provs and region not in provs:
             add("region_vs_label", "P2", f"region={region}；source_label={one_line(label,90)} → {sorted(provs)}")
-    if tgt and tgt not in by_key and tgt != q.key:
-        add("dup_of_dangling", "P2", f"dup_of 指向不存在的 key：{tgt}")
+    sim = q.meta.get("similar_of") or q.meta.get("dup_of")
+    if sim and sim not in by_key and sim != q.key:
+        add("dup_of_dangling", "P2", f"相似指向不存在的 key：{sim}")
     if isinstance(q.meta.get("stars"), int) and q.meta["stars"] == 0:
         add("meta_stars_zero", "P3", "meta.stars=0（界面显示未评级）")
     if re.search(r"\d+\s*分", ans) and q.type != "detailed_answer":

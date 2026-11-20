@@ -1159,7 +1159,8 @@ def read_many(keys: list[str]) -> dict[str, Question]:
 
 def write_many(changed: list[Question], *, volumes: dict[str, int],
                chunks: dict[int, list[Question]],
-               expect_hashes: dict[str, str], expect_sig: tuple) -> dict:
+               expect_hashes: dict[str, str], expect_sig: tuple,
+               by: str = "") -> dict:
     r"""批量只重写**受影响的卷**（批量改标签的热路径）。
 
     调用方从 `read_many_map()` 拿到 `volumes/chunks/sig`，在内存里改完
@@ -1197,6 +1198,7 @@ def write_many(changed: list[Question], *, volumes: dict[str, int],
                     if q.key != cur.key:
                         raise ValueError("write_many 不允许改 key（%s → %s）"
                                          % (cur.key, q.key))
+                    _stamp_content_change(q, cur, by=by)
                     chunk[idx] = q
                 tmps[vol] = _tmp_verified(chunk, vol)
             _backup_volumes()
@@ -1259,9 +1261,29 @@ def read_one(key: str) -> tuple[Question, int, tuple, list[Question]] | None:
     return None
 
 
+def _stamp_content_change(q: Question, old: Question | None, *, by: str = "") -> None:
+    """正文指纹变了就盖时间戳（只写 meta，不动正文）。
+
+    快照 diff 靠它把「有意改写」和「规则偷偷动了存量」分开：没有这一戳，
+    人工改答案/解析和批量脚本改动在同一个「内容变化」桶里，报警就没人看了
+    （评估报告建议 #2）。meta 不参与 `content_hash()`，所以这一步不改指纹。
+    """
+    try:
+        if old is None or old.content_hash() == q.content_hash():
+            return
+    except Exception:
+        return
+    if not isinstance(q.meta, dict):
+        q.meta = {}
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    q.meta["content_changed_at"] = now
+    if by:
+        q.meta["content_changed_by"] = by
+
+
 def write_one(q: Question, *, volume: int, expect_hash: str,
               expect_sig: tuple, chunk: list[Question] | None = None,
-              expect_record: str = "") -> dict:
+              expect_record: str = "", by: str = "") -> dict:
     r"""只重写**一道题所在的那一卷**，用于高频的单题改标签/改答案。
 
     比 `rewrite_all(changed_keys=[key])` 少两步：
@@ -1321,6 +1343,7 @@ def write_one(q: Question, *, volume: int, expect_hash: str,
         if q.key != current.key:
             raise ValueError("write_one 不允许改 key（%s → %s）"
                              % (current.key, q.key))
+        _stamp_content_change(q, current, by=by)
         chunk[idx] = q
         tmp = _tmp_verified(chunk, volume)
         try:
@@ -1489,13 +1512,25 @@ def diff() -> dict:
     base_edited = load_snapshot_edited()
     base_migrated = load_snapshot_migrated()
     base_fixed = load_snapshot_fixed()
-    if _alias:                                # key 改过名的，基线跟着改名
-        def _rm(d: dict) -> dict:
-            return {_alias.get(k, k): v for k, v in d.items()}
-        base, base_solved, base_upgraded = _rm(base), _rm(base_solved), _rm(base_upgraded)
-        base_edited, base_migrated, base_fixed = _rm(base_edited), _rm(base_migrated), _rm(base_fixed)
     rows = list(iter_questions())
     now = {q.key: q.content_hash() for _f, q in rows}
+    if _alias:                                # key 改过名的，基线跟着改名
+        live = set(now)
+
+        def _rm(d: dict) -> dict:
+            out: dict = {}
+            for k, v in d.items():
+                nk = _alias.get(k, k)
+                # 台账里可能残留「改了又改回去」的一次性记录（改名往返用例、
+                # 手工回滚）：目标 key 已经不在库里、或基线里两个 key 都在时，
+                # 按原名算——否则会凭空报一次「删一道 + 加一道」。
+                if nk != k and (nk not in live or nk in d):
+                    nk = k
+                out[nk] = v
+            return out
+
+        base, base_solved, base_upgraded = _rm(base), _rm(base_solved), _rm(base_upgraded)
+        base_edited, base_migrated, base_fixed = _rm(base_edited), _rm(base_migrated), _rm(base_fixed)
     added = sorted(set(now) - set(base))
     removed = sorted(set(base) - set(now))
     changed = sorted(k for k in set(base) & set(now) if base[k] != now[k])

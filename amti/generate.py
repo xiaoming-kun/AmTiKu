@@ -239,8 +239,9 @@ def minutes_of(q: Question) -> int:
 
 
 def variant_key(q: Question) -> str:
-    """同型题族的组号。`dup_of` 指向原题；没有就自立一组。"""
-    return str((q.meta or {}).get("dup_of") or q.key)
+    """同型题族的组号。`similar_of`/`dup_of` 指向原题；没有就自立一组。"""
+    m = q.meta or {}
+    return str(m.get("similar_of") or m.get("dup_of") or q.key)
 
 
 def filter_pool(pool: list[Question], *, exclude_missing_figure: bool = True,
@@ -257,14 +258,19 @@ def filter_pool(pool: list[Question], *, exclude_missing_figure: bool = True,
     """
     out: list[Question] = []
     seen_variants: set[str] = set()
+    seen_dup_groups: set[str] = set()
     for q in pool:
         if exclude_missing_figure and not q.figure_ok:
             continue
         if min_solution_len and (not q.has_solution
                                  or len((q.solution or "").strip()) < min_solution_len):
             continue
-        if q.meta.get("duplicate_group"):
-            continue
+        g = q.meta.get("duplicate_group")
+        if g:
+            # 逐字重复的题只留一道（第一道），不是整组全丢。
+            if str(g) in seen_dup_groups:
+                continue
+            seen_dup_groups.add(str(g))
         if year_from:
             try:
                 y = int(q.meta.get("year") or 0)

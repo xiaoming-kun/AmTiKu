@@ -197,7 +197,8 @@ def batch_source(body: SourceBatchBody) -> dict:
                                 % (viol[0]["why"], viol[0]["check"],
                                    viol[0]["field"]))
         rep = store.write_many(changed, volumes=vols, chunks=chunks,
-                               expect_hashes=before_hashes, expect_sig=sig)
+                               expect_hashes=before_hashes, expect_sig=sig,
+                               by="界面改解析")
         keys = [q.key for q in changed]
         fulltext.apply(keys, {q.key: q for q in changed})
         _rm_apply(keys, sig, {q.key: q for q in changed})
@@ -507,7 +508,8 @@ def question_solution(key: str, body: SolutionBody) -> dict:
     # 同 patch_question：**交给 @retry_on_concurrent 处理**，别在这里转 409，
     # 否则装饰器永远接不到 ConcurrentWrite、自动重试失效。
     store.write_one(q, volume=vol, expect_hash=before, expect_sig=sig,
-                    chunk=chunk, expect_record=before_record)
+                    chunk=chunk, expect_record=before_record,
+                    by="界面改出处")
     fulltext.apply([q.key], {q.key: q})
     _rm_apply([q.key], sig, {q.key: q})
 
@@ -781,7 +783,8 @@ def question_source(key: str, body: SourceBody) -> dict:
         try:
             store.write_one(cand, volume=vol, expect_hash=before,
                             expect_sig=sig, chunk=chunk,
-                            expect_record=before_record)
+                            expect_record=before_record,
+                            by="界面插图")
         except store.ConcurrentWrite:
             raise HTTPException(
                 409, "这道题在你改的时候被别的进程改过了，"

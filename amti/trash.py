@@ -38,6 +38,9 @@ from amti.logutil import get_logger
 
 log = get_logger(__name__)
 
+#: 删除台账（只追加；回收站清空后这里是唯一的「删过什么」记录）
+LEDGER = ROOT / "数据" / "删除台账.jsonl"
+
 PKG = ROOT
 TRASH_DIR = PKG / "回收站"
 TRASH = TRASH_DIR / "回收站.json"
@@ -305,7 +308,33 @@ def delete(keys_: list[str], *, reason: str = "", password: str = "") -> dict:
             log.warning("回滚也失败了", exc_info=True)
         return {"ok": False, "error": "写回收站失败，已回滚：%s" % e,
                 "not_found": [], "deleted": []}
+    _append_ledger(box["deleted"], reason=reason)
     return {"ok": True, "deleted": box["deleted"], "not_found": []}
+
+
+def _append_ledger(deleted: list, *, reason: str = "") -> None:
+    r"""删除台账：谁、什么时候、删了哪道、为什么。
+
+    回收站会被清空（清空后连 key 都查不到），所以台账单独落一份，
+    追加写、不参与任何视图。写失败只记日志，不阻断删除。
+    """
+    if not deleted:
+        return
+    try:
+        LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with LEDGER.open("a", encoding="utf-8") as fh:
+            for it in deleted:
+                key = it.get("key") or ""
+                if not key:
+                    continue
+                fh.write(json.dumps({
+                    "at": now, "key": key, "type": it.get("type") or "",
+                    "reason": reason or it.get("reason") or "",
+                    "source": "回收站",
+                }, ensure_ascii=False) + "\n")
+    except Exception:
+        log.warning("删除台账写失败（回收站已更新）", exc_info=True)
 
 
 def restore(keys_: list[str]) -> dict:

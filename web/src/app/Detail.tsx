@@ -711,13 +711,14 @@ export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onD
   }
   const [dupOpen, setDupOpen] = useState(false)
   const [dupItems, setDupItems] = useState<Q[]>([])
+  const [dupSimilar, setDupSimilar] = useState<Q[]>([])
   const [dupN, setDupN] = useState(0)
   const [dupLoading, setDupLoading] = useState(false)
   const [dupErr, setDupErr] = useState('')
   const dupKeyRef = useRef('')
   useEffect(() => {
     dupKeyRef.current = q.key
-    setDupOpen(false); setDupItems([]); setDupN(0)
+    setDupOpen(false); setDupItems([]); setDupSimilar([]); setDupN(0)
     setDupErr(''); setDupLoading(false)
   }, [q.key])
   const loadDuplicates = () => {
@@ -730,6 +731,7 @@ export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onD
       .then((d: any) => {
         if (dupKeyRef.current !== key) return
         setDupItems((d?.items || []) as Q[])
+        setDupSimilar((d?.similar || []) as Q[])
         setDupN(Number(d?.n || 0))
       })
       .catch((e: any) => {
@@ -741,7 +743,7 @@ export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onD
   }
   const openDuplicates = () => {
     if (dupOpen) { setDupOpen(false); return }
-    if (dupItems.length || dupN) { setDupOpen(true); setSimOpen(false); return }
+    if (dupItems.length || dupN || dupSimilar.length) { setDupOpen(true); setSimOpen(false); return }
     loadDuplicates()
   }
   const [activeSec, setActiveSec] = useState('stem')
@@ -860,15 +862,15 @@ export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onD
               <Sparkles size={12} />相似题
             </button>
           )}
-          {(q.meta?.duplicate_group || q.meta?.dup_of) && (
-            <span title="与库内另一题重复/疑似重复；只提示，不自动合并"
+          {q.meta?.duplicate_group && (
+            <span title="与库内另一题逐字重复；只提示，不自动合并"
               className="inline-flex items-center gap-1 rounded-md border border-warn-line
                          bg-warn-soft px-2 py-[4px] text-[11px] font-medium text-warn">
               <AlertTriangle size={11} />重复题
             </span>
           )}
           <button onClick={openDuplicates}
-            title="查同指纹 / 同 duplicate_group / dup_of 的题"
+            title="查逐字重复（同指纹 / 同组）与相似题"
             className="press inline-flex items-center gap-1 rounded-md border border-border
                        bg-surface px-2 py-[4px] text-[11.5px] text-ink-faint
                        transition-colors hover:border-warn/50 hover:bg-warn-soft/40 hover:text-warn">
@@ -977,7 +979,8 @@ export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onD
             <span className={`${cardIcon} bg-warn-soft text-warn`}><AlertTriangle size={13} /></span>
             <span className={cardTitle}>重复题</span>
             <span className="ml-1 text-[10.5px] text-ink-faint">
-              {dupN > 1 ? `同组共 ${dupN} 道（含本题）· 只提示，不自动合并` : '同指纹 / 同组'}
+              {dupN > 1 ? `逐字重复共 ${dupN} 道（含本题）· 只提示，不自动合并`
+                : '逐字重复（同指纹 / 同组）· 只提示'}
             </span>
             <button onClick={() => setDupOpen(false)} title="收起"
               className="icon-btn ml-auto h-6 w-6"><X size={12} /></button>
@@ -990,8 +993,12 @@ export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onD
             <div className="flex items-start gap-1.5 py-2 text-[11.5px] text-warn">
               <X size={12} className="mt-[2px] shrink-0" />{dupErr}
             </div>
-          ) : dupN <= 1 || dupItems.length === 0 ? (
+          ) : dupN <= 1 && dupSimilar.length === 0 ? (
             <div className="py-3 text-[12px] text-ink-faint">未发现重复题。</div>
+          ) : dupItems.length === 0 ? (
+            <div className="py-2 text-[12px] text-ink-faint">
+              未发现逐字重复的题。
+            </div>
           ) : (
             <ul className="space-y-1">
               {dupItems.map((it) => (
@@ -1010,6 +1017,31 @@ export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onD
                 </li>
               ))}
             </ul>
+          )}
+          {dupSimilar.length > 0 && (
+            <>
+              <div className="mt-2 mb-1 border-t border-border/60 pt-2 text-[10.5px]
+                              font-semibold text-ink-faint">
+                相似（同型 / 疑似 · 仅提示，不算重复）
+              </div>
+              <ul className="space-y-1">
+                {dupSimilar.map((it) => (
+                  <li key={it.key}>
+                    <button onClick={() => { onPick?.(it); setDupOpen(false) }}
+                      className="w-full rounded-lg border border-border/70 bg-bg/50 px-2.5 py-2 text-left
+                                 transition-colors hover:border-border-strong hover:bg-muted/40">
+                      <div className="flex items-center gap-1.5 text-[10.5px] text-ink-faint">
+                        <span className="rounded-full bg-muted px-1.5 py-[1px]">{it.type_label}</span>
+                        <span>{it.difficulty || '未评级'}</span>
+                      </div>
+                      <div className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-ink-soft">
+                        {renderBlocks(it.blocks?.stem, kw)}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </section>
       )}

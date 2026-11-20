@@ -1341,7 +1341,7 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
     # 甲乙卷）。按内容判重会把理卷那道丢掉，库里只剩文卷的 key——
     # 实测踩过：1992 全国卷（理）28 道全被判「并入」，实际只入库 15 道。
     #
-    # 内容雷同仍然记下来（`meta.dup_of`），但**照样入库**，
+    # 内容雷同仍然记下来（`meta.similar_of`），但**照样入库**，
     # 因为它是另一份卷子上的另一道题。
     # ⚠️ **两个判据都要**：
     #   * key 已在库         → 同一道题重录，跳过（否则 append 写第二份 → 重复 key）
@@ -1443,8 +1443,11 @@ def commit(text: str, *, src_dirs=None, book: str = "手工录入", label: str =
         if not dup_complete:
             dup_incomplete += 1
         if hits:
-            q.meta["dup_of"] = hits[0]["key"]          # 和谁雷同，记录下来
-            q.meta["dup_score"] = hits[0]["score"]
+            # 语义是「和谁相似」，不是「和谁是同一道题」（2026-11-20 统一口径）：
+            # 逐字重复的题在上面按指纹跳过了，能走到这里的都是 0.80–0.99 的“像”。
+            # 旧的 `dup_of` 只读不写，保留兼容层 `duplicates.similar()`。
+            q.meta["similar_of"] = hits[0]["key"]
+            q.meta["similar_score"] = hits[0]["score"]
             # 反方向的对账：手里这道**没标考点**，而库里那道雷同的标了 ⇒ 拿它当参考
             # （用户 2026-09-26 口径）。只在 `并入` 档（≥ MERGE_SCORE）抄：
             # 0.80 那一档只是"像"，照抄会把考点挂到别的题上。

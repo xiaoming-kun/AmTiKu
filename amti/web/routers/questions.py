@@ -326,8 +326,10 @@ def list_questions(
 
 @router.get("/questions/{key:path}/duplicates")
 def duplicate_questions(key: str) -> dict:
-    r"""重复题：同指纹 / 同 duplicate_group / dup_of 的题。
+    r"""查重：`items` 是**逐字重复**（同指纹 / 同 duplicate_group），
+    `similar` 是**相似**（dup_of / similar_of，0.80–0.99）。
 
+    两个口径必须分开：逐字重复才叫“重复题”，相似的只提示“同型/疑似”。
     **只提示，不合并**；没有发现时 `n=0, items=[]`，不编造。
     """
     from amti import duplicates as _dups
@@ -336,11 +338,12 @@ def duplicate_questions(key: str) -> dict:
     if q is None:
         raise HTTPException(404, f"没有这道题：{key}")
     rec = _dups.info(q.key)
-    if not rec:
-        return {"key": q.key, "group": "", "n": 0, "items": []}
-    items = [_brief(it) for it in _dups.members(q.key) if it.key != q.key]
-    return {"key": q.key, "group": rec["group"], "n": rec["n"],
-            "items": items}
+    items = ([_brief(it) for it in _dups.members(q.key) if it.key != q.key]
+             if rec else [])
+    similar = [_brief(it) for it in _dups.similar(q.key) if it.key != q.key]
+    return {"key": q.key, "group": (rec or {}).get("group", ""),
+            "n": (rec or {}).get("n", 0), "items": items,
+            "similar": similar, "similar_n": len(similar)}
 
 
 @router.get("/questions/{key:path}/similar")

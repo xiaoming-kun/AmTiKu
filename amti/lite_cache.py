@@ -119,6 +119,27 @@ def hashes() -> dict[str, str]:
         return {}
 
 
+def gc() -> int:
+    """按题库当前内容清掉陈旧块（删题/改题后残留）。返回删除行数。
+
+    ⚠️ 口径必须和写入端一致：`amti.web.core._lite_hash()` = content_hash
+    + ":" + 缓存结构版本。直接用 `content_hash()` 会把所有行判成过期
+    （2026-11-20 实测：误删 7,763 行）。
+    """
+    from . import store
+    from .web.core import _lite_hash
+    valid = {q.key: _lite_hash(q) for _f, q in store.iter_questions()}
+    return prune(valid)
+
+
+def _main() -> int:
+    print("lite 缓存：%s" % json.dumps(status(), ensure_ascii=False))
+    n = gc()
+    print("清理陈旧块：%d 行" % n)
+    print("清理后：%s" % json.dumps(status(), ensure_ascii=False))
+    return 0
+
+
 def clear() -> None:
     try:
         c = _conn()
@@ -136,3 +157,7 @@ def status() -> dict:
         return {"exists": DB.exists(), "n": n, "path": str(DB)}
     except Exception as e:
         return {"exists": DB.exists(), "error": str(e)}
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

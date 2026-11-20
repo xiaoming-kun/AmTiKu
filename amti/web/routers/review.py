@@ -136,7 +136,7 @@ def review_decision(body: ReviewDecisionBody) -> dict:
         changed.append(q)
 
     store.write_many(changed, volumes=vols, chunks=chunks,
-                     expect_hashes=before, expect_sig=sig)
+                     expect_hashes=before, expect_sig=sig, by="界面审阅")
     _rm_apply(keys, sig, {q.key: q for q in changed})
     return {
         "ok": True, "saved": len(keys),

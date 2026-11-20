@@ -226,6 +226,17 @@ def cmd_compilecheck(a) -> int:
     return 1
 
 
+def cmd_report(a):
+    """生成数据治理报告（只读）：审阅清单 / 考点分布 / 题型配额 / 占位与低清。"""
+    from amti import reports
+    qs = store.load_all()
+    out = reports.write_all(qs, sample=getattr(a, "sample", 100))
+    for name, st in out.items():
+        detail = " ".join("%s=%s" % (k, v) for k, v in st.items() if k != "path")
+        print("✓ %s：%s（%s）" % (name, st.get("path"), detail))
+    return 0
+
+
 def cmd_trash(a) -> int:
     r"""回收站：看 / 恢复 / 清空。"""
     from amti import trash as T
@@ -859,6 +870,12 @@ def main() -> int:
     cf_p.add_argument("--strict-style", action="store_true",
                       help="风格项（//、$$、重复选项）也算不通过")
     cf_p.set_defaults(fn=cmd_conform)
+    rp = sub.add_parser("report", aliases=["review"],
+                        help="出数据治理报告（审阅清单/考点分布/题型配额/占位与低清，只读）")
+    rp.add_argument("--sample", type=int, default=100,
+                    help="审阅清单随机抽样多少道（默认 100）")
+    rp.set_defaults(fn=cmd_report)
+
     sub.add_parser("rules", help="列出规则与作用域").set_defaults(fn=cmd_rules)
     sp = sub.add_parser("show", help="看某一道题")
     sp.add_argument("key")
