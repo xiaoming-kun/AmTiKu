@@ -24,9 +24,20 @@ log = get_logger(__name__)
 
 
 @router.get("/sets")
-def list_sets(q: str = "", stage: str = "", year: str = "") -> dict:
+def list_sets(q: str = "", stage: str = "", year: str = "",
+              limit: int = 0, offset: int = 0) -> dict:
+    """套卷列表。`limit=0` 保持旧行为（全量），套卷页传 `limit=50&offset=...`。
+
+    **筛选在后端做**（学段/年份/卷名），分页才有意义：前端若先拿一页再
+    按年份筛，会漏掉别的页里的同一年份。
+    """
     items = papersets.index(q=q, stage=stage, year=year)
-    return {"total": len(items), "items": items, "years": papersets.years()}
+    total = len(items)
+    offset = max(offset, 0)
+    if limit > 0:
+        items = items[offset: offset + limit]
+    return {"total": total, "items": items, "years": papersets.years(),
+            "limit": limit, "offset": offset}
 
 
 @router.get("/sets/{sid:path}")

@@ -316,7 +316,7 @@ export const api = {
      存档里只存**题号**，所以任何时候都能原样还原那套卷。 */
   papers: () => request('/api/papers'),
   /** 套卷（原卷）：整份卷子按题号排好。只读，数据来自题目的 meta。 */
-  sets: (p: Record<string, string> = {}) =>
+  sets: (p: Record<string, string | number> = {}) =>
     request(`/api/sets?${qs(p)}`),
   set: (id: string) => request('/api/sets/' + enc(id)),
   paper: (name: string) => request('/api/papers/' + enc(name)),

@@ -24,6 +24,7 @@ import threading
 import time
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -64,6 +65,10 @@ log = get_logger(__name__)
 # LaTeX 渲染、往同一个临时目录写。并发跑会互相踩（一个在清理
 # 临时文件，另一个正在读）。用非阻塞锁：忙就回 429，而不是排队堆线程。
 app = FastAPI(title="AmTiKu · K12 数学题库")
+
+# 题库列表一页 ~370KB、套卷一次 ~700KB，JSON 压缩后只剩 8%–18%。
+# 阈值 1KB：小响应不折腾；图片/PDF 走同一浏览器连接，压缩几乎是白费的。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 #: 超过这个时长的请求记一条 warning，方便定位“列表为什么突然 3 秒”。

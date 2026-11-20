@@ -161,6 +161,30 @@ def _stage_set(raw: str) -> set[str]:
 _BRIEF: "OrderedDict[str, tuple[str, dict]]" = OrderedDict()
 _BRIEF_MAX = 2000
 
+# 列表只带 UI 真正读的 meta 键。详情页走 `_brief(q)` 拿全量：
+# 时间戳、审阅备注、solved_by 这类“点开才看”的字段不该压在每张卡上。
+_LIST_META_KEYS = (
+    "book", "region", "region_scope", "source_region", "source_label", "source_no",
+    "year", "answer_source", "solution_source", "point_source", "difficulty_source",
+    "solve_warn", "solved_by", "solved_at", "duplicate_group", "dup_of",
+    "similar_of", "figure_low_res", "paper_size", "paper_complete", "difficulty",
+)
+
+
+def _slim_list_item(d: dict) -> dict:
+    """列表序列化：去掉卡片不读的字段。
+
+    `solution` 文本、`review` 的审阅备注/指纹、`meta` 里的大半键都只在
+    详情页用（详情走 `/api/questions/{key}` 的 `_brief`）。保留 `stem`
+    是为了卡片的关键词命中判断（`QuestionCard` 用它和 `kw` 比对）。
+    """
+    out = {k: v for k, v in d.items() if k not in ("solution", "review", "meta")}
+    m = d.get("meta") or {}
+    out["meta"] = {k: m[k] for k in _LIST_META_KEYS if k in m}
+    rv = d.get("review") or {}
+    out["review"] = {k: rv[k] for k in ("status", "label", "short", "stale") if k in rv}
+    return out
+
 
 def _brief_cached_lite(q) -> dict:
     r"""列表用：**不带答案/解析的块 IR**。
@@ -181,7 +205,7 @@ def _brief_cached_lite(q) -> dict:
         # 和 `_brief_cached` 的内存命中一样，每次重新贴一遍便宜字段。
         d = dict(hit)
         d.update(_tag_fields(q))
-        return d
+        return _slim_list_item(d)
     d = _brief_cached(q)
     b = d.get("blocks")
     if isinstance(b, dict):
@@ -189,6 +213,7 @@ def _brief_cached_lite(q) -> dict:
         d["blocks"] = {"stem": b.get("stem"), "options": b.get("options"),
                        "answer": b.get("answer")}
         d["lite"] = True
+    d = _slim_list_item(d)
     lite_cache.put(q.key, h, d)
     return d
 

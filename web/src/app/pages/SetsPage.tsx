@@ -11,7 +11,7 @@
  *
  *  数据全部派生自题目的 meta（见 `amti/papersets.py`），不新建存储。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowRight, FileStack, Layers, Loader2, RefreshCw, Search, TriangleAlert, X,
 } from 'lucide-react'
@@ -26,6 +26,10 @@ type SetItem = {
 }
 
 const STAGE_LABEL: Record<string, string> = { primary: '小学', junior: '初中', senior: '高中' }
+
+/** 左栏每页份数：2,678 份全量渲染要 18k DOM 节点、一次 700KB ——
+ *  分页后首屏只剩几十份，体积与节点都落到可交互区间。 */
+const PAGE = 50
 
 /** 上次看的是哪一份套卷。**切去题库改题再切回来**要能回到原处，
  *  否则改个出处回来发现自己站在列表第一份，还得重新搜索。 */
@@ -86,6 +90,12 @@ export default function SetsPage({
   const [busy, setBusy] = useState(false)
   /** 自增即重拉：来自「刷新」按钮，以及**切回本标签页**（录入在另一个标签页）。 */
   const [tick, setTick] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  /** 左栏滚动容器：翻页要回到顶部。 */
+  const listRef = useRef<HTMLDivElement>(null)
+  /** 筛选条件变没变：变了才把选中项重置到第一份；只是翻页时保留选中。 */
+  const filterKeyRef = useRef('')
 
   // 记住选中项和搜索条件：套卷 → 题目详情（题库）→ 返回套卷时回到原处。
   // 改出处把卷名改掉时，搜索词可能不再命中；列表发现后自动清一次搜索
@@ -114,15 +124,29 @@ export default function SetsPage({
     }
   }, [])
 
-  // 列表：学段跟着顶栏走（小学/初中走诊断题库，套卷目前只有高中原卷）
+  // 筛选一变就回第 1 页；翻页本身不重置选中项（右栏不该跟着跳）。
+  const setQuery = (v: string) => { setQ(v); setPage(0) }
+  const setYearFilter = (v: string) => { setYear(v); setPage(0) }
+  useEffect(() => { setPage(0) }, [stage])
+  useEffect(() => { listRef.current?.scrollTo({ top: 0 }) }, [page])
+
+  // 列表：学段跟着顶栏走（小学/初中走诊断题库，套卷目前只有高中原卷）。
+  // 年份也在后端筛：前端先拿一页再本地按年过滤会漏掉别的页。
   useEffect(() => {
     listBusy.current = true
     setBusy(true)
-    api.sets({ stage, q: q.trim() })
+    const filterKey = `${stage}|${q.trim()}|${year}`
+    const filterChanged = filterKeyRef.current !== filterKey
+    filterKeyRef.current = filterKey
+    api.sets({ stage, q: q.trim(), year, limit: PAGE, offset: page * PAGE })
       .then((d: any) => {
         const items: SetItem[] = d.items || []
         setList(items)
+        setTotal(d.total || 0)
         setYears(d.years || [])
+        // 总数变少（删题/改出处/筛掉）后页码可能越界：退到最后一页。
+        const pages = Math.max(1, Math.ceil((d.total || 0) / PAGE))
+        if (page >= pages) { setPage(pages - 1); return }
         const cur = selRef.current
         // 改出处后旧卷名可能从列表里消失：优先跟到改名后的那一份。
         const f = follow && follow.nonce !== followedNonce.current ? follow : null
@@ -132,20 +156,24 @@ export default function SetsPage({
             setSel(f.to)
             return
           }
-          // 新卷名可能不再命中当前搜索词（把「梅河口」改掉就是这样）：
-          // 清掉搜索/年份再拉一次，否则新卷根本不在列表里。
           if (q.trim() || year) {
-            setQ(''); setYear('')
+            setQ(''); setYear(''); setPage(0)
             return
           }
-          markFollowed(f.nonce)               // 什么都没筛也找不到：放弃跟随
+          if (page > 0) { setPage(0); return }
+          // 同一页也找不到：直接按新卷名搜，保证跟过去而不是停在旧卷。
+          markFollowed(f.nonce)
+          setQuery(f.to)
+          return
         }
-        // 当前选中的不在这批里（改了学段/搜索）→ 自动选第一份
-        setSel(items.some((x) => x.id === cur) ? cur : (items[0]?.id || ''))
+        // 只有**筛选变了**才自动选第一份；单纯翻页保留右栏。
+        if ((filterChanged || !cur) && !items.some((x) => x.id === cur)) {
+          setSel(items[0]?.id || '')
+        }
       })
       .catch((e) => { reportErr(e); setList([]) })
       .finally(() => { listBusy.current = false; setBusy(false) })
-  }, [stage, q, tick, refreshSignal, follow])
+  }, [stage, q, year, page, tick, refreshSignal, follow])
 
   // 明细：按题号顺序还原
   useEffect(() => {
@@ -170,10 +198,9 @@ export default function SetsPage({
     return () => { alive = false }
   }, [sel, tick, refreshSignal, busy])
 
-  const shown = useMemo(() => {
-    const ys = year
-    return (list || []).filter((x) => !ys || String(x.year) === ys)
-  }, [list, year])
+  // 年份筛选在后端做（分页前），这里不再本地过滤。
+  const shown = list || []
+  const pages = Math.max(1, Math.ceil(total / PAGE))
 
   const addAll = (qs: Q[]) => {
     if (!qs.length) return
@@ -189,7 +216,7 @@ export default function SetsPage({
             <Layers size={14} className="text-brand" />
             <span className="text-[12.5px] font-semibold">套卷</span>
             <span className="tnum text-[10.5px] text-ink-faint">
-              {list === null ? '读取中…' : `${shown.length} / ${list.length} 份`}
+              {list === null ? '读取中…' : `${total} 份`}
             </span>
             <button onClick={() => setTick((v) => v + 1)} title="重新读取套卷（新录入的题会出现在这里）"
               className="icon-btn ml-auto h-6 w-6 shrink-0">
@@ -198,28 +225,28 @@ export default function SetsPage({
           </div>
           <div className="relative">
             <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-ink-faint" />
-            <input value={q} onChange={(e) => setQ(e.target.value)}
+            <input value={q} onChange={(e) => setQuery(e.target.value)}
               placeholder="搜卷名，如 2026 新高考"
               className="b-input h-7 w-full pl-6 pr-6 text-[11.5px]" />
             {q && (
-              <button onClick={() => setQ('')} className="icon-btn absolute right-0.5 top-1/2 h-5 w-5 -translate-y-1/2">
+              <button onClick={() => setQuery('')} className="icon-btn absolute right-0.5 top-1/2 h-5 w-5 -translate-y-1/2">
                 <X size={10} />
               </button>
             )}
           </div>
           {years.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              <button onClick={() => setYear('')}
+              <button onClick={() => setYearFilter('')}
                 className={`b-chip ${year === '' ? 'b-chip-on' : ''}`}>全部年份</button>
               {years.slice(0, 6).map((y) => (
-                <button key={y} onClick={() => setYear(String(y))}
+                <button key={y} onClick={() => setYearFilter(String(y))}
                   className={`b-chip ${year === String(y) ? 'b-chip-on' : ''}`}>{y}</button>
               ))}
             </div>
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-2">
           {list === null ? (
             <div className="flex items-center justify-center gap-2 py-10 text-[11.5px] text-ink-faint">
               <Loader2 size={13} className="animate-spin" />正在整理套卷…
@@ -265,6 +292,16 @@ export default function SetsPage({
             })
           )}
         </div>
+
+        {list !== null && total > PAGE && (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-3 py-1.5 text-[11px] text-ink-faint">
+            <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page <= 0}
+              className="b-chip disabled:opacity-40">‹ 上一页</button>
+            <span className="tnum">第 {page + 1} / {pages} 页</span>
+            <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}
+              className="b-chip disabled:opacity-40">下一页 ›</button>
+          </div>
+        )}
       </aside>
 
       {/* ── 右：整卷还原 ── */}

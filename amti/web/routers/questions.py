@@ -62,7 +62,7 @@ class QuestionBrief(BaseModel):
     stem: str = ""
     options: list[dict] = []
     answer: str = ""
-    solution: str = ""
+    #: 解析正文不进列表契约（列表走 `_slim_list_item`，详情才有）。
     blocks: dict = {}
     points: list[str] = []
     difficulty: str = ""
@@ -91,6 +91,7 @@ class QuestionListResponse(BaseModel):
 
 
 class QuestionDetailResponse(QuestionBrief):
+    solution: str = ""
     tex: str = ""
 
 
