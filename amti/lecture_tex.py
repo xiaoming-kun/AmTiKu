@@ -45,7 +45,7 @@ PREAMBLE = r"""% ============================================================
 \title{{{title}}}
 \subtitle{{{subtitle}}}
 
-\author{{AmTiKu {stage_name}讲义组}}
+\author{{AmMath {stage_name}讲义组}}
 \institute{{{stage_name}数学讲义}}
 \date{{2026/11/7}}
 \version{{1.0}}

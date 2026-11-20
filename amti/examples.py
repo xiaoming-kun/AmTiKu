@@ -26,15 +26,12 @@ r"""讲义 PDF → **例题**（题干 + 解析，有就抽、没有就空着）
 """
 from __future__ import annotations
 
-import json
 import re
-import time
 from pathlib import Path
 
 from . import record2 as R2
 from . import quality as QLT
 from . import store
-from .schema import Question
 
 SYS_EX = """你在从一份**高中数学讲义**里抽「例题」。输入是整页 OCR 文本，每行前面有行号。
 

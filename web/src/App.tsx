@@ -1,4 +1,4 @@
-/** AmTiKu · K12 数学题库
+/** AmMath · K12 数学工作站
  *
  *  这一版把「学段」提到最外层：小学 / 初中 / 高中各是一条独立的内容生产线，
  *  切学段之后知识图谱、讲义、题库、组卷都跟着换口径。
@@ -12,65 +12,70 @@
  *    组卷      → 当前卷子、组卷方案、导出
  *    试卷库/体检/回收站/变更记录 → 管理面
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, BookOpenText, BookPlus, Check, ClipboardCheck, ClipboardList, Command as CommandIcon,
-  FilePlus2, FileStack, FolderOpen, History, LayoutDashboard,
+  FilePlus2, FileStack, FolderOpen, History, Layers, LayoutDashboard,
   ListFilter, Network, Rows2, Rows3, Sparkles, Trash2, X,
 } from 'lucide-react'
-import type { Q, Overview } from '@/lib/types'
+import type { Q, Overview, KeyRename, SavedHandler, SetsFollow, SourceBatchDone } from '@/lib/types'
 import { api, reportErr, setGlobalErrHandler } from '@/lib/api'
 import { paperScore as totalScore } from '@/lib/paper'
 import { DIFF_STARS } from '@/lib/display'
 import { useQuestionList } from '@/lib/useQuestionList'
 import { useWidth, useFlag, useUnmount, useVw } from '@/app/ui'
-import { Trash, DeleteModal } from '@/app/Trash'
-import ListHeader from '@/app/ListHeader'
-import BatchTagDialog from '@/app/BatchTagDialog'
-import PaperBar from '@/app/PaperBar'
-import QuestionList from '@/app/QuestionList'
-import DetailDrawer from '@/app/DetailDrawer'
-import { Changes } from '@/app/Stats'
-import ExportPage from '@/app/ExportPage'
-import IngestDrawer from '@/app/IngestDrawer'
-import FilterPanel, { FILTER_W } from '@/app/FilterPanel'
 import HelpButton from '@/app/HelpButton'
-import Health, { type Scope } from '@/app/Health'
-import MapPage from '@/app/MapPage'
-import TopicsPage from '@/app/TopicsPage'
+import { Changes } from '@/app/Stats'
 import { Toaster, toast, dismissToasts } from '@/app/Toast'
 import CommandPalette, { type Cmd } from '@/app/CommandPalette'
-import { INITIAL_URL, writeUrlState, type UrlFilters } from '@/lib/urlState'
+import { EMPTY_FILTERS, INITIAL_URL, writeUrlState, type UrlFilters } from '@/lib/urlState'
 import { readStage, rememberStage, type Stage } from '@/lib/stage'
+import { FILTER_W } from '@/lib/layout'
 import Shell, { PAGE_META, type PageKey } from '@/app/Shell'
 import OverviewPage from '@/app/pages/Overview'
-import DiagnosticBank from '@/app/pages/DiagnosticBank'
-import IngestHome from '@/app/pages/IngestHome'
-import PaperStudio from '@/app/pages/PaperStudio'
-import PapersPage from '@/app/pages/PapersPage'
-import Review from '@/app/pages/Review'
+import type { Scope } from '@/app/Health'
+import type { IngestMode } from '@/app/ingest/IngestWorkspace'
 
-const PAGES: PageKey[] = ['overview', 'map', 'lectures', 'bank', 'ingest', 'paper', 'papers', 'health', 'review', 'trash', 'changes']
+/** 重页面按路由懒加载：首屏只带工作台要用的代码，其余页面首次进入才拉。
+ *
+ *  工作台（题库）的列表/详情抽屉共用同一个 <Suspense>（见下方 return），
+ *  它们本来就在切到题库时一起挂载，一次骨架比五个各自闪一下更稳。
+ *  `import type` 只留类型、不产生静态依赖，所以 Health/IngestWorkspace 的
+ *  类型仍可直接引用，组件本身走 lazy。
+ */
+const ListHeader = lazy(() => import('@/app/ListHeader'))
+const BatchTagDialog = lazy(() => import('@/app/BatchTagDialog'))
+const PaperBar = lazy(() => import('@/app/PaperBar'))
+const QuestionList = lazy(() => import('@/app/QuestionList'))
+const DetailDrawer = lazy(() => import('@/app/DetailDrawer'))
+const ExportPage = lazy(() => import('@/app/ExportPage'))
+const FilterPanel = lazy(() => import('@/app/FilterPanel'))
+const FilterBar = lazy(() => import('@/app/FilterBar'))
+const MapPage = lazy(() => import('@/app/MapPage'))
+const TopicsPage = lazy(() => import('@/app/TopicsPage'))
+const Health = lazy(() => import('@/app/Health'))
+const Review = lazy(() => import('@/app/pages/Review'))
+const DiagnosticBank = lazy(() => import('@/app/pages/DiagnosticBank'))
+const IngestHome = lazy(() => import('@/app/pages/IngestHome'))
+const IngestWorkspace = lazy(() => import('@/app/ingest/IngestWorkspace'))
+const ProofWorkspace = lazy(() => import('@/app/ingest/ProofWorkspace'))
+const PaperStudio = lazy(() => import('@/app/pages/PaperStudio'))
+const PapersPage = lazy(() => import('@/app/pages/PapersPage'))
+const SetsPage = lazy(() => import('@/app/pages/SetsPage'))
+const Trash = lazy(() => import('@/app/Trash').then((m) => ({ default: m.Trash })))
+const DeleteModal = lazy(() => import('@/app/Trash').then((m) => ({ default: m.DeleteModal })))
+// Changes 不 lazy：`app/Stats.tsx` 只有 3.7 kB，且 `groupTree` 已被 useQuestionList
+// 静态引用（进 index），单独拆出去只会得到一个 INEFFECTIVE_DYNAMIC_IMPORT 警告。
+
+const PAGES: PageKey[] = ['overview', 'map', 'lectures', 'bank', 'sets', 'ingest', 'paper', 'papers', 'health', 'review', 'trash', 'changes']
 const LEGACY_TAB: Record<string, PageKey> = {
   workbench: 'bank', health: 'health', map: 'map', topics: 'lectures',
   changes: 'changes', trash: 'trash',
 }
 const HINTS: Record<string, PageKey> = {
-  o: 'overview', m: 'map', t: 'lectures', b: 'bank', i: 'ingest',
-  p: 'paper', s: 'papers', h: 'health', r: 'trash', c: 'changes',
+  o: 'overview', b: 'bank', p: 'paper', g: 'map', t: 'lectures',
+  i: 'ingest', q: 'health', a: 'papers', r: 'trash', c: 'changes',
 }
-const EMPTY_FILTERS: UrlFilters = {
-  q: '', type: '', kind: '', point: '', diff: '', year: '', source: '',
-  has: '', missing: '', scope: '', paper: '', star: '', quality: '',
-  psrc: '', asrc: '', reviewed: '',
-}
-
-/** 批量改出处后，后端回传的单题改名映射（old key → new key）。 */
-type KeyRename = {
-  old: string; new: string
-  book?: string; label?: string; year?: number | string
-}
-
 /** 当前卷子的本地草稿：只存题号，题目正文仍以题库为准。
  *  组卷往往要几分钟，刷新/误关页面不该把挑好的题全丢掉。 */
 const PAPER_DRAFT_KEY = 'amtiku.paper.draft.v1'
@@ -87,9 +92,28 @@ function initialPage(): PageKey {
   return LEGACY_TAB[INITIAL_URL.tab] || 'overview'
 }
 
+/** 懒加载页面的占位：沿用工作台同款浅色卡片 + 呼吸条，
+ *  尺寸和留白都按页面骨架给，chunk 到位后不会整页跳一下。 */
+function PageSkeleton() {
+  return (
+    <div role="status" aria-label="页面加载中" className="flex h-full flex-col gap-3 overflow-hidden p-4 md:p-6">
+      <div className="h-7 w-44 shrink-0 animate-pulse rounded-full bg-muted/70" />
+      <div className="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-[74px] animate-pulse rounded-[var(--radius-card)] bg-muted/50" />
+        ))}
+      </div>
+      <div className="h-20 shrink-0 animate-pulse rounded-[var(--radius-card)] bg-muted/40" />
+      <div className="min-h-0 flex-1 animate-pulse rounded-[var(--radius-card)] bg-muted/30" />
+    </div>
+  )
+}
+
 export default function App() {
   const [stage, setStageState] = useState<Stage>(() => readStage(INITIAL_URL.stage))
   const [page, setPage] = useState<PageKey>(initialPage)
+  /** 试卷库里要定位到哪一份（题库卡片「组过 N 卷」跳过来时带名字）。 */
+  const [paperFocus, setPaperFocus] = useState('')
   const L = useQuestionList({ stage })
 
   const [overview, setOverview] = useState<Overview | null>(null)
@@ -124,10 +148,13 @@ export default function App() {
 
   const [globalErr, setGlobalErr] = useState('')
   const [showExport, setShowExport] = useState(false)
-  const [showIngest, setShowIngest] = useState(false)
-  const [ingestAI, setIngestAI] = useState(false)
   const [palette, setPalette] = useState(false)
+  const [ingestMode, setIngestMode] = useState<IngestMode | ''>(
+    ['ai', 'latex', 'curate', 'proof'].includes(INITIAL_URL.ingest || '') ? INITIAL_URL.ingest as IngestMode : '')
   const [batchOpen, setBatchOpen] = useState(false)
+  /** 套卷页的刷新信号 / 跟卷提示：改出处后正在看的套卷要实时跟着变。 */
+  const [setsRefresh, setSetsRefresh] = useState(0)
+  const [setsFollow, setSetsFollow] = useState<SetsFollow | null>(null)
   const [diagPoint, setDiagPoint] = useState('')
   /** 小学/初中题库里同时有「诊断题」和「正式题」两个来源；默认看正式题（有的话）。 */
   const [smallBank, setSmallBank] = useState<'formal' | 'diagnostic'>('diagnostic')
@@ -138,12 +165,13 @@ export default function App() {
     typeof window !== 'undefined' && window.innerWidth >= 1400)
   const { shown: dShown, closing: dClosing } = useUnmount(dOpen, 170)
   const { shown: exportShown, closing: exportClosing } = useUnmount(showExport, 160)
-  const { shown: ingestShown, closing: ingestClosing } = useUnmount(showIngest, 170)
-  const [dW, setDW] = useWidth('amtiku.w.drawer', 620, 380, 940)
+  const [dW, setDW] = useWidth('amtiku.w.drawer.v2', 560, 380, 900)
   const [dense, setDense] = useFlag('amtiku.dense', false)
   const [compact, setCompact] = useFlag('amtiku.compact', false)
   const [maskAns, setMaskAns] = useFlag('amtiku.maskAns', true)
   const [showFilter, setShowFilter] = useFlag('amtiku.showFilter', false)
+  /** 顶部筛选条是否显示（收起后表头留一颗「筛选」叫回来）。 */
+  const [barOn, setBarOn] = useFlag('amtiku.filterbar.visible', true)
   const [zen, setZen] = useFlag('amtiku.zen', false)
   /** 从知识卡片跳到某一讲讲义；n 自增以允许重复点同一张卡。 */
   const [lecturePick, setLecturePick] = useState<{ id: string; n: number } | null>(null)
@@ -311,7 +339,8 @@ export default function App() {
       action: { label: '撤销', run: () => removeFromPaper(it.key) },
     })
   }
-  /** 知识图谱「按学习路径组卷」：一次加一批（可能跨十来个考点）。 */
+  /** 一次加一批：知识图谱「按学习路径组卷」、套卷「整卷加入」共用。
+   *  文案别写死「学习路径」——套卷进来时那句会张冠李戴。 */
   const addPaperBatch = (items: Q[]) => {
     const fresh = items.filter((x) => !paperMap.has(x.key))
     if (!fresh.length) {
@@ -323,7 +352,7 @@ export default function App() {
       for (const x of items) n.set(x.key, x)
       return n
     })
-    toast(`已按学习路径加入 ${fresh.length} 道题`, {
+    toast(`已加入卷子 · ${fresh.length} 道题`, {
       action: { label: '看卷子', run: () => setPage('paper') },
     })
   }
@@ -428,6 +457,7 @@ export default function App() {
       L.setChecked((c) => { const n = new Set(c); for (const k of ks) n.delete(k); return n })
       L.setCheckedMap((m) => { const n = new Map(m); for (const k of ks) n.delete(k); return n })
       L.refreshSilent()
+      setSetsRefresh((v) => v + 1)
       toast(`已移入回收站 ${keys.length} 道`, {
         tone: 'warn', ms: 8000,
         action: {
@@ -442,6 +472,7 @@ export default function App() {
                 })
               }
               L.refreshSilent()
+              setSetsRefresh((v) => v + 1)
             }).catch(reportErr)
           },
         },
@@ -517,6 +548,28 @@ export default function App() {
       }
       return changed ? next : m
     })
+    // 勾选也存 key：批量改出处后不清，下一次「加入卷子/删除选中」会拿旧 key 去查。
+    // （勾选里没有改名的题时原样返回，避免无谓重渲染。）
+    L.setChecked((s) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const k of s) {
+        const r = byOld.get(k)
+        if (r) { next.add(r.new); changed = true }
+        else next.add(k)
+      }
+      return changed ? next : s
+    })
+    L.setCheckedMap((m) => {
+      let changed = false
+      const next = new Map<string, Q>()
+      for (const [k, q] of m) {
+        const r = byOld.get(k)
+        if (r) { next.set(r.new, patched(q, r)); changed = true }
+        else next.set(k, q)
+      }
+      return changed ? next : m
+    })
     for (const r of renames) {
       const cached = fullCache.current.get(r.old)
       if (cached) {
@@ -543,6 +596,50 @@ export default function App() {
       return changed ? next : xs
     })
   }
+  /** 详情页保存成功后的统一落点（单题改标签 / 改源码 / 批量改出处共用）。
+   *
+   *  以前这段逻辑内联在 `<DetailDrawer onSaved={…}>` 里；批量改出处也要
+   *  用同一套（换 key、刷缓存、更新当前题），抽出来免得两份口径分叉。 */
+  const applySaved: SavedHandler = (d, opts) => {
+    const oldKey = (full ?? L.sel)?.key || d.key
+    if (oldKey !== d.key) remapKey(oldKey, d)
+    const freshen = (m: Map<string, Q>) => m.has(d.key) ? new Map(m).set(d.key, d) : m
+    setPaperMap(freshen)
+    L.setSel(d)
+    setFull(d)
+    setFullLoading(false)
+    if (oldKey !== d.key) fullCache.current.delete(oldKey)
+    rememberFull(d.key, d)
+    L.setItems((xs) => xs.map((x) => (x.key === d.key ? { ...x, ...d } : x)))
+    if (opts?.refreshList) {
+      if (opts.silent) L.refreshSilent()
+      else L.setReload((v) => v + 1)
+    }
+    // 套卷列表/明细派生自 `meta.source_label`：改出处（或年份/书名）后，
+    // 正在看的套卷也要实时变。卷名变了就告诉 SetsPage 从旧卷跟到新卷——
+    // 否则旧标题从列表里消失，页面会跳去第一份卷，而不是改名后的那一份。
+    const prevQ = full ?? L.sel
+    const prevLabel = String(prevQ?.meta?.source_label || '')
+    const nextLabel = String(d.meta?.source_label || '')
+    if (prevQ && prevLabel && nextLabel && prevLabel !== nextLabel) {
+      // nonce 用时间戳：刷新页面后计数器会归零，时间戳不会和上一轮
+      // 「已消费」的 nonce 撞车（SetsPage 用 sessionStorage 记住消费过的值）。
+      setSetsFollow({ from: prevLabel, to: nextLabel, nonce: Date.now() })
+    }
+    setSetsRefresh((v) => v + 1)
+  }
+
+  /** 批量改出处完成：**先迁 key**（卷子/勾选/详情缓存都存 key），
+   *  再用后端回传的当前题刷新详情。没回传就静默重拉列表。 */
+  const batchSourceDone = (res: SourceBatchDone) => {
+    remapBatch(res.renames || [])
+    if (res.current) applySaved(res.current, { refreshList: true, silent: true })
+    else {
+      L.refreshSilent()
+      setSetsRefresh((v) => v + 1)
+    }
+  }
+
   const replaceInPaper = (oldKey: string, q: Q) => {
     const old = paperMap.get(oldKey)
     setPaperMap((m) => {
@@ -571,8 +668,40 @@ export default function App() {
   /* ── 导航 ─────────────────────────────────────────── */
   const gotoPaper = () => {
     setPage('paper')
-    if (!paper.length) toast('卷子还是空的 —— 先在题库里点「加入组卷」', { tone: 'info' })
+    if (!paper.length) toast('卷子还是空的 —— 先在题库里点「加入卷子」', { tone: 'info' })
   }
+
+  /** 录入是独立工作区：从当前页面开一个新标签页，原页面（筛选、卷子、详情）
+   *  一概不动。新页只带 `view=ingest` 和当前学段。
+   *
+   *  用 `window.open` 而不是 `target=_blank` 的链接，是为了在浏览器拦截
+   *  新窗口时能明确告诉用户，而不是“点了没反应”。 */
+  const openIngestTab = () => {
+    const url = new URL(window.location.href)
+    const sp = new URLSearchParams()
+    sp.set('view', 'ingest')
+    if (stage !== 'senior') sp.set('stage', stage)
+    url.search = sp.toString()
+    url.hash = ''
+    const w = window.open(url.toString(), '_blank')
+    if (!w) {
+      toast('浏览器拦截了新页面：请允许本站弹窗后再点「录入」', { tone: 'warn' })
+      return
+    }
+    try { w.opener = null } catch { /* same-origin 下一般能设；设不了也不影响使用 */ }
+  }
+
+  /** 录入页在另一个标签页提交后，通过 localStorage 广播回来；
+   *  原工作台收到就把列表和总览数字刷新一遍。 */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== 'ammath.ingest.updated') return
+      L.setReload((v) => v + 1)
+      api.overview(stage).then(setOverview).catch(() => { /* 刷新失败不打断原页面 */ })
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [stage, L.setReload])
 
   const switchStage = (s: Stage) => {
     if (s === stage) return
@@ -581,6 +710,12 @@ export default function App() {
     L.loadFilters(EMPTY_FILTERS, 'used')
     setDiagPoint('')
     setFindNote('')
+  }
+
+  /** 卡片「组过 N 卷」→ 试卷库，并把搜索框钉在那份卷名上。 */
+  const openPaperInArchive = (name: string) => {
+    setPaperFocus(name)
+    setPage('papers')
   }
 
   const openTask = (p: PageKey, filters: Record<string, string>) => {
@@ -664,16 +799,24 @@ export default function App() {
     writeUrlState({
       filters: {
         q: L.filters.q, type: L.filters.type, kind: L.filters.kind,
-        point: L.filters.point, diff: L.filters.difficulty, year: L.filters.year,
+        point: L.filters.point, pm: L.filters.point_mode,
+        diff: L.filters.difficulty, year: L.filters.year,
         source: L.filters.source, has: L.filters.has, missing: L.filters.missing,
+        inc: L.filters.incomplete,
         scope: L.filters.region_scope, paper: L.filters.paper_state,
         star: L.filters.star_state, quality: L.filters.quality,
         psrc: L.filters.point_source, asrc: L.filters.answer_source,
         reviewed: L.filters.reviewed,
       },
       sort: L.sort, page: L.page, tab: '', view: page, stage,
+      ingest: page === 'ingest' ? ingestMode : '',
     })
-  }, [L.filters, L.sort, L.page, page, stage])
+  }, [L.filters, L.sort, L.page, page, stage, ingestMode])
+
+  // 离开录入页就回到“选择来源”，下一次从导航进来是干净的入口。
+  useEffect(() => {
+    if (page !== 'ingest' && ingestMode) setIngestMode('')
+  }, [page, ingestMode])
 
   useEffect(() => { setFindNote('') }, [L.q, L.has, L.missing, L.diffs, L.years])
 
@@ -696,23 +839,30 @@ export default function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        if (showExport || showIngest || palette) return
+        if (showExport || palette) return
         if (L.sel) addToPaper(L.sel)
         return
       }
       if (palette) return
       if (e.key === 'Escape') {
-        if (showExport || showIngest) { setShowExport(false); setShowIngest(false); return }
+        if (showExport) { setShowExport(false); return }
         if (dOpen) { setDOpen(false); return }
         if (L.selectMode && L.checkedMap.size) { L.exitSelect(); return }
         return
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (typing()) return
-      if (showExport || showIngest) return
+      if (showExport) return
+      // 录入页是独立工作区：单键导航在这里一律不生效，避免误触把页面带走。
+      if (page === 'ingest') return
 
       const k = e.key.toLowerCase()
-      if (HINTS[k]) { e.preventDefault(); setPage(HINTS[k]); return }
+      if (HINTS[k]) {
+        e.preventDefault()
+        if (HINTS[k] === 'ingest') openIngestTab()
+        else setPage(HINTS[k])
+        return
+      }
       if (k === 'z' && (page === 'bank' || zen)) { e.preventDefault(); setZen((v) => !v); return }
       if (page !== 'bank') return
 
@@ -741,13 +891,14 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [L.items, L.sel, page, dOpen, palette, showExport, showIngest])
+  }, [L.items, L.sel, page, dOpen, palette, showExport, stage])
 
   /* ── 命令面板 ─────────────────────────────────────── */
   const commands: Cmd[] = useMemo(() => {
     const navIcon: Record<PageKey, React.ReactNode> = {
       overview: <LayoutDashboard size={13} />, map: <Network size={13} />,
       lectures: <BookOpenText size={13} />, bank: <ListFilter size={13} />,
+      sets: <Layers size={13} />,
       ingest: <FilePlus2 size={13} />, paper: <FileStack size={13} />,
       papers: <FolderOpen size={13} />, health: <Activity size={13} />,
       review: <ClipboardCheck size={13} />, trash: <Trash2 size={13} />,
@@ -758,6 +909,7 @@ export default function App() {
       map: 'zhishitupu map knowledge 知识图谱 教材 先修 小学 初中 高中',
       lectures: 'jiangyi lecture topic 讲义 专题 易错 练习',
       bank: 'tiku bank quest 题库 找题 搜题',
+      sets: 'taojuan sets 套卷 原卷 整卷 高考卷 真题卷',
       ingest: 'luru ingest import 录题 录入 新建',
       paper: 'zujuan paper 组卷 导出 pdf',
       papers: 'shijuan library 试卷库 存档 合集',
@@ -768,7 +920,12 @@ export default function App() {
     }
     const out: Cmd[] = PAGES.map((p) => ({
       id: `nav:${p}`, label: PAGE_META[p].title, group: '去',
-      icon: navIcon[p], keywords: navWords[p], run: () => setPage(p),
+      icon: navIcon[p], keywords: navWords[p],
+      hint: p === 'ingest' ? '新页' : undefined,
+      run: () => {
+        if (p !== 'ingest') { setPage(p); return }
+        if (page !== 'ingest') openIngestTab()
+      },
     }))
     out.push(
       { id: 'view:filter', label: showFilter ? '收起筛选面板' : '展开筛选面板', group: '看',
@@ -787,7 +944,7 @@ export default function App() {
         keywords: 'daochu export zujuan pdf 导出 组卷', run: () => setShowExport(true) },
       { id: 'act:ingest', label: '录入题目', group: '做', icon: <FilePlus2 size={13} />,
         hint: 'I', keywords: 'luru ingest 录题 录入 手工 粘贴',
-        run: () => setPage('ingest') },
+        run: () => { if (page !== 'ingest') openIngestTab() } },
       { id: 'act:help', label: '查看键盘快捷键', group: '做', icon: <CommandIcon size={13} />,
         hint: '?', keywords: 'kuaijiejian shortcut help 快捷键 帮助',
         run: () => window.dispatchEvent(new CustomEvent('amtiku:help')) },
@@ -814,11 +971,12 @@ export default function App() {
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [L.facets, L.kind, L.selectMode, showFilter, dense, compact, paper.length, paperScore, L.activeFilters])
+  }, [L.facets, L.kind, L.selectMode, showFilter, dense, compact, paper.length, paperScore, L.activeFilters, stage, page])
 
   /* ── 筛选胶囊 ─────────────────────────────────────── */
   const clearAllFilters = () => {
-    L.setHas([]); L.setMissing([]); L.setPoints([]); L.setDiffs([])
+    L.setHas([]); L.setMissing([]); L.setIncomplete(false)
+    L.setPoints([]); L.setDiffs([])
     L.setYears([]); L.setSources([]); L.setPointSource(''); L.setType(''); L.setKind(''); L.setQ('')
     L.setScopes([]); L.setPaperStates([]); L.setStarStates([]); L.setQualities([])
     L.setAnswerSources([]); L.setReviewed('')
@@ -907,24 +1065,38 @@ export default function App() {
     setScrollSel((n) => n + 1)
   }
   const workbench = (
-    <div className="relative flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      {/* 筛选条**横跨列表与详情两列**：放在两列之外的上方，
+          列表列再窄也不会把它挤断（之前塞在列表列里，完整度/质量被裁掉）。 */}
+      {/* 专注模式下也留着：专注是「少点干扰」，不是「不能筛」——
+          一进专注就把筛选藏掉，反而要退出专注才能换条件。 */}
+      {barOn && (
+        <FilterBar L={L} total={L.total} loading={L.loading}
+          onHide={() => setBarOn(false)} />
+      )}
+      <div className="relative flex min-h-0 flex-1">
       {showFilter && (<>
         <div className="absolute inset-0 z-40 bg-scrim xl:hidden" onClick={() => setShowFilter(false)} />
         <div className="relative z-50 flex max-xl:absolute max-xl:inset-y-0 max-xl:left-0
                         max-xl:shadow-[var(--shadow-pop)] xl:relative">
-          <FilterPanel L={L} onClose={() => setShowFilter(false)} onMap={() => setPage('map')}
-            onClearAll={clearAllFilters} />
+          {/* 单独给边界：知识点栏首次展开时才加载，加载期间只空出这一栏，
+              不要把整页（列表/详情）换成骨架。 */}
+          <Suspense fallback={null}>
+            <FilterPanel L={L} onClose={() => setShowFilter(false)} onMap={() => setPage('map')}
+              onClearAll={clearAllFilters} />
+          </Suspense>
         </div>
       </>)}
       <section className="flex min-w-0 flex-1 flex-col">
         <ListHeader
           L={L} total={L.total} loading={L.loading} scopeChips={scopeChips}
           showFilter={showFilter} onShowFilter={() => setShowFilter(true)}
+          barHidden={!barOn} onShowBar={() => setBarOn(true)}
           clearAllFilters={clearAllFilters}
           dense={dense} onDense={() => setDense(!dense)}
           compact={compact} onCompact={() => setCompact(!compact)}
           maskAns={maskAns} onMaskAns={() => setMaskAns(!maskAns)}
-          onPalette={() => setPalette(true)} zen={zen} onZen={() => setZen(!zen)}
+          zen={zen} onZen={() => setZen(!zen)}
           onDeleteChecked={() => setDeleteAsk({ qs: [...L.checkedMap.values()] })}
           onAddChecked={addChecked}
           onBatchEdit={() => setBatchOpen(true)}
@@ -936,6 +1108,7 @@ export default function App() {
           paperMap={paperMap} scrollSignal={scrollSel}
           onSelect={(it) => L.setSel(it)}
           onOpen={showDetail} onAdd={addToPaper}
+          onOpenPaper={openPaperInArchive}
           onPrefetch={(k) => fetchFull(k, true)}
           onClearFilters={clearAllFilters} />
       </section>
@@ -952,22 +1125,9 @@ export default function App() {
           L.setSel(it); setFull(it); setFullLoading(false)
           rememberFull(it.key, it); setDOpen(true)
         }}
-        onSaved={(d, opts) => {
-          const oldKey = (full ?? L.sel)?.key || d.key
-          if (oldKey !== d.key) remapKey(oldKey, d)
-          const freshen = (m: Map<string, Q>) => m.has(d.key) ? new Map(m).set(d.key, d) : m
-          setPaperMap(freshen)
-          L.setSel(d)
-          setFull(d)
-          setFullLoading(false)
-          if (oldKey !== d.key) fullCache.current.delete(oldKey)
-          rememberFull(d.key, d)
-          L.setItems((xs) => xs.map((x) => (x.key === d.key ? { ...x, ...d } : x)))
-          if (opts?.refreshList) {
-            if (opts.silent) L.refreshSilent()
-            else L.setReload((v) => v + 1)
-          }
-        }} />
+        onSaved={applySaved}
+        onBatchSource={batchSourceDone} />
+      </div>
     </div>
   )
 
@@ -993,7 +1153,7 @@ export default function App() {
         {smallBank === 'formal' ? workbench : (
           <DiagnosticBank stage={stage} point={diagPoint} search={L.q} onSearch={L.setQ}
             onClearPoint={() => setDiagPoint('')}
-            onOpenPoint={openPoint} onIngest={() => setPage('ingest')}
+            onOpenPoint={openPoint} onIngest={openIngestTab}
             onBank={() => setPage('bank')} />
         )}
       </div>
@@ -1024,16 +1184,18 @@ export default function App() {
           data={overview} paperCount={paper.length}
           query={L.q} onQuery={(v) => { L.setQ(v); if (page !== 'bank' && v) setPage('bank') }}
           onPalette={() => setPalette(true)} zen={zen} onZen={() => setZen(false)} detailOpen={dShown}
-          onPaper={gotoPaper} onIngest={() => setPage('ingest')}
+          onPaper={gotoPaper}
+          onOpenIngest={openIngestTab}
           onHelp={() => window.dispatchEvent(new CustomEvent('amtiku:help'))}
           searchRef={searchRef}>
+          <Suspense fallback={<PageSkeleton />}>
           {page === 'overview' ? (
             <OverviewPage stage={stage} data={overview} loading={ovLoading}
               onStage={switchStage} onPage={setPage} onTask={openTask}
-              onPaper={gotoPaper} onIngest={() => setPage('ingest')}
-              onBankFilter={() => { setPage('bank'); setShowFilter(true) }}
+              onPaper={gotoPaper} onIngest={openIngestTab}
               onReview={() => setPage('review')}
-              onOpenPaper={openSavedPaper} />
+              onOpenPaper={openSavedPaper}
+              paper={paper} score={paperScore} answered={answered} />
           ) : page === 'map' ? (
             <MapPage stage={stage} onPickPoint={openPoint} onAddPaper={addPaperBatch} onOpenLecture={openLecture} />
           ) : page === 'lectures' ? (
@@ -1041,19 +1203,44 @@ export default function App() {
           ) : page === 'bank' ? (
             bankView
           ) : page === 'ingest' ? (
-            <IngestHome stage={stage} onOpen={(ai) => { setIngestAI(ai); setShowIngest(true) }}
-              onBank={() => setPage('bank')} />
+            ingestMode === 'proof' || ingestMode === 'curate' ? (
+              <ProofWorkspace stage={stage}
+                onBack={() => setIngestMode('')}
+                onDone={() => {
+                  L.setReload((n) => n + 1)
+                  api.overview(stage).then(setOverview).catch(() => { /* 页面内会显示错误 */ })
+                }} />
+            ) : ingestMode ? (
+              <IngestWorkspace mode={ingestMode} stage={stage} facets={L.facets}
+                onBack={() => setIngestMode('')}
+                onDone={() => {
+                  L.setReload((n) => n + 1)
+                  api.overview(stage).then(setOverview).catch(() => { /* 新页自己也有错误提示 */ })
+                }} />
+            ) : (
+              <IngestHome stage={stage}
+                onOpen={(mode) => setIngestMode(mode)}
+                onBank={() => setPage('bank')} />
+            )
           ) : page === 'paper' ? (
             <PaperStudio stage={stage} paper={paper} score={paperScore} answered={answered}
               onOpenQuestion={openQuestion} onRemove={removeFromPaperUndo}
               onMove={moveInPaper} onSwap={replaceInPaper}
               onExport={() => setShowExport(true)} onBank={() => setPage('bank')}
               onPapers={() => setPage('papers')} onGenerate={() => setShowExport(true)} />
+          ) : page === 'sets' ? (
+            <SetsPage stage={stage} onAddBatch={addPaperBatch}
+              // 套卷页自己没有详情抽屉（DetailDrawer 在题库工作台里）。
+              // 走和讲义/审阅同一个入口：切到题库、按 key 定位、打开详情。
+              onOpenQuestion={(it) => openQuestion(it.key)}
+              onPaper={gotoPaper}
+              inPaper={(k) => paperMap.has(k)}
+              refreshSignal={setsRefresh} follow={setsFollow} />
           ) : page === 'papers' ? (
-            <PapersPage onLoad={loadPaper} onPaper={gotoPaper} />
+            <PapersPage onLoad={loadPaper} onPaper={gotoPaper} focus={paperFocus} />
           ) : page === 'health' ? (
             <div className="b-scroll h-full overflow-y-auto"><Health stage={stage} onScope={openScope}
-              onMap={() => setPage('map')} onIngest={() => setPage('ingest')}
+              onMap={() => setPage('map')} onIngest={openIngestTab}
               onReview={() => setPage('review')} /></div>
           ) : page === 'review' ? (
             <Review stage={stage} onChanged={() => L.setReload((v) => v + 1)}
@@ -1065,20 +1252,27 @@ export default function App() {
           ) : (
             <div className="b-scroll h-full overflow-y-auto"><Changes /></div>
           )}
+          </Suspense>
         </Shell>
       </div>
 
-      {page !== 'paper' && <HelpButton />}
+      <HelpButton />
       <CommandPalette open={palette} onClose={() => setPalette(false)}
         commands={commands}
         onSearch={(w) => { setPage('bank'); L.setQ(w) }} />
       <Toaster />
 
-      {exportShown && <ExportPage closing={exportClosing} init={paper} from={exportFrom}
-        pageItems={L.items} poolTotal={L.total} filters={L.filters}
-        onClose={() => setShowExport(false)} />}
+      {/* 导出是全屏浮层：chunk 到位前不画东西，别拿骨架盖住背后的页面。 */}
+      {exportShown && (
+        <Suspense fallback={null}>
+          <ExportPage closing={exportClosing} init={paper} from={exportFrom}
+            pageItems={L.items} filters={L.filters}
+            onClose={() => setShowExport(false)} />
+        </Suspense>
+      )}
 
       {batchOpen && (
+        <Suspense fallback={null}>
         <BatchTagDialog keys={[...L.checkedMap.keys()]} facets={L.facets}
           onClose={() => setBatchOpen(false)}
           onDone={(res) => {
@@ -1088,26 +1282,27 @@ export default function App() {
             remapBatch(Array.isArray(res?.renames) ? res.renames : [])
             L.clearChecked()
             L.refreshSilent()
+            setSetsRefresh((v) => v + 1)
           }}
           onTrimTo={(n) => {
             const keep = [...L.checkedMap.entries()].slice(0, n)
             L.setChecked(new Set(keep.map(([k]) => k)))
             L.setCheckedMap(new Map(keep))
           }} />
+        </Suspense>
       )}
 
       {deleteAsk && (
+        <Suspense fallback={null}>
         <DeleteModal qs={deleteAsk.qs ?? L.items.filter((x) => (deleteAsk.keys || []).includes(x.key))}
           keys={deleteAsk.keys}
           onCancel={() => setDeleteAsk(null)}
           onConfirm={(reason) =>
             deleteQuestions(deleteAsk.keys ?? (deleteAsk.qs || []).map((x) => x.key), reason)
               .then(() => setDeleteAsk(null))} />
+        </Suspense>
       )}
 
-      {ingestShown && <IngestDrawer closing={ingestClosing} facets={L.facets} ai={ingestAI}
-        onClose={() => setShowIngest(false)}
-        onDone={() => { L.setReload((n) => n + 1) }} />}
       </div>
     </div>
   )

@@ -3598,7 +3598,6 @@ def _selftest() -> int:
                         (r"最小值为 \fillin。", "裸命令")):
         _x = Question(key="t/fillhole", type="fill_in_blank", stem=_stem,
                       answer="2", solution="解析无")
-        normalize_one = None
         normalize(_x, ENTRY)
         check("答案进填空位：%s 要就地填成 `\\fillin[2]`（不留空括号）" % _tag,
               _x.stem.endswith(r"\fillin[2]。"), repr(_x.stem))

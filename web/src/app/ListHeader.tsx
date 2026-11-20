@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import {
-  Check, ChevronDown, Command as CommandIcon, LayoutGrid, ListFilter, Loader2, Rows2, Rows3,
+  Check, ChevronDown, LayoutGrid, ListFilter, Loader2, Rows2, Rows3,
   SlidersHorizontal, Tags, X, Maximize2, Minimize2,
 } from 'lucide-react'
 import type { useQuestionList } from '@/lib/useQuestionList'
@@ -21,8 +21,9 @@ export type ScopeChip = { key: string; label: string; clear: () => void }
 const PAGE_SIZES = [10, 20, 50, 100, 200]
 
 export default function ListHeader({
-  L, total, loading, scopeChips, showFilter, onShowFilter, clearAllFilters,
-  dense, onDense, compact, onCompact, maskAns, onMaskAns, onPalette, onDeleteChecked, onAddChecked, onBatchEdit, view,
+  L, total, loading, scopeChips, showFilter, onShowFilter,
+  barHidden, onShowBar, clearAllFilters,
+  dense, onDense, compact, onCompact, maskAns, onMaskAns, onDeleteChecked, onAddChecked, onBatchEdit, view,
   zen, onZen,
 }: {
   L: L
@@ -31,6 +32,9 @@ export default function ListHeader({
   scopeChips: ScopeChip[]
   showFilter: boolean
   onShowFilter: () => void
+  /** 顶部筛选条被收起了：这里补一颗「筛选」把它叫回来。 */
+  barHidden?: boolean
+  onShowBar?: () => void
   clearAllFilters: () => void
   dense: boolean
   onDense: () => void
@@ -38,7 +42,6 @@ export default function ListHeader({
   onCompact: () => void
   maskAns: boolean
   onMaskAns: () => void
-  onPalette: () => void
   onDeleteChecked: () => void
   onAddChecked: () => void
   onBatchEdit: () => void
@@ -61,7 +64,7 @@ export default function ListHeader({
   /* ── 批量操作条：**占同一行**，勾选时整条换掉，列表不跳位（Gmail 做法） ── */
   if (view === 'list' && L.selectMode && L.checked.size > 0) {
     return (
-      <div className="anim-fade-in flex h-[52px] shrink-0 items-center gap-2.5
+      <div className="anim-fade-in flex h-12 shrink-0 items-center gap-2.5
                       border-b border-brand-line bg-brand-soft px-4">
         <span className="shrink-0 text-[14px] font-semibold text-brand-ink">
           已选 <span className="tnum">{L.checked.size}</span> 道
@@ -104,17 +107,21 @@ export default function ListHeader({
   // `backdrop-blur` 会创建 stacking context：表头必须自己抬到 z-30，
   // 否则弹层的 z-40 只在这个 context 内比较，会被下面的题卡盖住。
   return (
-    <div className="app-chrome relative z-30 flex h-[52px] shrink-0 items-center gap-2 border-b border-border/70
-                    bg-[color-mix(in_srgb,var(--color-surface)_62%,transparent)] px-4 backdrop-blur-2xl">
-      <span className="tnum shrink-0 rounded-full bg-muted px-2 py-[2px] text-[11.5px]
-                       font-medium text-ink-soft">
+    <div className="relative z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border
+                    bg-surface px-4">
+      <span className="shrink-0 whitespace-nowrap">
         {loading ? (total > 0 ? (
-          <span className="inline-flex items-center gap-1.5">
-            <Num value={total} /> 道
+          <span className="inline-flex items-baseline gap-1.5">
+            <Num value={total} className="text-[13px] font-semibold text-ink" />
+            <span className="text-[10.5px] text-ink-faint">道</span>
             <Loader2 size={10} className="animate-spin text-brand" />
-            <span className="text-[10px] font-normal text-ink-faint">更新中</span>
           </span>
-        ) : '加载中…') : <><Num value={total} /> 道</>}
+        ) : <span className="text-[11.5px] text-ink-faint">加载中…</span>) : (
+          <span className="inline-flex items-baseline gap-1">
+            <Num value={total} className="text-[13px] font-semibold text-ink" />
+            <span className="text-[10.5px] text-ink-faint">道题</span>
+          </span>
+        )}
       </span>
 
       {/* 生效条件做成可删胶囊：一条一个 ×，点掉哪条撤哪条 */}
@@ -143,16 +150,32 @@ export default function ListHeader({
       </span>
       <span className="min-w-0 flex-1 sm:hidden" />
 
-      {!showFilter && (
-        <button onClick={onShowFilter} title="展开筛选面板（K）"
+      {/* 筛选条被收起时，这里补一颗入口——否则「筛选」就彻底找不到了。 */}
+      {barHidden && onShowBar && (
+        <button onClick={onShowBar} title="展开顶部筛选条"
           className="press flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg border
                      border-border bg-surface px-2.5 text-[12.5px] text-ink-soft
                      hover:border-brand-line hover:text-brand-ink">
           <ListFilter size={14} />筛选
           {L.activeFilters > 0 && (
             <span className="tnum rounded-full bg-brand px-1.5 text-[10px] font-medium
+                             leading-[16px] text-white">{L.activeFilters}</span>
+          )}
+        </button>
+      )}
+
+      {/* 这一栏现在**只放知识点**（其余维度都在列表上方的筛选条里），
+          按钮文案跟着改，免得点「筛选」却只看到一棵树。 */}
+      {!showFilter && (
+        <button onClick={onShowFilter} title="展开知识点面板（K）"
+          className="press flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg border
+                     border-border bg-surface px-2.5 text-[12.5px] text-ink-soft
+                     hover:border-brand-line hover:text-brand-ink">
+          <ListFilter size={14} />知识点
+          {L.points.length > 0 && (
+            <span className="tnum rounded-full bg-brand px-1.5 text-[10px] font-medium
                              leading-[16px] text-white">
-              {L.activeFilters}
+              {L.points.length}
             </span>
           )}
         </button>
@@ -252,14 +275,6 @@ export default function ListHeader({
           )}
         </div>
       )}
-
-      <button onClick={onPalette} title="命令面板（⌘K）"
-        className="press hidden h-[30px] shrink-0 items-center gap-1.5 rounded-lg border sm:flex
-                   border-border bg-surface px-2 text-[12.5px] text-ink-faint
-                   hover:border-border-strong hover:text-ink">
-        <CommandIcon size={13} />
-        <kbd className="hidden text-[10.5px] xl:inline">⌘K</kbd>
-      </button>
 
       {view === 'list' && (
         L.selectMode ? (

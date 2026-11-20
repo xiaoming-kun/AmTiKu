@@ -492,10 +492,10 @@ def cmd_accept(_a) -> int:
     print("═" * 56)
     # **逐个 `-m` 跑**，不能只 import——自检写在 `__main__` 里，
     # import 一下什么都不执行，那一层就成了摆设（实测踩过）。
-    for m in ("schema", "latex_blocks", "render_tex", "images", "dedup",
+    for m in ("layout", "schema", "latex_blocks", "render_tex", "images", "dedup",
               "ingest", "generate", "normalize", "query_syntax", "search",
               "similar", "duplicates", "sharepack", "docx_export",
-              "source_import", "fts",
+              "source_import", "fts", "papers", "papersets",
               "knowledge_map", "topics", "review"):
         run("单元自检 · %s" % m, [_s.executable, "-m", "amti." + m], r"通过|失败")
     # 存储层：**缩卷**（题数跨过每卷 5000 的边界）时，多余的旧卷必须先删再回读。
@@ -512,9 +512,13 @@ def cmd_accept(_a) -> int:
     run("读图自检", [_s.executable, "-m", "amti.vlm", "--selftest"], r"通过|失败")
     run("求解器自检", [_s.executable, "-m", "amti.solve", "--selftest"], r"通过|失败")
     run("录题自检", [_s.executable, "-m", "amti.record", "--selftest"], r"通过|失败")
-    # AI 录题（DeepSeek 读整份资料）：JSON 从脏回复里捞、答案归一、
-    # 图占位/填空组装、图片包成页。**不发任何网络请求**——验收不该依赖 key 和余额。
-    run("AI 录题自检", [_s.executable, "-m", "amti.aiingest", "--selftest"], r"通过|失败")
+    # AI 录题（规范驱动）：PDF 页图 + 规范 → 模型直出 tex → 本地 preview。
+    # **不发任何网络请求**——验收不该依赖 key 和余额。
+    run("AI 录题自检", [_s.executable, "-m", "amti.ai_spec", "--selftest"], r"通过|失败")
+    # 单题修复 / 修复 agent：解答题是 problem 环境（只认 question 会把解答题全拒）；
+    # agent 的多轮工具循环必须带上下文，否则第 2 轮起等于重新开题。
+    run("单题修复自检", [_s.executable, "-m", "amti.airepair"], r"通过|失败")
+    run("修复 agent 自检", [_s.executable, "-m", "amti.ai_agent"], r"通过|失败")
     # 录入 v2（Paddle → 27B 结构化）：接口报错的翻译、token 估计、上下文护栏。
     # 自检**不碰模型**；它守的正是「超过上下文 → UnboundLocalError」那个坑。
     run("录入 v2 自检", [_s.executable, "-m", "amti.record2", "selftest"], r"通过|失败")
@@ -531,6 +535,23 @@ def cmd_accept(_a) -> int:
     #    否则它们会把彼此的 fixture 快照还原进真实库，accept 就会轮流报假红。
     run("删题安全自检", [_s.executable, str(root / "测试" / "删题安全自检.py")],
         r"安全测试|✗", isolated=True)
+    # **结构检查**：conform 查题目写法、verify 查字段自洽、ruff 查单个文件；
+    # 没有一条查「模块之间的边界」。这里把 AGENTS.md 的唯一入口变成断言：
+    # R1 路由写库必须同步派生索引、R2 AI 模块只读、R3 记账路径不许静默吞异常。
+    run("结构检查自证", [_s.executable, "-m", "amti.lint", "--selftest"], r"通过")
+    run("结构检查", [_s.executable, "-m", "amti.lint"], r"通过")
+    # **性能基线**：把"这些操作还能秒回"也变成断言。只抓数量级退化
+    # （索引没建、回退全量 Python），不抓 20% 抖动。
+    run("性能基线", [_s.executable, "测试/性能基线.py"], r"性能基线通过")
+    # 静态检查（pyflakes 那类"一定会炸"的）：未定义名/重复定义/未用变量。
+    # 没装 ruff 就跳过——验收不该因为少装一个开发工具而变红。
+    import shutil as _shutil
+    _ruff = _shutil.which("ruff")
+    if _ruff:
+        run("静态检查 ruff", [_ruff, "check", "amti", "amti.py", "测试"],
+            r"All checks passed|passed")
+    else:
+        print("\n【静态检查 ruff】⚠️ 未安装，跳过（pip install -r requirements-dev.txt）")
     run("检查器自证", [_s.executable, "-m", "amti.conform", "--selftest"], r"通过|失败")
     run("规范审查", [_s.executable, "amti.py", "conform"], r"^共|全部规范")
     # **结构校验**：`conform` 只查写法，查不出「单选题 3 个答案」「8 个选项」
@@ -540,6 +561,9 @@ def cmd_accept(_a) -> int:
     # 这些原来只在 AGENTS 里要求"手工跑"，accept 看不到它们红——现在一条命令全跑。
     # `接口测试` 会 PATCH 一道题再还原（自检式写库），其余只读。
     run("接口回归", [_s.executable, str(root / "测试" / "接口测试.py")], r"通过")
+    # **排版金样回归**：真编一份"排版最刁钻"的卷子 + 一份讲义，钉住
+    # 「不裂题 / 不溢出 / 一题一页」这三件——层③ 只查文本层，查不出排版变丑。
+    run("排版回归", [_s.executable, str(root / "测试" / "排版回归.py")], r"通过|失败")
     # 小初章节讲义：120 章是否都在、是否都按高中模板、是否只讲不练。
     # 数据不存在时脚本自己明确“跳过”，不算失败。
     run("小初讲义回归", [_s.executable, str(root / "测试" / "小初讲义测试.py")],
@@ -568,6 +592,12 @@ def cmd_accept(_a) -> int:
         return 1
     print("✓ 四层全绿")
     return 0
+
+
+def cmd_lint(_a) -> int:
+    r"""结构检查：AGENTS.md 的「唯一入口」是不是真的唯一（AST 扫描）。"""
+    from amti import lint
+    return lint.main([])
 
 
 def cmd_conform(a) -> int:
@@ -760,6 +790,7 @@ def main() -> int:
     sub.add_parser("diff", help="存量题有没有被改").set_defaults(fn=cmd_diff)
     sub.add_parser("snapshot", help="把当前状态存为基线").set_defaults(fn=cmd_snapshot)
     sub.add_parser("verify", help="全库校验").set_defaults(fn=cmd_verify)
+    sub.add_parser("lint", help="结构检查（唯一入口/边界是否被绕过）").set_defaults(fn=cmd_lint)
     # ⚠️ 别用 `ap` 当变量名——那是主解析器，覆盖掉之后 parse_args 会走错
     aud_p = sub.add_parser("audit", help="影响面审计 + MIGRATE 强制流程")
     aud_p.add_argument("--rules", action="store_true", help="列出全部规则")

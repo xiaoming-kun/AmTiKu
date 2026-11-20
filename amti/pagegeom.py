@@ -102,7 +102,6 @@ def gutter_x(gray, x0: int = 0, x1: int | None = None, *, win: float = 0.30,
     0.5%"，而总数是所有行累加的结果，比单列大三个数量级——于是**满页是字的
     图也能通过**（实测直接切在正文中间）。现在拿"最密的一列"当基准。
     """
-    import numpy as np
 
     h, w = gray.shape
     full = (gray < dark).sum(axis=0)             # 整页每列的暗像素

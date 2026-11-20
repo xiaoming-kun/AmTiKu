@@ -22,8 +22,6 @@ from __future__ import annotations
 from .paths import ROOT
 import json
 import re
-from functools import lru_cache
-from pathlib import Path
 
 KB_PATH = ROOT / "知识点.json"
 MAP_PATH = ROOT / "知识地图.json"

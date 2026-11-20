@@ -41,7 +41,6 @@ r"""AmTiKu · **全库编译体检**
 """
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
 import tempfile

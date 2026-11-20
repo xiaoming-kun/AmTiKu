@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
-from pathlib import Path
 
 from .schema import Option, Question
 from . import export as _export
@@ -60,7 +59,7 @@ def export(items: list[dict], *, title: str = "", answers: bool = False,
     tex_path.write_text(_export.render_paper(
         qs, title=_paper.esc_text(title), show_answers=answers,
         answers_at_end=False, show_source=False, mode="test",
-        score_box=False, seal_line=False, bottom_sep="2.2em",
+        bottom_sep="2.2em",
     ), encoding="utf-8")
     ok, log = _export.compile_tex(tex_path)
     res = {

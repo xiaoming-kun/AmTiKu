@@ -1,0 +1,18 @@
+# 本文件只放"工具配置"，不是打包配置——项目直接 `python3 amti.py` 跑。
+#
+# ruff 守的是「一定会炸」的那一小撮（F 系列：未定义名、重复定义、未用变量），
+# 不参与风格争论。装：`pip install -r requirements-dev.txt`；
+# 跑：`ruff check amti amti.py 测试`（accept 会自动带上，没装就跳过）。
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["web/node_modules", "数据", "题目", "归档", "变更记录"]
+
+[tool.ruff.lint]
+# E9 = 语法错误；F = pyflakes。刻意不开 E501（长行）之类的排版规则。
+select = ["E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# 自检/测试脚本里难免有"故意不用"的变量
+"测试/*.py" = ["F841"]

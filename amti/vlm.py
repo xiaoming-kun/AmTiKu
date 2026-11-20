@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import tempfile
 import time
 import urllib.error
@@ -334,7 +333,6 @@ def _selftest() -> int:
     `python -m amti.vlm 待录入图片/xxx.png`
     """
     import io
-    import struct
     fails = 0
 
     def check(name, cond, extra=""):

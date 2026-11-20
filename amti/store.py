@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 from .paths import ROOT
+from copy import deepcopy
 import json
 import os
 import shutil
@@ -33,7 +34,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .latex_ir import parse_question, split_questions
-from .schema import Question, from_dict, to_dict
+from .schema import Question, to_dict
 
 from amti.logutil import get_logger
 
@@ -285,8 +286,8 @@ def _copy_file(src: Path, dst: Path) -> None:
                                capture_output=True, timeout=30)
             if r.returncode == 0:
                 return
-        except Exception:                                   # noqa: BLE001
-            pass
+        except Exception as e:                              # 退回普通复制是预期路径
+            log.debug("APFS clonefile 不可用，退回普通复制：%s", e)
     shutil.copy2(src, dst)
 
 
@@ -942,6 +943,50 @@ def duplicate_keys() -> dict[str, int]:
     return {k: n for k, n in seen.items() if n > 1}
 
 
+def scan_meta() -> list[dict]:
+    r"""只读每道题的 `%% @q` 元数据行，**不解析题干正文**。
+
+    批量改出处要先回答「全库哪些题和这道是同一份卷子」。解析 32k 道题的
+    LaTeX 要好几秒（`load_all`），而这个问题只用到元数据；这里按卷切块、
+    只取元数据行，实测约 0.7 秒，比 `load_all` 快一个量级。
+
+    返回**卷文件顺序**（也就是录入顺序），墓碑（`%% @gone`）跳过。
+    字段名与 `Question.meta` 对齐，调用方不用再懂文件格式。
+    """
+    out: list[dict] = []
+    for path in existing_volumes():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            log.warning("扫描元数据：读不了 %s", path.name, exc_info=True)
+            continue
+        for block in split_questions(text):
+            if GRAVE_MARK in block:
+                continue
+            m = META_RE.search(block)
+            if not m:
+                continue
+            try:
+                d = json.loads(m.group(1))
+            except ValueError:
+                log.warning("扫描元数据：%s 有一行不是合法 JSON，跳过", path.name)
+                continue
+            key = str(d.get("key") or "")
+            if not key:
+                continue
+            meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+            out.append({
+                "key": key,
+                "type": str(d.get("type") or ""),
+                "book": str(meta.get("book") or ""),
+                "label": str(meta.get("source_label") or ""),
+                "year": meta.get("year") or "",
+                "no": key.rsplit("#", 1)[-1] if "#" in key else "",
+                "volume": path.stem,
+            })
+    return out
+
+
 def roundtrip_problems(questions=None, *, sample: int = 400) -> list[dict]:
     r"""**往返一致性**：题目写出去再读回来，内容指纹必须一个字节都不变。
 
@@ -1206,46 +1251,73 @@ def read_one(key: str) -> tuple[Question, int, tuple, list[Question]] | None:
         chunk = _load_volume(no)
         for q in chunk:
             if q.key == key:
-                return q, no, sig, chunk
+                # **必须返回副本**：`write_one` 会在 chunk 里按 key 找“原记录”
+                # 做并发校验；调用方改的是同一对象的话，会把自己刚改的内容
+                # 当成别人的改动，无并发也永远 409（2026-11-10 实测）。
+                return deepcopy(q), no, sig, chunk
         return None
     return None
 
 
 def write_one(q: Question, *, volume: int, expect_hash: str,
-              expect_sig: tuple, chunk: list[Question] | None = None) -> dict:
+              expect_sig: tuple, chunk: list[Question] | None = None,
+              expect_record: str = "") -> dict:
     r"""只重写**一道题所在的那一卷**，用于高频的单题改标签/改答案。
 
     比 `rewrite_all(changed_keys=[key])` 少两步：
       · 不 `load_all()` 把 3 万道题全解析一遍（只解析目标卷）；
       · 不重新分卷（要求 key 不变、卷数不变，因此分卷边界不可能移动）。
 
-    `chunk` 可由 `read_one()` 带回；签名对得上时直接复用，不再解析一遍。
-
-    安全边界：
-      · 写锁内先核对**全库卷签名**，别人改过就抛 `ConcurrentWrite`；
-      · 写前核对题目内容指纹，别人改过这道题也抛；
-      · 只允许**不改 key**；
-      · 目标卷走和整库写同一套 `_tmp_verified` 回读校验；
+    安全边界（2026-11-10 修正）：
+      · 先拿写锁；**只以目标题自己的记录为准**。别的进程改了别的题/别的卷，
+        不再一律拒绝——在锁内重读目标卷，目标题的 `record_hash()` 没变，
+        就把这一道题替换进去，别的改动原样保留；
+      · 目标题正文变了（`expect_hash`）或标签/元数据变了（`expect_record`）
+        才抛 `ConcurrentWrite`，让上层重读重试；
+      · 只允许**不改 key**；目标卷走和整库写同一套 `_tmp_verified` 回读校验；
       · 写前留整份备份，回读失败自动 `restore_backup()`。
+
+    `expect_record` 由调用方在读取后、修改前算好；不传就退回旧的全库签名
+    严格模式，兼容尚未传它的调用方。
     """
     key = q.key
     with lib_lock():
         now = _vol_signature()
-        if now != expect_sig:
-            raise ConcurrentWrite(
-                "库在读取之后被别的进程改过（卷签名 %s → %s），"
-                "拒绝用这份快照覆盖。" % (_sig_text(expect_sig), _sig_text(now)))
         path = volume_path(volume)
         if not path.exists():
             raise ConcurrentWrite("目标卷已不存在：%s" % path.name)
-        if chunk is None:
+
+        if now != expect_sig:
+            if not expect_record:
+                raise ConcurrentWrite(
+                    "库在读取之后被别的进程改过（卷签名 %s → %s），"
+                    "拒绝用这份快照覆盖。" % (_sig_text(expect_sig), _sig_text(now)))
+            # 有人写过库，但可能只是别的题/别的卷。重读目标卷，
+            # 用目标题自己的整条记录判冲突——不能因为“别人动过库”
+            # 就把一次安全的单题写回也拒掉（实测：跑接口回归时整库
+            # 每 10 秒重写一次，界面上的保存永远 409）。
             chunk = _load_volume(volume)
+        elif chunk is None:
+            chunk = _load_volume(volume)
+
         idx = next((i for i, x in enumerate(chunk) if x.key == key), None)
         if idx is None:
             raise ConcurrentWrite("这道题已经不在原卷里：%s" % key)
         current = chunk[idx]
+        if current is q:
+            # read_one 把 q 和 chunk 里的同一个对象一起返回。调用方改完 q
+            # 再来写时，chunk 里已经不是“读到的原样”了——拿它做 expect_hash
+            # 校验会把自己刚改的内容当成别人的改动，于是没有并发写也永远 409。
+            # 这里必须在锁内从磁盘重读一次，用真正的原记录做校验。
+            chunk = _load_volume(volume)
+            idx = next((i for i, x in enumerate(chunk) if x.key == key), None)
+            if idx is None:
+                raise ConcurrentWrite("这道题已经不在原卷里：%s" % key)
+            current = chunk[idx]
         if expect_hash and current.content_hash() != expect_hash:
             raise ConcurrentWrite("这道题在别处被改过：%s" % key)
+        if expect_record and current.record_hash() != expect_record:
+            raise ConcurrentWrite("这道题在别处被改过（含标签/元数据）：%s" % key)
         if q.key != current.key:
             raise ValueError("write_one 不允许改 key（%s → %s）"
                              % (current.key, q.key))

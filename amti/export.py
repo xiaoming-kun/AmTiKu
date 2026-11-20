@@ -25,8 +25,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .schema import QTYPE_LABEL, Question
-from .render_tex import question_to_tex
+from .schema import Question
+from . import layout as L
 from . import paper as _paper
 from . import store
 
@@ -54,7 +54,9 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
                  columns: int = 0, mode: str = "gaokao",
                  handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
                  qid_marks: bool = False,
-                 score_box: bool = True, seal_line: bool = True) -> str:
+                 force_newpage: frozenset[int] | set[int] | None = None,
+                 show_points: bool = True,
+                 handout_tight: bool = False) -> str:
     """渲染成完整的 exam-zh 文档。**委托给 `paper.py`。**
 
     这里早先自己实现过一份，结果 `paper.py` 的两种卷型和「按位置定难度」
@@ -76,7 +78,8 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
         bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
         columns=columns, graphicspath=str(IMG_DIR),
         handout_font=handout_font, qid_marks=qid_marks,
-        score_box=score_box, seal_line=seal_line)
+        force_newpage=force_newpage, show_points=show_points,
+        handout_tight=handout_tight)
 
 
 # ── 编译 ──────────────────────────────────────────────────────────────
@@ -85,6 +88,48 @@ def render_paper(questions: list[Question], *, title: str = "", show_answers: bo
 # `\includegraphics[width=...]{<图名>}`。编译前要把图目录改写到 ASCII 临时目录。
 _GPATH_RE = re.compile(r"\\graphicspath\{\{([^}]*)\}\}")
 _IMGRE_RE = re.compile(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}")
+
+
+def _trim_margins(src: Path, dst: Path) -> bool:
+    r"""把图片四周的纯白/透明留白裁掉，写进 `dst`；没裁就返回 False。
+
+    ⚠️ **只动编译用的临时副本**，`图片/` 里的原图一个字节不改（内容寻址命名，
+    改了名就对不上）。裁完图更"满"，`width=` 不变时画面自然变大——
+    这正是"PNG 留白太大、缩成一行后看不清"的解（用户 2026-11-14 报的排版问题）。
+
+    透明底（RGBA 且 alpha 真的透）按 alpha 取内容，否则按"非白"取；
+    四周各留 1% 的边，不留就会被裁得贴边。
+    """
+    if src.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+        return False
+    try:
+        import numpy as np
+        from PIL import Image
+        im = Image.open(src)
+        im.load()
+        rgba = im.convert("RGBA")
+        a = np.array(rgba)
+        rgb, alpha = a[..., :3], a[..., 3]
+        content = rgb.min(axis=2) < 245
+        if alpha.min() < 250:                       # 真有透明通道 → 用 alpha 当底
+            content &= alpha > 8
+        if not content.any():
+            return False
+        ys, xs = np.where(content)
+        w, h = rgba.size
+        pad = max(2, int(min(w, h) * 0.01))
+        box = (max(0, xs.min() - pad), max(0, ys.min() - pad),
+               min(w, xs.max() + 1 + pad), min(h, ys.max() + 1 + pad))
+        if (box[2] - box[0]) >= w * 0.98 and (box[3] - box[1]) >= h * 0.98:
+            return False                            # 本来就没多少白边，别重编码
+        out = im.crop(box)
+        if src.suffix.lower() == ".png":
+            out.save(dst, format="PNG", optimize=True)
+        else:
+            out.convert("RGB").save(dst, format="JPEG", quality=94)
+        return True
+    except Exception:                                # noqa: BLE001 裁不了就用原图
+        return False
 
 
 def _prepare_ascii_build(tex_path: Path) -> Path:
@@ -114,7 +159,9 @@ def _prepare_ascii_build(tex_path: Path) -> Path:
             for n in names:
                 s = src_img / n
                 if s.is_file():
-                    shutil.copy2(s, build / "images" / Path(n).name)
+                    dst = build / "images" / Path(n).name
+                    if not _trim_margins(s, dst):
+                        shutil.copy2(s, dst)
         # 用 paper._texpath 转正斜杠：Windows 上反斜杠在 TeX 里是命令前缀
         text = text.replace(m.group(0),
                             r"\graphicspath{{" + _paper._texpath(str(build / "images")) + "/}}")
@@ -288,6 +335,14 @@ def compile_tex(tex_path: Path, *, passes: int = 2, timeout: int = 240) -> tuple
                 shutil.copy2(aux, tex_path.with_suffix(".aux"))
         except OSError:
             pass
+        # **成功也要把 .log 留一份**：`pdfcheck.overfull()` 靠它报排版溢出
+        # （编成功≠没溢出）。以前只在失败时留日志，于是"溢出体检"永远读到空。
+        try:
+            src_log = build_dir / "main.log"
+            if src_log.exists():
+                shutil.copy2(src_log, tex_path.with_suffix(".log"))
+        except OSError:
+            pass
         shutil.move(str(produced), str(tex_path.with_suffix(".pdf")))
         return True, log
     finally:
@@ -315,15 +370,15 @@ def export(keys: list[str], *, title: str = "", out: str = "",
            problem_blank_cm: float = 0.0, do_compile: bool = True,
            mode: str = "gaokao", handout_font: str = _paper.HANDOUT_FONT_DEFAULT,
            kind: str = "", preview: bool = False,
-           score_box: bool = True, seal_line: bool = True) -> dict:
+           ) -> dict:
     r"""按 key 列表导出。返回落盘位置（**必须回传，UI 要显示"存到哪了"**）。
 
     `mode` 取 `gaokao`（高考卷）/ `test`（纯测试题，带考点小字）/
     `handout`（讲义，见 `paper._render_handout`）。
 
     `kind` 是**分类子目录**（试卷 / 测试卷 / 讲义，见 `paths.OUT_KINDS`），
-    默认由卷型推出来；界面把「考点覆盖卷」归到 `试卷`（它渲染用的是
-    `test` 卷型），所以留了个显式指定的口子。**非法值直接拒绝**——
+    默认由卷型推出来；界面总是显式传（落盘分类跟着界面上的卷型走），
+    所以留了个显式指定的口子。**非法值直接拒绝**——
     这个值会被拼进路径，不能让它带 `../`。
 
     `preview=True` 是**只编译给人看**：产物落 `数据/预览/`，
@@ -366,16 +421,32 @@ def export(keys: list[str], *, title: str = "", out: str = "",
     # 标记是每题前面一行 `% AMTIKU-Q: <key>` 注释（不上卷面），
     # 作用是编译失败时把 xelatex 给的行号翻成"是哪道题"（见 `amti/texdiag.py`）。
     # 不编译就没人需要它，白白在导出源码里多 N 行。
-    tex_path.write_text(render_paper(qs, title=title, show_answers=show_answers,
-                                     answers_at_end=answers_at_end,
-                                     show_source=show_source,
-                                     bottom_sep=bottom_sep, mode=mode,
-                                     problem_blank_cm=problem_blank_cm,
-                                     handout_font=handout_font,
-                                     qid_marks=do_compile,
-                                     score_box=score_box, seal_line=seal_line),
-                        encoding="utf-8")
+    # 卷面实际顺序（跨页修复/档案里的"N"都是这个顺序）
+    order = _paper.question_order(qs)
 
+    def _write(*, force=frozenset(), tight: bool = False) -> None:
+        tex_path.write_text(
+            render_paper(qs, title=title, show_answers=show_answers,
+                         answers_at_end=answers_at_end,
+                         show_source=show_source,
+                         bottom_sep=bottom_sep, mode=mode,
+                         problem_blank_cm=problem_blank_cm,
+                         handout_font=handout_font,
+                         qid_marks=do_compile,
+                         force_newpage=force,
+                         handout_tight=tight),
+            encoding="utf-8")
+
+    # **跨页档案**（P2）：这套题里已知会跨页的，第一遍就按"从新页开始"排，
+    # 省掉一遍探测编译。档案按 `layout.VERSION` + 卷型失效，删了只会慢一点。
+    from . import layout_cache as _lc
+    known = (_lc.known_splitters([q.key for q in order], mode)
+             if mode != "handout" and do_compile else set())
+    force0 = frozenset(i for i, q in enumerate(order, 1) if q.key in known)
+    _write(force=force0)
+
+    layout_info = {"passes": 0, "forced": [], "still_split": [], "tight": False,
+                   "tables_fit": 0, "math_fit": 0}
     res = {"ok": True, "name": name, "kind": kind, "preview": preview,
            "questions": len(qs), "missing": missing,
            "tex_abs": str(tex_path), "pdf_abs": None, "pdf_rel": None,
@@ -384,16 +455,136 @@ def export(keys: list[str], *, title: str = "", out: str = "",
                           else f"{name} 已保存到 {out_kind_label(kind)}/"),
            "out_dir": str(dest), "log": ""}
     if do_compile:
+        from . import pdfcheck as _pc
+
         ok, log = compile_tex(tex_path)
+        passes = 1
+
+        # ── P1：讲义"一题一页"超页降级 ──────────────────────────────
+        # 一题一页时页数应当正好等于题数；多出来就说明有题被撑破了。
+        # 再排一遍：图压小一档（`handout_tight`），让它回到一页。
+        if ok and mode == "handout":
+            pages = _pc.page_count(tex_path.with_suffix(".pdf"))
+            if pages and pages > len(qs):
+                _write(tight=True)
+                ok, log = compile_tex(tex_path)
+                passes = 2
+                layout_info["tight"] = True
+
+        # ── P0.1 + P2：跨页修复循环 ────────────────────────────────
+        # 编一遍 → 从 .aux 读出哪几题跨页 → 让它们从新页开始重编。
+        # 这是"实测"而不是"猜 0.5 页够不够"，跨页一次清零。
+        elif ok:
+            force = set(force0)
+            split = _pc.split_questions(tex_path)
+            if split:
+                keys = [order[i - 1].key for i in split if 1 <= i <= len(order)]
+                _lc.mark_splitters(keys, mode)          # 档案：下次直接预排
+                force |= set(split)
+                _write(force=frozenset(force))
+                ok, log = compile_tex(tex_path)
+                passes = 2
+                still = _pc.split_questions(tex_path)
+                if still:
+                    # 题本身就比一页还高：强制断页也放不下，如实报出来
+                    layout_info["still_split"] = [
+                        order[i - 1].key for i in still if 1 <= i <= len(order)]
+
+        layout_info["passes"] = passes
+        layout_info["forced"] = [order[i - 1].key for i in sorted(force0)
+                                 if 1 <= i <= len(order)]
+        res["layout"] = layout_info
         res["ok"] = ok
         if ok:
             res["pdf_abs"] = str(tex_path.with_suffix(".pdf"))
             # 相对导出位置（或预览目录）的路径：前端预览 `/api/pdf?path=` 直接用它，
             # 不用自己把「分类子目录」再拼一遍（那份拼法迟早和后端分叉）。
             res["pdf_rel"] = (f"{name}.pdf" if preview else f"{kind}/{name}.pdf")
-            from . import pdfcheck as _pc
             res.update(_pc.inspect(res["pdf_abs"], tex_path=tex_path,
                                    aux_path=tex_path.with_suffix(".aux")))
+            # ── 表格溢出：**只包真的溢出的那张表** ──────────────────
+            # `inspect` 给的 overfull 带行号；行号落在表格块里才包 resizebox，
+            # 长公式/长行导致的溢出不动（包了也不解决，反而缩小字）。
+            big = [o for o in (res.get("overfull") or []) if o["pt"] >= L.OVERFULL_PT]
+            if big and passes < 5:
+                text = tex_path.read_text(encoding="utf-8")
+                fitted, n_tab = _paper.fit_tables_at_lines(
+                    text, [o["line"] for o in big])
+                if n_tab:
+                    tex_path.write_text(fitted, encoding="utf-8")
+                    ok, log = compile_tex(tex_path)
+                    passes += 1
+                    res["ok"] = ok
+                    layout_info["tables_fit"] = n_tab
+                    layout_info["passes"] = passes
+                    res["layout"] = layout_info
+                    if ok:
+                        res.update(_pc.inspect(res["pdf_abs"], tex_path=tex_path,
+                                               aux_path=tex_path.with_suffix(".aux")))
+                    rest = len([o for o in (res.get("overfull") or [])
+                                if o["pt"] >= L.OVERFULL_PT])
+                    if rest:
+                        res.setdefault("warnings", []).append(
+                            "已把 %d 张超宽表缩到版心内，仍有 %d 处溢出"
+                            "（多为长公式/长行，需要人工看）" % (n_tab, rest))
+
+            # ── 行间公式溢出：**只包独立 `\[ … \]` 块** ────────────────
+            # `align/cases`（有 `\\`/`\begin{`）和行内公式不动——缩了会丢对齐/断行。
+            big = [o for o in (res.get("overfull") or []) if o["pt"] >= L.OVERFULL_PT]
+            if big and passes < 5:
+                text = tex_path.read_text(encoding="utf-8")
+                fitted, n_math = _paper.fit_math_in_questions(text, big)
+                if n_math:
+                    tex_path.write_text(fitted, encoding="utf-8")
+                    ok, log = compile_tex(tex_path)
+                    passes += 1
+                    res["ok"] = ok
+                    layout_info["math_fit"] = n_math
+                    layout_info["passes"] = passes
+                    res["layout"] = layout_info
+                    if ok:
+                        res.update(_pc.inspect(res["pdf_abs"], tex_path=tex_path,
+                                               aux_path=tex_path.with_suffix(".aux")))
+                    rest = len([o for o in (res.get("overfull") or [])
+                                if o["pt"] >= L.OVERFULL_PT])
+                    if rest:
+                        huge = len([o for o in (res.get("overfull") or [])
+                                    if o["pt"] > L.MATH_FIT_MAX_PT])
+                        tip = ("；其中 %d 处公式超过 1.6 个版心宽，缩小也看不清，"
+                               "建议拆行" % huge) if huge else "（多行公式/长行，需人工看）"
+                        res.setdefault("warnings", []).append(
+                            "已把 %d 个超宽行间公式缩到版心内，仍有 %d 处溢出%s"
+                            % (n_math, rest, tip))
+
+            # ── 行内公式里的 cases/aligned：显示化 + 缩到版心 ──────────
+            # 这类"公式块"不可断行，夹在段落里必然出血；转成 `\[…\]` 后单独占一行。
+            big = [o for o in (res.get("overfull") or []) if o["pt"] >= L.OVERFULL_PT]
+            if big and passes < 5:
+                text = tex_path.read_text(encoding="utf-8")
+                fitted, n_inline = _paper.fit_inline_env_math(text, big)
+                if n_inline:
+                    tex_path.write_text(fitted, encoding="utf-8")
+                    ok, log = compile_tex(tex_path)
+                    passes += 1
+                    res["ok"] = ok
+                    layout_info["inline_fit"] = n_inline
+                    layout_info["passes"] = passes
+                    res["layout"] = layout_info
+                    if ok:
+                        res.update(_pc.inspect(res["pdf_abs"], tex_path=tex_path,
+                                               aux_path=tex_path.with_suffix(".aux")))
+                    rest = len([o for o in (res.get("overfull") or [])
+                                if o["pt"] >= L.OVERFULL_PT])
+                    if rest:
+                        res.setdefault("warnings", []).append(
+                            "已把 %d 个行内公式块改成独立一行缩到版心，仍有 %d 处溢出"
+                            % (n_inline, rest))
+
+            if layout_info["still_split"]:
+                res.setdefault("warnings", []).append(
+                    "有 %d 道题超过一页、无法整页放下（%s）"
+                    % (len(layout_info["still_split"]),
+                       "、".join(k.rsplit("/", 1)[-1] for k in layout_info["still_split"][:3])))
             if preview:
                 _prune_previews()
         else:
@@ -426,8 +617,7 @@ def export(keys: list[str], *, title: str = "", out: str = "",
                         params={"show_answers": show_answers, "show_source": show_source,
                                 "bottom_sep": bottom_sep,
                                 "problem_blank_cm": problem_blank_cm, "mode": mode,
-                                "answers_at_end": answers_at_end,
-                                "score_box": score_box, "seal_line": seal_line},
+                                "answers_at_end": answers_at_end},
                         # 存进「存档」的分类跟着卷型走（以前恒写"试卷"，导一份
                         # 讲义也在存档列表里显示成"试卷"）。
                         kind=kind)

@@ -27,6 +27,40 @@ def csv_set(raw: str | None) -> frozenset[str]:
     return frozenset(x.strip() for x in (raw or "").split(",") if x.strip())
 
 
+def point_mode_of(explicit: str, parsed: str = "") -> str:
+    """考点命中方式：`any`（默认，命中任一） / `all`（交集，全部都要挂）。
+
+    显式参数优先于搜索框语法，和其余筛选字段同一套规矩。
+    """
+    for v in (explicit or "", parsed or ""):
+        if v.strip().lower() in ("all", "and", "交集", "全部"):
+            return "all"
+    return "any"
+
+
+def point_groups_of(explicit: str, parsed: str, *,
+                    resolve) -> tuple[tuple[frozenset[str], ...], frozenset[str]]:
+    """把「显式 `point=`」和「语法 `考点:`」摊成**必须同时命中的组**。
+
+    一组 = 命中组里任意一个考点 id 就算满足这一组。界面多选考点时每个
+    考点单独一组；语法里一个名字解析出多个 id（如「函数」）时，它们属于
+    **同一组**——要求的是一道题挂着「函数」这件事，不是挂齐那几个 id。
+
+    解析不到任何 id 时给 `__none__`：语法写了考点就**必须是 0 结果**，
+    不能退化成“不筛”（列表与组卷共用这条口径）。
+
+    返回 `(groups, 扁平 id 集合)`；`any` 模式只用得到后一半。
+    """
+    if (explicit or "").strip():
+        return tuple(frozenset({x}) for x in csv_set(explicit)), csv_set(explicit)
+    groups: list[frozenset[str]] = []
+    for part in sorted(csv_set(parsed)):
+        got = set(resolve(part))
+        groups.append(frozenset(got) if got else frozenset({"__none__"}))
+    flat = frozenset().union(*groups) if groups else frozenset()
+    return tuple(groups), flat
+
+
 def source_of(q: Question) -> str:
     """卷别（如「新课标I卷」）。试卷上标注来源用的就是它。"""
     return q.meta.get("region") or (q.meta.get("source_label") or "").split("年")[-1]
@@ -143,6 +177,10 @@ class QuestionFilter:
     qtype: str = ""
     kind: str = ""
     points: frozenset[str] = frozenset()
+    #: 考点命中方式：`any` = 命中任一（默认）；`all` = 交集，每组都要命中。
+    point_mode: str = "any"
+    #: 交集模式下「必须同时命中」的组。空 = 退回 `points` 的任一语义。
+    point_groups: tuple[frozenset[str], ...] = ()
     difficulties: frozenset[str] = frozenset()
     years: frozenset[str] = frozenset()
     sources: frozenset[str] = frozenset()
@@ -156,6 +194,9 @@ class QuestionFilter:
     review_status: frozenset[str] = frozenset()
     has: frozenset[str] = frozenset()
     missing: frozenset[str] = frozenset()
+    #: 「待补」：**缺答案或缺解析**（任一就够）。`missing` 是“全都缺”的语义，
+    #: 导出前的自查要的恰恰是“任一不全”，两个不能互相顶替。
+    incomplete: bool = False
     keyword: str = ""
     tag_ids: frozenset[str] = frozenset()
     deep_keyword: bool = True
@@ -175,7 +216,14 @@ class QuestionFilter:
             return False
         if self.kind and item.kind != self.kind:
             return False
-        if self.points and not (self.points & set(item.points or ())):
+        if self.point_mode == "all" and self.point_groups:
+            # 交集：每一组都要在题目的考点里露出一个。组内是 OR（一个名字
+            # 可能解析成几个 id），组间是 AND——「函数 ∧ 导数」的题很少，
+            # 这正是老师做专题卷时要的那批。
+            pts = set(item.points or ())
+            if not all(g & pts for g in self.point_groups):
+                return False
+        elif self.points and not (self.points & set(item.points or ())):
             return False
         if self.difficulties and item.difficulty not in self.difficulties:
             return False
@@ -229,6 +277,10 @@ class QuestionFilter:
             return False
         for term in self.exclude_terms:
             if kw_hit(item, term, frozenset(), deep=self.deep_keyword):
+                return False
+        if self.incomplete:
+            f = flags_of(item)
+            if f.get("答案") and f.get("解析"):
                 return False
         if self.has or self.missing:
             f = flags_of(item)

@@ -366,7 +366,7 @@ def _selftest() -> int:
             ok = True
         check("坏 DOCX 明确报错", ok)
         r2 = prepare("第二份.md", b"# test", base_dir=base)
-        r3 = prepare("第三份.md", b"# test3", base_dir=base)
+        prepare("第三份.md", b"# test3", base_dir=base)
         save_ocr(r2["job_id"], {"latex": r"\begin{question}缓存\end{question}",
                                 "model": "test", "pages": 1}, base_dir=base)
         pl = load_job_payload(r2["job_id"], base_dir=base)

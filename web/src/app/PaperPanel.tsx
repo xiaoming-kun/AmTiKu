@@ -21,22 +21,36 @@ export default function PaperPanel({ paper, onOpen, onRemove, onMove, onSwap, on
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {paper.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-ink-faint">
-          <SlidersHorizontal size={22} className="text-border-strong" />
-          <span className="text-[13px]">卷子还是空的</span>
-          <span className="text-[11.5px] leading-relaxed">
-            在题目列表的卡片上点 <b className="text-brand-ink">加入组卷</b>，
-            或按住 <kbd className="rounded border border-border bg-muted px-1">↑</kbd>
-            <kbd className="ml-0.5 rounded border border-border bg-muted px-1">↓</kbd> 选好再按
-            <kbd className="mx-0.5 rounded border border-border bg-muted px-1">Enter</kbd>
-          </span>
-          {/* 正常走不到这儿（空卷子会被 gotoPaper / 那个 effect 拦在列表上），
-              留个出口以防万一 */}
-          <button onClick={onBack}
-            className="press mt-1 rounded-lg bg-brand px-3.5 py-2 text-[12.5px] font-medium
-                       text-white shadow-[var(--shadow-brand)] hover:brightness-105">
-            返回题目列表
-          </button>
+        <div className="flex flex-1 items-center justify-center overflow-y-auto p-6">
+          <div className="w-full max-w-[440px] rounded-[var(--radius-card)] border border-border
+                          bg-surface p-6 text-center shadow-[var(--shadow-card)]">
+            <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-muted text-ink-faint">
+              <SlidersHorizontal size={19} />
+            </span>
+            <h3 className="mt-3 text-[16px] font-semibold tracking-tight">卷子还是空的</h3>
+            <p className="mx-auto mt-1.5 max-w-[340px] text-[11.5px] leading-relaxed text-ink-faint">
+              去题库挑题，点卡片上的「加入卷子」。也可以先在右侧打开智能组卷，
+              系统按卷面结构挑一套，再逐题替换。
+            </p>
+            <button onClick={onBack}
+              className="press b-btn b-btn-primary mx-auto mt-4 h-8">
+              去题库挑题
+              <ChevronDown size={13} className="-rotate-90" />
+            </button>
+            <div className="mt-5 space-y-2 border-t border-border pt-3 text-left">
+              {[
+                ['01', '挑题', '按考点、来源、难度筛出这次要用的题'],
+                ['02', '检查', '每道题都要有答案与解析；缺口会标在这里'],
+                ['03', '导出', 'PDF / Word / 分享包；出过的卷子自动存档'],
+              ].map(([n, t, d]) => (
+                <div key={n} className="flex items-baseline gap-2.5 text-[10.5px]">
+                  <span className="tnum shrink-0 text-brand-ink">{n}</span>
+                  <span className="w-8 shrink-0 font-medium text-ink-soft">{t}</span>
+                  <span className="min-w-0 leading-relaxed text-ink-faint">{d}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       ) : (<>
         {/* 题量/分数/有解析那一行**搬到卷子条上了**（题目栏顶部那条）——

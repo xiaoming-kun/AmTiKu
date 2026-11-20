@@ -26,6 +26,7 @@ import re
 
 from . import generate as gen
 from . import latex_blocks as lb
+from . import layout as L
 from .schema import Question
 from .render_tex import question_to_tex
 
@@ -49,7 +50,13 @@ _ANS_DEFINE = r"\definecolor{%s}{HTML}{%s}" % (ANS_RED, ANS_RED_HEX)
 
 # 品牌页眉页脚。**这是版式，不是水印**：只占页边距里的页眉/页脚位，
 # 不压正文、不斜铺、不影响阅读；和水印的区别是可以直接删掉而不伤内容。
-BRAND_NAME = "AmTiKu"
+#
+# 印在卷面/讲义上的名字是 **AmMath**，跟界面一致：产品名早就改成 AmMath 了
+# （见 README 开头、`docs/界面重构-AmMath.md` §八），只有安装包、仓库和
+# `~/Library/Application Support/AmTiKu/` 这些**历史标识**才继续沿用 AmTiKu。
+# 卷面是给用户看的东西，不能还印旧名——用户 2026-11-13 指着导出 PDF 的页眉
+# 说「水印：AmMath」，就是指这里。
+BRAND_NAME = "AmMath"
 BRAND_HEX = "2563EB"                       # 与 BoardUI 网页同一个强调蓝
 BRAND_LABEL = "K12 数学题库"
 
@@ -296,7 +303,26 @@ def keep_paren_with_text(tex: str) -> str:
     `\unskip` 只在"前面确实是一段胶"时才动手；前面是数学公式时，
     撤掉的是公式结束处的 0pt 胶，不改变字形间距。
     """
-    return _PAREN_AT.sub(r"\\unskip\\nobreak\\hskip 0.2em\\paren[", tex)
+    # `\leavevmode` 兜底：括号落在**段首**时（前一题以居中图/独立公式收尾），
+    # `\unskip` 会跑在竖直模式里报 «You can't use \unskip' in vertical mode»，
+    # 整份卷子编不出来（2026-11-14 第 1001-1200 份实测）。水平模式下它是空操作。
+    return _PAREN_AT.sub(r"\\leavevmode\\unskip\\nobreak\\hskip 0.2em\\paren[", tex)
+
+
+_FILLIN_AT = re.compile(r"(?<!\\)\\fillin(?![a-zA-Z])")
+
+
+def guard_fillin_vertical(tex: str) -> str:
+    r"""`\fillin` 落在**段首**时补 `\leavevmode`。
+
+    exam-zh 的填空横线实现里有 `\unskip`（`..._uline_unbreakable_F:`），
+    当 `\fillin` 正好是段落的第一个内容（上一题以独立公式/居中图收尾就会这样），
+    TeX 处于竖直模式，直接报 «You can't use \unskip' in vertical mode»，
+    整份卷子编不出来（2026-11-14 第 1001-1200 份实测）。
+
+    水平模式下 `\leavevmode` 是空操作，不影响正常排版。
+    """
+    return _FILLIN_AT.sub(r"\\leavevmode\\fillin", tex)
 
 
 # 模拟题出处名的**脏数据过滤器**。
@@ -318,7 +344,55 @@ def _clean_head(s) -> str:
     r"""把出处名洗干净：去扩展名、去 `_images` 这种录入后缀、去首尾符号。"""
     s = re.sub(r"\.(pdf|docx?)$", "", str(s or "").strip(), flags=re.I)
     s = _SOURCE_NO_TAIL.sub("", s.replace("_images", ""))
+    # 卷名开头的录入标记：`【】-`、`【新】-`、`-`、`_`
+    s = re.sub(r"^【[^】]*】[\s\-—·_]*", "", s)
+    s = re.sub(r"^[\s\-—·_]+", "", s)
     return s.strip(" _-—·、")
+
+
+# 卷名尾巴上的**录入残留**：`（含）`「含答案」「教师版」，以及粘上去的原卷题号。
+_LABEL_TAIL_JUNK = re.compile(
+    r"[\s\-—·]*[（(]\s*(?:含|含答案|含解析|含详解|教师版|学生版)?\s*[）)]\s*$")
+_LABEL_TRAIL_NO = re.compile(r"\s+[0-9]{1,3}\s*$")
+_LABEL_WRAP = re.compile(r"^(?:高三|高二|高一)?正文\s*[（(](.+)[）)]$")
+
+# 出处标签在卷面上要"一眼能读完"，超过这个字数就按自然边界截断（加省略号）。
+LABEL_MAX = 18
+
+
+def _trim_label(s: str, n: int = LABEL_MAX) -> str:
+    r"""把卷名洗成**能直接印在题干前**的短标签。
+
+    实测出来的四类脏尾巴（用户 2026-11-14：「仔细检查一下输出的标签……长度也不能太长」）：
+
+      1. `（含）`「（含答案）」——录入时标"含答案"的记���，128 道题带着；
+      2. `高三正文（2026年湛江市…）`——把内部工作文件名当卷名了；
+      3. 尾部粘着原卷题号：`2023 年北京卷 21`（另有 `第 N 题` 已在 `_SOURCE_NO_TAIL` 剪）；
+      4. 卷名过长：最长 42 字（`江苏省南通市海安市2026届高三年级上学期期中学业质量监测`），
+         并把题干第一行挤得很短。
+
+    只改**显示**，不动 `meta`：题库里的出处原样保留，写卷/检索仍按原文。
+    截断优先切在顿号/逗号/左括号处，实在没有边界才硬切。
+    """
+    s = str(s or "").strip()
+    m = _LABEL_WRAP.match(s)
+    if m:
+        s = m.group(1).strip()
+    s = _LABEL_TAIL_JUNK.sub("", s)
+    s = _LABEL_TRAIL_NO.sub("", s)
+    s = s.strip(" -—·、")
+    if len(s) <= n:
+        return s
+    cut = max(s.rfind(ch, 0, n + 2) for ch in "、，,（(")
+    if cut >= 8:
+        return s[:cut].rstrip(" -—·、，,（(") + "…"
+    # 没有逗号/括号边界时，退而求其次切在「届」后：`…海安市2026届…`
+    # 比硬切在词中间（`…高三年…`）可读得多。太靠前（<10 字）就放弃，
+    # 否则一堆卷名都会变成「2026届…」，失去区分度。
+    jie = s.find("届", 10, n + 2)
+    if jie >= 0:
+        return s[: jie + 1] + "…"
+    return s[: n - 1] + "…"
 
 
 def _sim_head(q) -> str:
@@ -335,7 +409,7 @@ def _sim_head(q) -> str:
     if key.startswith("模拟题/") and "#" in key:
         head = _clean_head(key.split("/", 1)[1].rsplit("#", 1)[0])
         if head and not _LABEL_JUNK.search(head):
-            return head
+            return _trim_label(head)
     meta = getattr(q, "meta", None) or {}
     head = _clean_head(meta.get("source_label"))
     if head and not _LABEL_JUNK.search(head) and len(head) <= 40:
@@ -377,7 +451,7 @@ def source_label(q) -> str:
                 region = parts[-1].split("#")[0].strip()
         return _SOURCE_NO_TAIL.sub("", f"{year}{region}")
     if kind == "模拟":
-        return _sim_head(q)
+        return _trim_label(_sim_head(q))
     return ""
 
 
@@ -444,7 +518,7 @@ def _cjk_fontset_opt(comma: bool = False) -> str:
 
 
 def _brand_page_style(label: str = BRAND_LABEL) -> list[str]:
-    r"""AmTiKu 的**页眉页脚版式**（不是水印）。
+    r"""AmMath 的**页眉页脚版式**（不是水印）。
 
     为什么在 `\AtBeginDocument` 里重定义 `plain`，而不是在导言区直接
     `\fancypagestyle{plain}`：
@@ -459,12 +533,12 @@ def _brand_page_style(label: str = BRAND_LABEL) -> list[str]:
     版式本身只占页眉/页脚，不碰版心：
 
         ┌────────────────────────────────────┐
-        │ AmTiKu                    K12 数学题库 │  ← 页眉（品牌色 + 灰标签）
+        │ AmMath                    K12 数学题库 │  ← 页眉（品牌色 + 灰标签）
         │ ────────────────────────────────── │  ← 0.4pt 细线
         │                                    │
         │              正文                   │
         │                                    │
-        │        AmTiKu · 第 1 页 / 共 17 页    │  ← 页脚（居中、灰色小字）
+        │        AmMath · 第 1 页 / 共 17 页    │  ← 页脚（居中、灰色小字）
         └────────────────────────────────────┘
 
     页脚保留原来的页码功能，只是前面带上品牌名；不印网址、不印二维码，
@@ -485,12 +559,22 @@ def _brand_page_style(label: str = BRAND_LABEL) -> list[str]:
         r"  \fancyfoot[C]{\footnotesize\color{gray}" + BRAND_NAME
         + r" · 第 \thepage 页 / 共 \pageref{LastPage} 页}%",
         r"  \renewcommand{\headrulewidth}{0.4pt}%",
-        # 细线用浅灰，不抢字；品牌色只留给 AmTiKu 这个字标
+        # 细线用浅灰，不抢字；品牌色只留给 AmMath 这个字标
         r"  \renewcommand{\headrule}{{\color{gray!45}\hrule height 0.4pt "
         r"width \headwidth}}%",
         r"  \renewcommand{\footrulewidth}{0pt}%",
         r"}",
         r"\AtBeginDocument{%",
+        # ⚠️ **必须在正文开始那一刻按最终版心重算页眉宽度。**
+        #
+        # `fancyhdr` 是在**导言区加载时**用当时的 `\textwidth` 定死 `\headwidth` 的。
+        # 讲义（elegantnote）的版心要到 `\begin{document}` 才变成横版 A4
+        # （实测：导言区 headwidth=453pt，正文里 textwidth=748pt）——
+        # 于是页眉页脚只有竖版那 15.9cm 宽，右半边空着、页脚也不在页面正中，
+        # 看着就是「页眉页脚不居中」（用户 2026-11-13 报的）。
+        # 这里在 `\AtBeginDocument` 里（排在类自己的版心设置之后）重算一次，
+        # 两种文档类都对；exam-zh 那边 textwidth 本来就和 headwidth 相等，重算是空操作。
+        r"  \setlength{\headwidth}{\textwidth}%",
         r"  \fancypagestyle{plain}{\amtipagestyle}%",
         r"  \pagestyle{plain}%",
         r"  \thispagestyle{plain}%",
@@ -519,11 +603,8 @@ HANDOUT_FONT_DEFAULT = "-4"
 # 跟着题目难度走的。
 #
 # 单位 cm。要"一律多少"就给 `problem_blank_cm` 传正数，那张表就不生效。
-BLANK_BY_DIFFICULTY: dict[str, float] = {
-    "简单题": 3.0,
-    "中档题": 5.0,
-    "难题": 8.0,
-}
+# 唯一来源在 `amti/layout.py`（调排版只改那里）。
+BLANK_BY_DIFFICULTY: dict[str, float] = L.BLANK_CM
 
 
 def blank_for(diff: str, uniform: float = 0.0) -> float:
@@ -887,6 +968,15 @@ def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 0,
     给正数＝整份文档钉死这么多列。为什么不在 Python 里估算见上面那段长注释。
     """
     cols = default_columns if default_columns > 0 else 0
+    # **全是图的选项排成一行**（用户 2026-11-13：「A/B/C/D 最好能横排」）。
+    # exam-zh 自动量宽度时，四张 0.3\linewidth 的方图放不下四列，会退成 2×2；
+    # 这里把列数钉死，再把图宽压到 `0.84 / 列数`（见下面的 `shrink_option_figures`），
+    # 四张就能挤进一行。高度另有 0.16\textheight 上限，不会顶破页面。
+    # 只在**每一项都是图**时动手：图文混排钉死列数会把文字挤成一列两三个字。
+    if not cols and q.options and len(q.options) >= 3 and all(
+            ("includegraphics" in (o.text or "")) or ("tikzpicture" in (o.text or ""))
+            for o in q.options):
+        cols = min(len(q.options), 4)
     # 行内 `（1）`/`(i)` 小问前补空行（排版用，数据不动）。
     # 只改**题干**：答案/解析/选项里的 `(1)` 多是引用，补空行会把排版弄碎。
     _qq = _copy.copy(q)
@@ -917,12 +1007,20 @@ def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 0,
     # 所以放在这里、和 TikZ→图片同一层：写库路径 `store.render_question`
     # 不经过 `_q_tex`，不会被顺手改掉。
     tex = center_figures(tex)
-    tex = shrink_option_figures(tex)
-    tex = _cap_figure_height(tex, r"0.32\textheight")
+    tex = fit_figure_rows(tex)
+    # 图选项排成一行后，每张图的宽度上限要跟着列数走：4 列 0.21、3 列 0.28。
+    # ⚠️ 高度上限要**放宽**到 0.24\textheight：一行只占一层，高度给大一点，
+    # 竖长的图才不会被高度先卡住、缩成一小撮（用户 2026-11-13 报的
+    # 「类似这种排版问题」：四张 1.8cm 的小图排一行，右边还空着半行）。
+    tex = shrink_option_figures(
+        tex, L.opt_slot(cols) if cols >= 3 else L.OPT_GRID_CAP,
+        height_cap=(L.FIG_H_OPT_ROW if cols >= 3 else L.FIG_H_OPT_GRID))
+    tex = _cap_figure_height(tex, L.FIG_H_STEM)
     # **括号不许自己掉到下一行**（见 `keep_paren_with_text`）。
     # 放在标红之前：`red_answer_macros` 只认 `\paren[` 这几个字，前面多一个
     # `\nobreak` 不影响它圈范围。
     tex = keep_paren_with_text(tex)
+    tex = guard_fillin_vertical(tex)
     # **答案标红**：只在"卷面上真的显示答案"时才染（学生版不染，见模块顶部说明）。
     if show_answers:
         tex = red_answer_macros(tex)
@@ -932,6 +1030,75 @@ def _q_tex(q: Question, show_answers: bool, *, default_columns: int = 0,
     if show_source:
         tex = _stem_with_source(tex, q)
     return tex
+
+
+def fit_figure_rows(tex: str, *, max_w_cm: float = 5.0,
+                    max_h_cm: float = 4.0) -> str:
+    r"""**整行只有图**的行：按固定厘米数封顶（宽 ≤ 5cm、高 ≤ 4cm）。
+
+    用版心比例做不到"大小一致"：竖版卷面 0.45 版心是 7.9cm，横版讲义是 11cm，
+    同一张图在两种版式里差一圈（用户 2026-11-14 连着提了三次"太大"，
+    最后定的是"宽 ≤ 5cm、高 ≤ 4cm"）。这里直接写厘米：
+
+      * 作者写的是 `width=6cm` 这类绝对值 → 超过 5cm 才改；
+      * 写的是 `width=0.8\linewidth` / `\paperwidth` → 大于 0.15 就换成 5cm；
+      * 没写宽度 → 补 `width=5cm`；
+      * 高度统一 `height=4cm` + `keepaspectratio`，比例不变、不裁切。
+
+    只动**独立成行**的图；行内小图标、表格里的图不碰。
+    """
+    def cap_line(line: str) -> str:
+        def cap(m):
+            opts = (m.group(1) or "").strip("[]")
+
+            wm = re.search(r"width\s*=\s*([0-9.]+)\s*(cm|\\linewidth|\\paperwidth)", opts)
+            if wm:
+                val = float(wm.group(1))
+                big = (val > max_w_cm) if wm.group(2) == "cm" else (val > 0.15)
+                if big:
+                    opts = opts[:wm.start()] + ("width=%.1fcm" % max_w_cm) + opts[wm.end():]
+            else:
+                opts = ("width=%.1fcm" % max_w_cm) + (", " + opts if opts else "")
+
+            hm = re.search(r"height\s*=\s*[0-9.]+\s*(?:cm|\\textheight)", opts)
+            if hm:
+                opts = opts[:hm.start()] + ("height=%.1fcm" % max_h_cm) + opts[hm.end():]
+            else:
+                opts += (", " if opts else "") + "height=%.1fcm" % max_h_cm
+            if "keepaspectratio" not in opts:
+                opts += ", keepaspectratio"
+            return "\\includegraphics[" + opts.strip(", ") + "]{" + m.group(2) + "}"
+
+        return re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", cap, line)
+
+    out = []
+    for line in tex.splitlines():
+        if "\\includegraphics" in line and _is_figure_line(line):
+            line = cap_line(line)
+        out.append(line)
+    return "\n".join(out)
+
+
+def _cap_figure_width(tex: str, cap: str = L.FIG_W_STEM) -> str:
+    r"""**独立成行**的图：没写宽度时补一个版心宽上限。
+
+    题里的图多半是作者按自己的版面给的尺寸；但扫描件/整页图偶尔没写 `width`，
+    就按像素原尺寸排，直接顶出纸边（Overfull）。只补"**没写 width**"的，
+    作者写了就尊重作者；只动**整行只有图**的行（题干行内的小图标不碰）。
+    """
+    def sub(m):
+        opts = (m.group(1) or "").strip("[]")
+        if "width" in opts:
+            return m.group(0)
+        merged = (opts + ", width=" + cap + ", keepaspectratio").lstrip(", ")
+        return "\\includegraphics[" + merged + "]{" + m.group(2) + "}"
+
+    lines = []
+    for line in tex.splitlines():
+        if "\\includegraphics" in line and _is_figure_line(line):
+            line = re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", sub, line)
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _image_option_question(q: Question) -> bool:
@@ -950,31 +1117,285 @@ def _image_option_question(q: Question) -> bool:
 # 选项里 `width = 0.4\linewidth` 这种写法：三个以上图选项时按这个宽度上限缩。
 _OPT_FIG_W = re.compile(
     r"(\\includegraphics\s*\[[^\]]*?width\s*=\s*)([0-9.]+)(\\linewidth)")
+# 选项图也有按 `\paperwidth` 写的（题库里 632 处，多为 0.15\paperwidth）。
+# 卷面 A4 竖版：textwidth/paperwidth ≈ 0.76，换算成版心占比再压。
+_OPT_FIG_W_PW = re.compile(
+    r"(\\includegraphics\s*\[[^\]]*?width\s*=\s*)([0-9.]+)(\\paperwidth)")
 
 
-def shrink_option_figures(tex: str, cap: float = 0.30) -> str:
-    r"""**三个以上图选项**时，把每张图的宽度压到 `cap\linewidth` 以内。
+def shrink_option_figures(tex: str, cap: float = 0.30, *,
+                          min_figs: int = 3,
+                          height_cap: str = r"0.16\textheight") -> str:
+    r"""图选项太多/太大时，把每张图**同时**限宽和限高。
 
-    四个 0.4\linewidth 的图选项排成 2×2，整块接近半页——既"配图太大"，
+    四张 0.4\linewidth 的图选项排成 2×2，整块接近半页——既"配图太大"，
     又把后面的题顶到下一页（2010 广东卷（理）第 6 题实测 12.4cm）。
-    压到 0.3 之后仍是 2×2，但整块缩到 8cm 出头，能和一页里的其它题共存。
+    宽度压到 0.3 之后仍是 2×2，但整块缩到 8cm 出头，能和一页里的其它题共存。
 
-    只动**选项里的** `width`，题干里的图是作者定的版面，原样不动；
-    只在图选项 ≥3 个时动手（两个图选项的题，0.4 宽是合理的）。
+    ⚠️ **光限宽不够**：讲义（一题一页）把选项排成**一行一个**（`choices` 兼容层
+    用的是 enumerate），四张方图各 7cm 高，一道题就要三页——用户 2026-11-13
+    报的「一个题怎么还能多页呢」就是它。所以这里再给一个**高度上限**：
+    宽高一起限、`keepaspectratio`，图不会变形，也不会把一题撑爆一页。
+
+    只动**选项里的**图，题干里的图是作者定的版面，原样不动。
+    `min_figs` 是"几张图以上才动手"：卷面 2×2 用 3（两张图选项 0.4 宽是合理的），
+    讲义一行一个用 2（两张也可能超一页）。
     """
     i = tex.find("\\begin{choices}")
     j = tex.find("\\end{choices}", i)
     if i < 0 or j < 0:
         return tex
     block = tex[i:j]
-    if block.count("\\includegraphics") < 3:
+    if block.count("\\includegraphics") < min_figs:
         return tex
 
     def sub(m):
-        val = min(float(m.group(2)), cap)
-        return "%s%.2f%s" % (m.group(1), val, m.group(3))
+        # ⚠️ 上限要换算成 `\textwidth`，不能留在 `\linewidth`：
+        # exam-zh 的 `choices` 是按**列**排的，多列时 `\linewidth` 就是那一列的宽度
+        # （四列只有 ~100pt），`0.21\linewidth` 会缩成 20pt——排一行反而把小图缩没了
+        # （用户 2026-11-13：「类似这种排版问题」）。`\textwidth` 不受列数影响。
+        val = min(float(m.group(2)) * 1.0, cap)
+        return "%s%.2f\\textwidth" % (m.group(1), val)
 
-    return tex[:i] + _OPT_FIG_W.sub(sub, block) + tex[j:]
+    block = _OPT_FIG_W.sub(sub, block)
+
+    def sub_pw(m):
+        # `0.15\paperwidth` ≈ 0.20\textwidth；四列时压到 cap 版心宽
+        val = min(float(m.group(2)), cap * 0.76)
+        return "%s%.3f\\paperwidth" % (m.group(1), val)
+
+    block = _OPT_FIG_W_PW.sub(sub_pw, block)
+
+    def cap_sub(m):
+        opts = (m.group(1) or "").strip("[]")
+        if "height" in opts:
+            return m.group(0)
+        merged = (opts + ", height=" + height_cap + ", keepaspectratio").lstrip(", ")
+        return "\\includegraphics[" + merged + "]{" + m.group(2) + "}"
+
+    block = re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", cap_sub, block)
+    return tex[:i] + block + tex[j:]
+
+
+def choices_one_row(tex: str, *, height_cap: str = r"0.16\textheight",
+                    slot_ratio: float = 1.0) -> str:
+    r"""把**全是图**的选项排成一行（A. B. C. D.）。
+
+    讲义（一题一页）的 `choices` 兼容层是 enumerate，一行一个——四张图选项
+    就竖着占掉大半页，一道题能撑到三页（用户 2026-11-13：「一个题怎么还能多页呢」）。
+    卷面（exam-zh）本来就是 2×2；讲义这边排成一行，一页放得下、也更像真卷子
+    （用户：「不能写成一行吗」）。
+
+    只在**每一项都带图**时动手（纯文字选项一行塞四个会挤成一团）；宽度按项数摊：
+    两项 0.42\linewidth、三项 0.28、四项 0.20，再配高度上限，宽高都不超。
+    数据一个字不动——这是**出卷子**这一层的排版。
+    """
+    i = tex.find(r"\begin{choices}")
+    end_tag = r"\end{choices}"
+    j = tex.find(end_tag, i)
+    if i < 0 or j < 0:
+        return tex
+    body = tex[i + len(r"\begin{choices}"):j]
+    items = [x.strip() for x in body.split(r"\item") if x.strip()]
+    if len(items) < 2:
+        return tex
+    if any(("includegraphics" not in x and "tikzpicture" not in x) for x in items):
+        return tex
+
+    slot = min(0.42, L.OPT_ROW_SLOT_RATIO / len(items)) * slot_ratio
+
+    def cap(m):
+        opts = (m.group(1) or "").strip("[]")
+        opts = re.sub(r"width\s*=\s*[0-9.]+\s*\\linewidth",
+                      lambda _m: "width=%.2f\\linewidth" % slot, opts)
+        if "width" not in opts:
+            opts = ("width=%.2f\\linewidth, " % slot) + opts
+        if "height" not in opts:
+            opts += ", height=" + height_cap + ", keepaspectratio"
+        return r"\includegraphics[" + opts.strip(", ") + r"]{" + m.group(2) + "}"
+
+    labels = "ABCDEFGH"
+    cells = []
+    for n, it in enumerate(items):
+        it = re.sub(r"\s*\\(?:qquad|quad|hspace\*?\{[^}]*\})\s*$", "", it)
+        it = re.sub(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]*)\}", cap, it)
+        cells.append("%s.~%s" % (labels[n] if n < len(labels) else n + 1, it))
+    row = (r"\par\noindent\begin{center}" + r"\hspace{1.2em}".join(cells)
+           + r"\end{center}")
+    return tex[:i] + row + tex[j + len(end_tag):]
+
+
+def fit_tables_at_lines(tex: str, lines: list[int]) -> tuple[str, int]:
+    r"""把**确实溢出**的表格包进 `\resizebox{\linewidth}{!}{…}`。
+
+    `lines` 是编译日志里 `Overfull \hbox` 报的行号（`pdfcheck.overfull()` 已经
+    把它们翻成了题）。只有**行号落在某个表格块里面**时才包那个表——
+    溢出可能来自长公式/长行，不能因为"这题有表"就无脑缩表。
+
+    只包**最外层**（嵌套 `tabular` 在别的表里是 LR 模式，包 `\resizebox` 会散架）；
+    已经包过的跳过（幂等，重排一遍不会越包越深）。
+
+    为什么是 `resizebox` 而不是 `tabularx`：卷里表格是题库里写死的列格式，
+    改成 `tabularx` 要重写列定义；`resizebox` 只缩放、不动内容。
+    """
+    if not lines:
+        return tex, 0
+    rows = tex.splitlines()
+    want = set(lines)
+
+    # 最外层 tabular 块：`\begin{tabular…}` → 配平的 `\end{tabular}`
+    blocks: list[tuple[int, int]] = []
+    depth = 0
+    start = 0
+    for i, line in enumerate(rows, 1):
+        if re.search(r"\\begin\{(?:tabular\*?|tabularx|array)\}", line):
+            if depth == 0:
+                start = i
+            depth += 1
+        elif re.search(r"\\end\{(?:tabular\*?|tabularx|array)\}", line):
+            depth = max(0, depth - 1)
+            if depth == 0:
+                blocks.append((start, i))
+
+    n = 0
+    # 从后往前包：改前面的行不会让后面的行号失效
+    for (a, b) in reversed(blocks):
+        if not any(a <= ln <= b for ln in want):
+            continue
+        if a > 1 and "resizebox" in rows[a - 2]:
+            continue                                # 已经包过
+        block = ([r"\resizebox{\linewidth}{!}{%"]
+                 + ["  " + r for r in rows[a - 1:b]] + ["}"])
+        rows[a - 1:b] = block
+        n += 1
+    return "\n".join(rows) + ("\n" if tex.endswith("\n") else ""), n
+
+
+def fit_math_in_questions(tex: str, entries: list[dict]) -> tuple[str, int]:
+    r"""把**确实溢出**的行间公式原地缩到版心宽（按"题"定位，不按行号）。
+
+    为什么按题而不是按行号：`Overfull ... detected at line N` 的 N 是
+    **TeX 完成那个盒子时的行**，行间公式的 N 往往落在公式后面好几行
+    （实测：公式在 171 行结束，报的是 177 行）。按行号硬匹配会全部落空。
+
+    规则：
+      * `entries` 是 `pdfcheck.overfull()` 的结果（带 `key` / `line` / `pt`）；
+      * 在**这道题的行区间**里找 `\[ … \]`，取"结束行 ≤ N 的最近一个"
+        （没有就取该题最后一个）；
+      * 只换公式本身：`\[ … \]` → `\[\resizebox{\linewidth}{!}{$\displaystyle …$}\]`，
+        前后文字一个字不动（数据里公式常夹在"所以……`\[…\]`……数形结合"中间）；
+      * 含 `\\`、`\begin{…}`、已包过 `\amtimaxwidth`/`resizebox` 的公式跳过——
+        缩了会丢对齐/散架。
+
+    没溢出的公式一律原生尺寸；幂等。
+    """
+    if not entries:
+        return tex, 0
+    rows = tex.splitlines()
+
+    # 每道题的行区间：`% AMTIKU-Q: <key>` 到下一个标记（1 基）
+    marks: list[tuple[int, str]] = []
+    for i, line in enumerate(rows, 1):
+        if line.startswith("% AMTIKU-Q: "):
+            marks.append((i, line[len("% AMTIKU-Q: "):].strip()))
+    span_of: dict[str, tuple[int, int]] = {}
+    for k, (ln, key) in enumerate(marks):
+        end = marks[k + 1][0] - 1 if k + 1 < len(marks) else len(rows)
+        span_of[key] = (ln, end)
+
+    # 全部 `\[ … \]`（允许跨行、允许内部多行环境）
+    spans = []
+    for m in re.finditer(r"\\\[(.*?)\\\]", tex, re.S):
+        body = m.group(1)
+        if "resizebox" in body or "amtimaxwidth" in body:
+            continue
+        # **外层显示环境**（equation/align/…）不能塞进 `$…$` 里，跳过；
+        # `aligned/cases/array/matrix` 这些是**内层**数学环境，包进
+        # `$\displaystyle …$` 合法——多行公式就靠这条也能缩。
+        if re.search(r"\\begin\{(?:equation|align|gather|multline|eqnarray)\*?\}", body):
+            continue
+        a = tex.count("\n", 0, m.start()) + 1
+        b = tex.count("\n", 0, m.end()) + 1
+        spans.append((m.start(), m.end(), a, b, body.strip()))
+
+    picked = []
+    for e in entries:
+        key, line = e.get("key") or "", int(e.get("line") or 0)
+        if float(e.get("pt") or 0) > L.MATH_FIT_MAX_PT:
+            continue          # 缩完只剩六成以下，字会糊成一条线，留给人工拆行
+        rng = span_of.get(key)
+        if not rng:
+            continue
+        cand = [s for s in spans if rng[0] <= s[2] and s[3] <= rng[1]]
+        if not cand:
+            continue
+        before = [s for s in cand if s[3] <= line + 1]
+        best = before[-1] if before else cand[-1]
+        if best not in picked:
+            picked.append(best)
+
+    n = 0
+    for (s0, s1, _a, _b, body) in sorted(picked, key=lambda x: -x[0]):
+        repl = (r"\[\amtimaxwidth{$\displaystyle " + body + r"$}\]")
+        tex = tex[:s0] + repl + tex[s1:]
+        n += 1
+    return tex, n
+
+
+def fit_inline_env_math(tex: str, entries: list[dict]) -> tuple[str, int]:
+    r"""**行内**公式里塞了 `cases/aligned/array/matrix` 导致整行溢出时，
+    把那一段 `$…$` 改成**独立显示块并缩到版心宽**。
+
+    `cases/aligned` 是**不可断行**的大盒子，夹在段落里几乎必然出血
+    （实测 `$…\begin{cases}\mathrm{C}_{30}^{k}(11/36)^{k}…\end{cases}…$`
+    一行冲出 108.9pt）。显示化之后它独占一行，再缩到版心内；前后文字一字不动。
+
+    只处理日志里**报了溢出的那一行**、且段里有内层环境的 `$…$`；
+    其它行内公式一律不碰。幂等。
+    """
+    if not entries:
+        return tex, 0
+    rows = tex.splitlines()
+    targets = {int(e.get("line") or 0): float(e.get("pt") or 0) for e in entries}
+    inner = re.compile(
+        r"\\begin\{(?:cases|aligned|alignedat|array|matrix|pmatrix|bmatrix|vmatrix)\}")
+    pat = re.compile(r"\$([^$]{80,})\$")
+    n = 0
+    seen_lines: set[int] = set()
+    for line_no, pt in sorted(targets.items()):
+        if pt < L.OVERFULL_PT:
+            continue
+        # `detected at line N` 的 N 常常是**段落最后一行**（内容在 N 或 N-1），
+        # 所以往回多看两行；只看"含内层环境的超长 $…$"，不会误伤别的行。
+        for cand in (line_no, line_no - 1, line_no - 2):
+            if not (1 <= cand <= len(rows)) or cand in seen_lines:
+                continue
+            seen_lines.add(cand)
+
+            hits = [0]
+
+            def sub(m, _inner=inner, _hits=hits):
+                seg = m.group(1)
+                if ("resizebox" in seg or "amtimaxwidth" in seg
+                        or not _inner.search(seg)):
+                    return m.group(0)
+                # 已经被包过的（前文有 resizebox）不再包，否则重排多遍会越套越深
+                if any(k in m.string[max(0, m.start() - 90):m.start()]
+                       for k in ("resizebox", "amtimaxwidth")):
+                    return m.group(0)
+                _hits[0] += 1
+                # ⚠️ **不加 `\displaystyle`**：这段原来是**行内**公式（文本样式），
+                # 加了 displaystyle 会把分数、上下标放大一圈——用户 2026-11-14 看到
+                # "哪有那么大"就是它。保持原样式，只把宽度缩到版心内。
+                return (r"\[\amtimaxwidth{$" + seg + r"$}\]")
+
+            new_line = pat.sub(sub, rows[cand - 1])
+            if hits[0]:
+                rows[cand - 1] = new_line
+                n += hits[0]
+    if not n:
+        return tex, 0
+    return "\n".join(rows) + ("\n" if tex.endswith("\n") else ""), n
 
 
 def _qid_mark(q: Question) -> str:
@@ -997,6 +1418,22 @@ def _qid_mark(q: Question) -> str:
     return QID_PREFIX + (q.key or "")
 
 
+SECTION_ORDER = ("single_choice", "multi_choice", "fill_in_blank", "detailed_answer")
+
+
+def question_order(questions: list[Question]) -> list[Question]:
+    r"""题目在**卷面上的实际顺序**：按题型分节，组内保持传入顺序。
+
+    `force_newpage` / 跨页档案说的"第 N 题"就是这个顺序的 N——
+    和 `_paper_body` 里 `numbering` 的次序一致（别拿传入顺序当卷面顺序：
+    用户选的是混合题型，卷面会按 选择→多选→填空→解答 重排）。
+    """
+    by_sec: dict[str, list[Question]] = {}
+    for q in questions:
+        by_sec.setdefault(q.type, []).append(q)
+    return [q for t in SECTION_ORDER for q in by_sec.get(t, ())]
+
+
 def render_paper(questions: list[Question], *, mode: str = "gaokao",
                  title: str = "", subject: str = "数学", show_answers: bool = False,
                  answers_at_end: bool = False, show_source: bool = True,
@@ -1004,7 +1441,9 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                  columns: int = 0, graphicspath: str = "",
                  handout_font: str = HANDOUT_FONT_DEFAULT,
                  qid_marks: bool = False,
-                 score_box: bool = True, seal_line: bool = True) -> str:
+                 force_newpage: frozenset[int] | set[int] | None = None,
+                 show_points: bool = True,
+                 handout_tight: bool = False) -> str:
     r"""渲染成完整的 exam-zh 文档。`mode` 取 `gaokao` / `test` / `handout`。
 
     `qid_marks=True` 时在每题前面加一行 `% AMTIKU-Q: <key>` 注释，
@@ -1032,7 +1471,8 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
     if mode == "handout":
         return _render_handout(questions, title=title, columns=columns,
                                qid_marks=qid_marks, show_source=show_source,
-                               graphicspath=_texpath(graphicspath), font=handout_font)
+                               graphicspath=_texpath(graphicspath), font=handout_font,
+                               tight=handout_tight)
     if mode not in ("gaokao", "test"):
         raise ValueError(f"未知卷型 {mode!r}")
 
@@ -1053,7 +1493,8 @@ def render_paper(questions: list[Question], *, mode: str = "gaokao",
                        bottom_sep=bottom_sep, problem_blank_cm=problem_blank_cm,
                        total_score=total_score, show_source=show_source,
                        qid_marks=qid_marks,
-                       score_box=score_box, seal_line=seal_line)
+                       force_newpage=frozenset(force_newpage or ()),
+                       show_points=show_points)
 
 
 def _preamble(*, title: str = "", graphicspath: str = "",
@@ -1070,7 +1511,7 @@ def _preamble(*, title: str = "", graphicspath: str = "",
     **两份导言就是两份真相**，改了这份忘了那份，早晚出事。所以合成一份。
     """
     out = [
-        first_line or "% 由 AmTiKu 生成，请勿手改；改题目请改 题目/*.tex 后重新导出。",
+        first_line or "% 由 AmMath 生成，请勿手改；改题目请改 题目/*.tex 后重新导出。",
         # 中文字体：**默认用 TeX 自带的 Fandol**，不依赖系统字体。
         # 坑（CI 上暴露的）：ctex 在 Windows 上会自动挑 SimSun/SimHei，英文版 Windows、
         # 精简系统、Windows Server 上根本没这些字体 → 导出直接报
@@ -1080,7 +1521,23 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         r"\documentclass%s{exam-zh}" % _cjk_fontset_opt(),
         # 题库里有用 \diaghead（斜线分栏表头）的题，它是 makecell 提供的宏。
         # 只装包不 \usepackage 依然报 Undefined control sequence（全库体检抓到过一道）。
+        # **段落级兜底**：中文 + 行内公式混排时，TeX 偶尔宁可让一行冲出版心
+        # 也不肯放松词间距（实测过 2pt 级的 Overfull）。`\emergencystretch`
+        # 允许它在第三遍断行里多拉一点胶，把这类"只差一点点"的溢出吸收掉；
+        # 代价是极少数行间距略松，不影响阅读。
+        r"\setlength{\emergencystretch}{3em}",
         r"\usepackage{makecell}",
+        # **只缩不放**的盒子：`\resizebox{\linewidth}` 会把本来就窄的公式/表
+        # **拉宽到版心**（用户 2026-11-14 看到的那块巨型 cases 公式就是这么来的）。
+        # 这里先量宽度，超过 `\linewidth` 才缩，否则原样输出。
+        r"\newsavebox{\amtimaxbox}",
+        r"\newcommand{\amtimaxwidth}[1]{%",
+        r"  \sbox{\amtimaxbox}{#1}%",
+        r"  \ifdim\wd\amtimaxbox>\linewidth",
+        r"    \resizebox{\linewidth}{!}{\usebox{\amtimaxbox}}%",
+        r"  \else",
+        r"    \usebox{\amtimaxbox}%",
+        r"  \fi}",
         r"\usepackage{siunitx}",
         r"\usepackage{multicol}",
         # 答案标红要用 `\color`（exam-zh 自己多半也装过 xcolor，
@@ -1194,6 +1651,10 @@ def _preamble(*, title: str = "", graphicspath: str = "",
         # `▲`）。看着像个墨点，不如留一条干净的下划线。`none` 就是不画。
         r"  fillin/no-answer-type=none,",
         "  solution/show-solution=" + ("show-stay," if show_answers else "hide,"),
+        # **解析末尾的 □（QED 盒）默认是开的**，exam-zh 把它当"证明结束"的记号；
+        # 题目检查/教师版里每题都挂一个，像残字（用户 2026-11-14 问"这个方框是
+        # 怎么回事"）。试卷不论文理科都不需要它，统一关掉。
+        r"  solution/show-qed=false,",
         r"  solution/label-indentation=false,",
         f"  question/bottom-sep = {bottom_sep},",
         f"  problem/bottom-sep = {bottom_sep},",
@@ -1254,7 +1715,8 @@ def _paper_body(doc: list[str], questions: list[Question], *,
                 bottom_sep: str, problem_blank_cm: float,
                 total_score: int, show_source: bool = False,
                 qid_marks: bool = False,
-                score_box: bool = True, seal_line: bool = True) -> str:
+                force_newpage: frozenset[int] = frozenset(),
+                show_points: bool = True) -> str:
     r"""卷子正文（分节、出题、卷末答案册）。导言区由 `_preamble` 出。"""
     numbering: list[tuple[int, Question]] = []      # (卷面题号, 题)
     no = 0
@@ -1267,11 +1729,7 @@ def _paper_body(doc: list[str], questions: list[Question], *,
     if mode == "gaokao":
         doc += _gaokao_head(questions, total_score)
     else:
-        doc += _test_head(questions, subject=subject)
-    if score_box:
-        doc += _score_box()
-    if seal_line:
-        doc += _seal_line()
+        doc += _test_head(questions, subject=subject, show_points=show_points)
 
     # ── 分节 ──
     by_sec: dict[str, list[Question]] = {}
@@ -1287,8 +1745,8 @@ def _paper_body(doc: list[str], questions: list[Question], *,
         # 小节标题不要孤零零掉在页底：下面至少留 12 行（标题 + 首题开头）。
         # ⚠️ 首题**选项带图**时要跟它一起留够半页，否则标题会独自留在页底、
         # 题目整体挪到下一页（实测出现过「一、选择题」孤零零一行）。
-        head_need = (r"0.58\textheight" if _image_option_question(items[0])
-                     else r"12\baselineskip")
+        head_need = (L.NEED_SECTION_IMG if _image_option_question(items[0])
+                     else L.NEED_SECTION)
         doc.append("\\needspace{" + head_need + "}")
         if mode == "gaokao":
             doc.append(r"\section{" + _gaokao_section(t, len(items)) + "}")
@@ -1340,8 +1798,13 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             # C/D 的图孤零零从下一页开头"。这类题按半页预留。
             tex = _q_tex(q, show_answers and not answers_at_end,
                          default_columns=columns, show_source=show_source)
-            need = (r"0.5\textheight" if _image_option_question(q)
-                    else r"6\baselineskip")
+            need = (L.NEED_IMG_OPT if _image_option_question(q)
+                    else L.NEED_NORMAL)
+            # **跨页修复**：上一遍编译发现这题被拆到两页 → 这一遍让它从新页开始
+            # （`\needspace{\textheight}` 等价于"除非整页空着，否则现在断页"）。
+            if idx in force_newpage:
+                need = L.NEED_HARD_BREAK
+
             doc.append("\\needspace{" + need + "}")
             if qid_marks:
                 doc.append(_qid_mark(q))
@@ -1359,7 +1822,7 @@ def _paper_body(doc: list[str], questions: list[Question], *,
             if t == "detailed_answer" and not show_answers:
                 cm = blank_for(diff, problem_blank_cm)
                 if cm > 0:
-                    doc.append(f"\\vspace*{{{cm:.2f}cm plus 1fill minus 0.8cm}}")
+                    doc.append(f"\\vspace*{{{cm:.2f}cm plus 1fill minus {L.BLANK_SHRINK_CM}cm}}")
             if qid_marks:
                 doc.append(f"\\label{{amtiqend{idx}}}")
             doc.append("")
@@ -1371,42 +1834,11 @@ def _paper_body(doc: list[str], questions: list[Question], *,
     return "\n".join(doc)
 
 
-def _score_box() -> list[str]:
-    r"""卷头**总分框**：题号 / 一、二、三、四 / 总分，老师批完填分用。"""
-    return [
-        r"\begin{center}",
-        r"\renewcommand{\arraystretch}{1.5}",
-        r"\begin{tabular}{|c|c|c|c|c|c|}",
-        r"\hline",
-        r"题号 & 一 & 二 & 三 & 四 & 总分 \\",
-        r"\hline",
-        r"得分 & & & & & \\",
-        r"\hline",
-        r"\end{tabular}",
-        r"\end{center}",
-        "",
-    ]
-
-
-def _seal_line() -> list[str]:
-    r"""第一页左侧**密封线**：竖线 + 旋转文字，装在页边距里，不压正文。"""
-    return [
-        r"\begin{tikzpicture}[remember picture, overlay]",
-        r"\draw[line width=0.4pt] "
-        r"([xshift=1.15cm]current page.north west) -- "
-        r"([xshift=1.15cm]current page.south west);",
-        r"\node[rotate=90, anchor=south, font=\small] at "
-        r"([xshift=0.55cm,yshift=3cm]current page.south west) "
-        r"{密封线内不要答题};",
-        r"\end{tikzpicture}",
-        "",
-    ]
-
-
 def _render_handout(questions: list[Question], *, title: str = "",
                     columns: int = 0, graphicspath: str = "",
                     font: str = HANDOUT_FONT_DEFAULT,
-                    qid_marks: bool = False, show_source: bool = True) -> str:
+                    qid_marks: bool = False, show_source: bool = True,
+                    tight: bool = False) -> str:
     r"""**讲义模式：一题一页，A4 横版，无答案。**
 
     用途是**在 iPad 上用笔讲课**：一道题一屏，讲完翻下一页就是下一题。
@@ -1436,17 +1868,18 @@ def _render_handout(questions: list[Question], *, title: str = "",
 
     ## 主色
 
-    用 AmTiKu 的品牌色 `RGB(206,51,138)` 覆盖掉 elegantnote 的默认蓝，
+    用 AmMath 的品牌色 `RGB(206,51,138)` 覆盖掉 elegantnote 的默认蓝，
     这样讲义和 App 是一套配色。
     """
     # 字号：elegantnote 的 `fontsize` 只认 10/11/12pt，换算成 pt 传进去
     pt = {"-4": "12pt", "4": "14pt", "3": "16pt", "2": "22pt"}.get(font, "12pt")
     doc: list[str] = [
-        "% 由 AmTiKu 生成（讲义模式：一题一页 · A4 横版 · 无答案）",
+        "% 由 AmMath 生成（讲义模式：一题一页 · A4 横版 · 无答案）",
         r"\documentclass[cn, device=normal, 11pt%s]{elegantnote}" % _cjk_fontset_opt(True),
         r"\usepackage{amsmath,amssymb}",
         r"\usepackage{enumitem}",
         r"\usepackage{graphicx}",
+        r"\setlength{\emergencystretch}{3em}",
         r"\usepackage{tikz}",
         r"\usepackage{pgfplots}",
         r"\pgfplotsset{compat=1.18}",
@@ -1458,9 +1891,9 @@ def _render_handout(questions: list[Question], *, title: str = "",
         # 版心：A4 横版。elegantnote 的 device 只有 pc/pad/kindle/normal/screen，
         # 都不合意，所以加载完自己盖一层 geometry。
         r"\geometry{landscape, margin=1.7cm}",
-        # 主色换成 AmTiKu 品牌色（elegantnote 的 \section、标题都用 ecolor）
+        # 主色换成 AmMath 品牌色（elegantnote 的 \section、标题都用 ecolor）
         r"\definecolor{ecolor}{RGB}{206,51,138}",
-        # **品牌页眉页脚**：讲义也是 AmTiKu 出的，页码照样保留。
+        # **品牌页眉页脚**：讲义也是 AmMath 出的，页码照样保留。
         *_brand_page_style("K12 数学讲义"),
         # 行内公式也用 displaystyle——iPad 上分数才看得清
         r"\everymath{\displaystyle}",
@@ -1502,9 +1935,6 @@ def _render_handout(questions: list[Question], *, title: str = "",
         # 解答题走 `problem` 环境（`question_to_tex` 对 detailed_answer 用它，
         # 还带 `[points = 12]` 这样的可选参数）——**别忘了它**，漏了整个讲义编译不过
         r"\newenvironment{problem}[1][]{\par\medskip}{\par}",
-        # 题头：品牌色的「例 N」（难度星已按用户要求去掉，见模块开头）
-        r"\newcommand{\hwlabel}[1]{%",
-        r"  {\color{ecolor}\bfseries\large 例\,#1}\par\vspace{0.35em}}",
         "",
         (r"\graphicspath{" + "".join("{" + x + "/}" for x in (graphicspath,)) + "}"
          if graphicspath else ""),
@@ -1516,12 +1946,11 @@ def _render_handout(questions: list[Question], *, title: str = "",
 
     for i, q in enumerate(questions, 1):
         # 从第二题起**先换页**：第一页不留空白页，最后一页也不多一页空白
+        # （题头「例 N」已按用户要求去掉，2026-11-13；`i` 只剩换页在用。）
         if i > 1:
             doc.append(r"\newpage")
         if qid_marks:
             doc.append(_qid_mark(q))
-        # 题头：例 N（难度已不印，见模块开头）
-        doc.append(r"\hwlabel{%d}" % i)
         _qq = _copy.copy(q)
         _qq.stem = lb.break_inline_parts(q.stem)
         tex = question_to_tex(_qq, with_solution=False, with_source=False)
@@ -1531,11 +1960,28 @@ def _render_handout(questions: list[Question], *, title: str = "",
         # **出处并进题干第一行**（同其他卷型，见 `_stem_with_source`）
         if show_source:
             tex = _stem_with_source(tex, q)
-        # **给图限高。** 一题一页，图太高就会被挤到下一页——
+        # **图选项先缩**：讲义把选项排成一行一个，四张方图就能把一道题撑到三页
+        # （用户 2026-11-13 报的「一个题怎么还能多页呢」）。两张图以上就动手，
+        # 宽度收到 0.24\linewidth、高度上限 0.15\textheight——宽高同时限，
+        # `keepaspectratio` 保证不变形。
+        # `tight`：上一遍发现"一题一页"居然跨页了（题太长/图太大），
+        # 这一遍把图再压小一档重排（见 `export` 的讲义降级）。
+        tex = choices_one_row(tex,
+                              height_cap=(L.OPT_TIGHT_H if tight else L.OPT_HANDOUT_H),
+                              slot_ratio=(0.75 if tight else 1.0))
+        tex = shrink_option_figures(tex,
+                                    L.OPT_TIGHT_CAP if tight else L.OPT_HANDOUT_CAP,
+                                    min_figs=L.OPT_HANDOUT_MIN,
+                                    height_cap=L.OPT_TIGHT_H if tight else L.OPT_HANDOUT_H)
+        # **给剩下的图限高。** 一题一页，图太高就会被挤到下一页——
         # 实测例 6 的频率分布直方图就整张飞到了第 7 页，那页只剩一张图。
         # 加 `height` 后 `keepaspectratio` 会同时满足宽和高两个上限，
         # 即"最宽不超过原设定、最高不超过半页"，图不会被裁变形。
-        tex = _cap_figure_height(tex)
+        # **讲义里的图也要按行分摊、给单张上限**：一题一页不等于把图放满，
+        # 单张 ≤ 0.30 版心（约 7cm），多张合计 0.55——用户 2026-11-14：
+        # 「讲义还是这么大」。之前只限了高（0.40 版心），宽还是数据里的 0.42。
+        tex = fit_figure_rows(tex, max_w_cm=5.0, max_h_cm=4.0)
+        tex = _cap_figure_height(tex, L.FIG_H_HANDOUT_TIGHT if tight else L.FIG_H_HANDOUT)
         # **题目下方整片留白**：`\vfill` 把剩下的空间全撑开，正好是笔写区。
         doc += [tex, r"\vfill", ""]
 
@@ -1567,10 +2013,14 @@ def _answers_section(numbering: list[tuple[int, Question]]) -> list[str]:
         # 题号**和答案**都加粗——对答案的时候是扫的，字重比字号管用；
         # 答案另外**标红**（用户要求：一眼能对上）。
         out.append(r"\noindent\textbf{%d.}\quad{\color{%s}\textbf{%s}}"
-                   % (no_, ANS_RED, ans or "（暂无）"))
+                   % (no_, ANS_RED, fix_text_specials(ans or "（暂无）")))
         out.append("")
         if sol:
-            out.append(sol)
+            # **答案册也必须过一遍 `fix_text_specials`**：卷面里的解析走 `_q_tex`
+            # 时修过裸 `_____`/`_`/`^`，答案册却原来直接吐原文——用户 2026-11-14
+            # 导的 90 题卷就卡在这里（解析里 `a_min` 的 `_` 让整份印刷版编不出来，
+            # `Missing $ inserted`）。两处必须同一套清洗。
+            out.append(fix_text_specials(sol))
             out.append("")
         out.append(r"\vspace{0.8em}")
         out.append("")
@@ -1616,7 +2066,8 @@ def _gaokao_head(qs: list[Question], total: int) -> list[str]:
     ]
 
 
-def _test_head(qs: list[Question], *, subject: str = "数学") -> list[str]:
+def _test_head(qs: list[Question], *, subject: str = "数学",
+              show_points: bool = True) -> list[str]:
     r"""测试卷卷头。**照抄 `设计/测试卷模板.tex`**：
 
         \information{姓名…, 班级…, 学号…}      ← 学生填的抬头
@@ -1650,6 +2101,8 @@ def _test_head(qs: list[Question], *, subject: str = "数学") -> list[str]:
     # 考点清单。模板用 `notice` 逐条列——**考点少的时候很好读，多了会吃掉整页**。
     # 实测把一张完整高考卷丢进测试模式会产生 35 个考点，单栏列表排满第一页。
     # 所以分两档：≤10 条照模板用 notice；更多就改双栏紧凑排。
+    if not show_points:
+        points = []          # 整库检查卷：200 题会列上百个考点，白占好几页
     if points:
         if len(points) <= NOTICE_MAX_ITEMS:
             out.append(r"\begin{notice}")

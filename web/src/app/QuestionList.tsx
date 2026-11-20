@@ -49,7 +49,8 @@ function ListSkeleton() {
 }
 
 export default function QuestionList({
-  L, dense, compact, maskAns, paperMap, scrollSignal, onSelect, onOpen, onAdd, onClearFilters, onPrefetch,
+  L, dense, compact, maskAns, paperMap, scrollSignal, onSelect, onOpen, onAdd,
+  onClearFilters, onPrefetch, onOpenPaper, leading,
 }: {
   L: L
   dense: boolean
@@ -66,6 +67,11 @@ export default function QuestionList({
   onOpen: (q: Q) => void
   onAdd: (q: Q) => void
   onClearFilters: () => void
+  /** 点卡片上的「组过 N 卷」：跳到试卷库那份存档。 */
+  onOpenPaper?: (name: string) => void
+  /** 列表**滚动区顶部**的内容（筛选条）。放进来是为了让它跟着列表一起滚走，
+   *  不长期占着一行高度；表头的「筛选」按钮仍是它收起后的入口。 */
+  leading?: React.ReactNode
   /** 悬停/按下就预取完整题目，点开详情时直接命中缓存。 */
   onPrefetch?: (key: string) => void
 }) {
@@ -213,8 +219,9 @@ export default function QuestionList({
         onPointerOver={prefetchFrom}
         onPointerDown={prefetchFrom}
         onPointerLeave={cancelPrefetch}
-        className={`anim-stagger list-scroll min-h-0 flex-1 overflow-y-auto ${
-          compact ? '' : 'space-y-2.5 p-4'}`}>
+        className="anim-stagger list-scroll min-h-0 flex-1 overflow-y-auto">
+        {leading}
+        <div className={compact ? '' : 'space-y-2.5 p-4'}>
         {loading && !items.length && <ListSkeleton />}
         {compact && shown.map((it, i) => (
           <CompactRow key={it.key} q={it} active={sel?.key === it.key}
@@ -232,6 +239,7 @@ export default function QuestionList({
             onSelect={() => onSelect(it)}
             onDetail={() => onOpen(it)}
             onAdd={() => onAdd(it)}
+            onOpenPaper={onOpenPaper}
             onToggle={(shift?: boolean) => toggleCheck(it, i, shift)} />
         ))}
         {!loading && visible < items.length && (
@@ -283,6 +291,7 @@ export default function QuestionList({
           </div>
         )}
         {items.length > 0 && <div className="h-1" />}
+        </div>
       </div>
 
       {/* 总页数大于 1 才出现；`pr-20` 给右下角快捷键浮球让位 */}

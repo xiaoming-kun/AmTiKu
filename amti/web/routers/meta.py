@@ -158,8 +158,9 @@ def settings() -> dict:
     return {"out_dir": str(OUT_DIR),
             "version": __version__,
             "out_name": OUT_DIR.name or str(OUT_DIR),
+            # 卷型只有三种（考点覆盖卷已删，2026-11-13）
             "kinds": {m: kind_of(m)
-                      for m in ("gaokao", "test", "coverage", "handout")}}
+                      for m in ("gaokao", "test", "handout")}}
 
 
 @router.get("/search/status", response_model=SearchStatus)

@@ -16,7 +16,7 @@ export type SortKey = 'used' | 'new' | 'old' | 'solved' | 'diff' | 'diff2' | 'ye
 const SORT_KEYS = new Set<string>(['used', 'new', 'old', 'solved', 'diff', 'diff2', 'year', 'year2', 'raw', ''])
 const split = (s?: string) => (s || '').split(',').filter(Boolean)
 
-export function useQuestionList(opts?: { stage?: string }) {
+export function useQuestionList(opts?: { stage?: string; pageSize?: number }) {
   const stage = opts?.stage || ''
   const [facets, setFacets] = useState<Facets | null>(null)
   const [items, setItems] = useState<Q[]>([])
@@ -29,7 +29,8 @@ export function useQuestionList(opts?: { stage?: string }) {
   const [page, setPage] = useState(INITIAL_URL.page)
   // 默认每页 100 道。后端有块级 IR 缓存，一页 100 条实测 0.02s；
   // 老师挑题时更愿意一次看到一大片，20 条翻页太勤。
-  const [pageSize, setPageSize] = useState(100)
+  // 独立选题页（校对）更重扫描，可传小一点的 pageSize。
+  const [pageSize, setPageSize] = useState(opts?.pageSize || 100)
   const [pageInput, setPageInput] = useState('1')
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -50,7 +51,12 @@ export function useQuestionList(opts?: { stage?: string }) {
   // `missing=答案,解析` 正好是「没解析也没答案」——最常用的一个视角：
   // 这些就是还没做的题。
   const [missing, setMissing] = useState<string[]>(split(INITIAL_URL.filters.missing))
+  /** 「待补」：缺答案**或**缺解析（任一）。导出前自查用。 */
+  const [incomplete, setIncomplete] = useState(INITIAL_URL.filters.inc === '1')
   const [points, setPoints] = useState<string[]>(split(INITIAL_URL.filters.point))
+  /** 考点多选时怎么算命中：`any` 并集（默认，命中任一）/ `all` 交集（全都挂）。 */
+  const [pointMode, setPointMode] = useState<'any' | 'all'>(
+    INITIAL_URL.filters.pm === 'all' ? 'all' : 'any')
   const [diffs, setDiffs] = useState<string[]>(split(INITIAL_URL.filters.diff))
   /** 出处（卷别）筛选。值就是 `facets.sources` 里的卷名，后端按
    *  `_source_of()`（region 优先，否则 source_label 去掉年份前缀）比对。 */
@@ -179,7 +185,7 @@ export function useQuestionList(opts?: { stage?: string }) {
   const activeFilters =
     has.length + missing.length + points.length + diffs.length + years.length
     + sources.length + scopes.length + paperStates.length + starStates.length
-    + qualities.length + (type ? 1 : 0) + (kind ? 1 : 0)
+    + qualities.length + (type ? 1 : 0) + (kind ? 1 : 0) + (incomplete ? 1 : 0)
     + (pointSource ? 1 : 0) + answerSources.length + (reviewed ? 1 : 0)
 
   /** 当前选中的这批考点，是不是**正好等于**某一章／某一节？
@@ -226,14 +232,18 @@ export function useQuestionList(opts?: { stage?: string }) {
    *  现在只有这一处组装，谁要筛条件都拿它。 */
   const filters = useMemo(() => ({
     q: qApplied, type, kind, stage,
-    point: points.join(','), difficulty: diffs.join(','),
+    point: points.join(','),
+    // 只有「交集」才把模式送上去；并集是默认口径，不占参数。
+    point_mode: pointMode === 'all' ? 'all' : '',
+    difficulty: diffs.join(','),
     year: years.join(','), has: has.join(','), missing: missing.join(','),
+    incomplete: incomplete ? '1' : '',
     source: sources.join(','),
     region_scope: scopes.join(','), paper_state: paperStates.join(','),
     star_state: starStates.join(','), quality: qualities.join(','),
     point_source: pointSource, answer_source: answerSources.join(','),
     reviewed,
-  }), [qApplied, type, kind, stage, points, diffs, years, has, missing,
+  }), [qApplied, type, kind, stage, points, pointMode, diffs, years, has, missing, incomplete,
        sources, scopes, paperStates, starStates, qualities, pointSource,
        answerSources, reviewed])
 
@@ -324,8 +334,10 @@ export function useQuestionList(opts?: { stage?: string }) {
    *  数组用逗号拼，和 `filters` 完全同构。 */
   const snapshotFilters = (): UrlFilters => ({
     q: q.trim(), type, kind,
-    point: points.join(','), diff: diffs.join(','), year: years.join(','),
+    point: points.join(','), pm: pointMode === 'all' ? 'all' : '',
+    diff: diffs.join(','), year: years.join(','),
     source: sources.join(','), has: has.join(','), missing: missing.join(','),
+    inc: incomplete ? '1' : '',
     scope: scopes.join(','), paper: paperStates.join(','), star: starStates.join(','),
     quality: qualities.join(','), psrc: pointSource, asrc: answerSources.join(','),
     reviewed,
@@ -334,8 +346,10 @@ export function useQuestionList(opts?: { stage?: string }) {
   /** 恢复一套筛选（预设/地址栏）；页码回到 1。 */
   const loadFilters = (f: UrlFilters, sortKey: string = 'used') => {
     setQ(f.q || ''); setType(f.type || ''); setKind(f.kind || '')
-    setPoints(split(f.point)); setDiffs(split(f.diff)); setYears(split(f.year))
+    setPoints(split(f.point)); setPointMode(f.pm === 'all' ? 'all' : 'any')
+    setDiffs(split(f.diff)); setYears(split(f.year))
     setSources(split(f.source)); setHas(split(f.has)); setMissing(split(f.missing))
+    setIncomplete(f.inc === '1')
     setScopes(split(f.scope)); setPaperStates(split(f.paper))
     setStarStates(split(f.star)); setQualities(split(f.quality))
     setPointSource(f.psrc || ''); setAnswerSources(split(f.asrc)); setReviewed(f.reviewed || '')
@@ -349,7 +363,8 @@ export function useQuestionList(opts?: { stage?: string }) {
     refreshSilent,
     page, setPage, pageSize, setPageSize, pageInput, setPageInput, jumpPage, listRef,
     q, setQ, type, setType, kind, setKind,
-    has, setHas, missing, setMissing, points, setPoints, diffs, setDiffs,
+    has, setHas, missing, setMissing, incomplete, setIncomplete, points, setPoints,
+    pointMode, setPointMode, diffs, setDiffs,
     sources, setSources,
     scopes, setScopes, paperStates, setPaperStates,
     starStates, setStarStates, qualities, setQualities,
@@ -369,3 +384,6 @@ export function useQuestionList(opts?: { stage?: string }) {
     snapshotFilters, loadFilters,
   }
 }
+
+/** 列表状态的外显类型：选题页与校对三栏共用同一个实例。 */
+export type QuestionList = ReturnType<typeof useQuestionList>

@@ -16,7 +16,6 @@
 """
 from __future__ import annotations
 
-from .paths import ROOT
 import html as html_mod
 import re
 import shutil

@@ -1,0 +1,7 @@
+# 开发/验收用工具（运行时不依赖这些）。
+#
+#   pip install -r requirements-dev.txt
+#   ruff check amti amti.py 测试      # accept 层② 会自动带上；没装则跳过
+#
+# 版本与 CI 一致：ruff 的规则集升级会改判定，锁住主版本。
+ruff==0.17.6

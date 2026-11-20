@@ -961,7 +961,6 @@ def assemble(st_q: dict, st_a: dict, label: str, *,
             ab.append({"n": n, "start": s0, "end": e0, "src": "模型"})
     ab.sort(key=lambda b: b["start"])
     a_by_n = {b["n"]: b for b in ab}
-    qn = [b["n"] for b in qb]
     pairs: dict[int, tuple[dict, str]] = {}
     # **按题号逐个配**，不要求两边题号集合完全相等：答案册常有几题的标题
     # 被 OCR 读花（实测第一套 1/7/9 被读成 `### \[1.\ D`），旧写法一题不配、
@@ -1449,7 +1448,6 @@ def _tag_reply(raw: str, *, with_difficulty: bool) -> tuple[list[str], str]:
     JSON 解析失败时退回正则——小模型偶尔会在 JSON 外面多说一句
     "这道题考查…"，但编号本身仍可用。难度只在 JSON 里认，正则猜不了。
     """
-    from . import knowledge as kb
     raw = re.sub(r"^```[a-zA-Z]*\n|```$", "", (raw or "").strip()).strip()
     if with_difficulty:
         m = re.search(r"\{.*\}", raw, re.S)

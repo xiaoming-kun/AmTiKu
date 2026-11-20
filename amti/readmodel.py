@@ -22,7 +22,7 @@ from .paths import ROOT
 DB = ROOT / "数据" / "缓存" / "readmodel.sqlite"
 _LOCK = threading.Lock()
 _CACHE: dict = {"sig": None, "ok": False}
-_SCHEMA = 4
+_SCHEMA = 5
 
 
 def _sig_of(sig: tuple) -> str:
@@ -80,6 +80,9 @@ def rebuild(rows: list[dict], sig: tuple) -> dict:
         create index idx_q_book on questions(book);
         create index idx_q_used on questions(used);
         create index idx_q_seq on questions(seq);
+        create index idx_q_has_answer on questions(has_answer);
+        create index idx_q_has_solution on questions(has_solution);
+        create index idx_q_has_points on questions(has_points);
         create index idx_qp_point on question_points(point);
         """)
         qrows = []
@@ -174,6 +177,9 @@ def _where(**kw) -> tuple[str, list]:
         where.append("reviewed=?"); ps.append(1 if rv == "yes" else 0)
     if kw.get("review_status"):
         _in("review_status", kw.get("review_status"))
+    if kw.get("incomplete"):
+        # 「待补」= 缺答案或缺解析（任一）。两个 index 都在，走 OR 也快。
+        where.append("(has_answer=0 or has_solution=0)")
     for name in kw.get("has") or ():
         col = {"答案": "has_answer", "解析": "has_solution",
                "图": "has_figure", "有图": "has_real_figure",

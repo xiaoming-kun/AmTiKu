@@ -4,12 +4,12 @@
 
 ## 一、这是什么
 
-本地 **K12 数学题库 + 组卷系统**（小学 / 初中 / 高中）。全部数据在项目目录内，只监听 `127.0.0.1`，不联任何外部服务。
+本地 **AmMath · K12 数学工作站**（小学 / 初中 / 高中）：题库、讲义与组卷。全部数据在项目目录内，只监听 `127.0.0.1`，不联任何外部服务。
 
 * 后端：Python 3，自研 HTTP 服务（`amti/`，端口 8899）
 * 前端：React 19 + TypeScript + Tailwind 4（`web/src/`，构建产物 `web/dist/`，由后端一起发）
-* 界面：BoardUI 浅色设计语言（中性骨架 + 学院蓝 + Bento 卡片），新壳在 `web/src/app/Shell.tsx`，页面在 `web/src/app/pages/`
-* 信息架构：**学段优先**（小学/初中/高中）→ 总览 → 知识图谱 → 讲义 → 题库 → 录题 → 组卷
+* 界面：BoardUI 浅色（蓝白卡片 + 20px 圆角 + 柔和阴影）；新壳在 `web/src/app/Shell.tsx`，页面在 `web/src/app/pages/`
+* 信息架构：**学段优先**（小学/初中/高中）→ 7 个工作区：工作台 / 题库 / 组卷 / 内容（图谱·讲义）/ 录入 / 质量（体检·审阅）/ 档案（试卷·回收站·变更）。录入在新标签页打开，不带工作台侧栏；分手工录题 / DeepSeek 录题 / 整理题库 / 单题校对。AI 读取先配连接、再配对资料、点确认开始才计费；整理和校对只生成建议，确认后才写回。
 * 题目：**LaTeX**（界面用 KaTeX 渲染）
 * 目录：**根目录只放"入口"和"数据区"**，一次性产物进 `归档/`——每个目录的职责见 `docs/目录规范.md`
 
@@ -22,6 +22,17 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 ```
 
 层③ 需要服务在跑，它会自己起；动了界面/导出还要在浏览器里真跑一遍。
+
+`accept` 层②现在还会跑三条**机制检查**（它们把下面「唯一入口」变成断言）：
+
+* `python3 amti.py lint` — AST 扫描：路由写库必须同步派生索引、AI 模块只读、
+  记账路径不许 `except Exception: pass`。新模块越界会在这里红，不靠 review 记性。
+* `ruff check amti amti.py 测试` — 未定义名/重复定义/未用变量。装法：
+  `pip install -r requirements-dev.txt`；没装时 accept 会跳过并提示。
+* `python3 测试/性能基线.py` — 四条关键路径的耗时上限，只抓数量级退化
+  （索引没建、回退全量 Python），阈值是实测量级。
+
+新增/移动模块后先跑 `python3 amti.py lint`，它比读文档快。
 
 ## 三、唯一入口（不要绕过，也不要重复实现）
 
@@ -42,13 +53,25 @@ cd web && npx tsc --noEmit --noUnusedLocals --noUnusedParameters && npm run buil
 | `amti/content_store.py` | 题目内容读模型（派生 SQLite） | 详情主键读 + 公式召回；真相仍是 `题目/*.tex`，删了可重建，未就绪回退 `store.find` |
 | `amti/recall.py` | 检索召回（中文 FTS / 公式） | 列表与组卷共用；在路由里各写一套 → 两边搜到的不是同一批题 |
 | `amti/similar.py` | 相似题（派生索引） | 同考点 / 公式 / 题型；按卷签名缓存，真相仍是 `题目/*.tex` |
+| `amti/papersets.py` | 套卷（外来原卷）视图 | 派生自 `meta.source_label` + `source_no`；另建一张套卷表 → 与题目 meta 分叉，改一道题两处不一致 |
 | `amti/duplicates.py` | 重复题标注（派生分组） | 复用 `dedup` 指纹；只提示不合并，真相仍是 `题目/*.tex` |
 | `amti/query_syntax.py` | 搜索框语法 | 字段/排除词只解析一次；列表与组卷共用，显式参数优先 |
 | `amti/sharepack.py` | 分享包 | 只读打包；导入同 key 跳过、图片哈希校验；不覆盖真相 |
+| `amti/aicurate.py` | DeepSeek 整理建议 | 只读已有题、只返回建议，**不写库**；写回仍走 `PATCH /questions/{key}` 与 `/solution`，否则会绕过规范/指纹/审阅 |
+| `amti/aiproof.py` | DeepSeek 单题校对 | 只读答案/解析/配图并返回建议；写回仍走 `/solution`、`PATCH` 与 `/source`，TikZ 不自动写 |
+| `amti/airepair.py` | DeepSeek 单题修复 | 只按 conformance 报错修一道题的 LaTeX；返回后仍走 `ingest.preview`，不写库、不改原卷矛盾 |
+| `amti/ai_spec.py` | 规范驱动的 AI 录题主路径 | PDF 页图 + `aispec` 系统提示 → 规范 `.tex`；只跑 `ingest.preview`，**不写库**；取消抛 `Cancelled` |
+| `amti/aispec.py` | 规范提示词装载 | 只从 `设计/` 读 §14.1 / 网页端格式要求；改提示词只改设计文档，不在代码里另抄一份 |
+| `amti/ai_format.py` | 候选源码格式清洗 | 只改格式不改题意；与 `normalize.py` 的裸数学表同源，别处再写一套规则 → 清洗结果分叉 |
+| `amti/ai_agent.py` | 单题修复 agent | 有界工具循环（check_source / compile_tikz / final），最多 4 轮；只返回源码，最终仍过 `preview` |
+| `amti/ai_cases.py` | AI 失败案例库 | 本地 jsonl，只给「相似失败」做提示与回归；不是题库，删了不影响题目 |
+| `amti/ai_tag.py` | 补考点 | 1–3 个考点 id + 难度；只读考点库，不写库 |
+| `amti/ai_history.py` | 录题历史缓存 | 存源文件/结果供重开，不是题库；删除不影响 `题目/*.tex` |
+| `amti/deepseek.py` | DeepSeek 调用 + JSON 解析 | `json_obj()` 是模型返回 JSON 的唯一解析处；各 AI 模块不再各抄一份 |
 | `amti/docx_export.py` | Word 导出 | 块 IR→Markdown→Pandoc；PDF 仍走 exam-zh，不是第二套解析器 |
 | `amti/source_import.py` | 源文件适配 | DOCX→PDF、PDF/图片/文本准备；只准备，不解析不写库 |
 | `amti/search.py` | 相关度打分 + 公式等价写法 | `math_forms()` 是查询扩展；新增写法规则只改这里 |
-| `amti/web/query.py` | 题目筛选条件（列表与组卷共用） | 两边各写一套 → 列表筛到的和组卷池子不是同一批题；改筛选口径只改这里 |
+| `amti/web/query.py` | 题目筛选条件（列表与组卷共用；含考点并集/交集的 `point_groups`） | 两边各写一套 → 列表筛到的和组卷池子不是同一批题；改筛选口径只改这里 |
 | `amti/review.py` | 审阅状态、风险队列、分层抽样、Wilson CI | 另写一套复核口径 → 体检页数字再次失真；`reviewed_at` 不得再兼作“编辑过” |
 
 > 新增功能前先问：这件事是不是已经有唯一入口了？有 → 改那个模块；没有 → 才新建。
@@ -125,7 +148,7 @@ python3 -m amti.content_store clear    # 删掉，下次读自动重建
   类型、派生 PDF、时间、状态），方便回查来源。
 - Word 转出的 PDF 交给现有 VLM/AI 读题，文本交给编辑器；之后仍然只走
   `ingest.preview()` → `ingest.commit()`。**不是第二套录入管线。**
-- PDF/Word 准备时渲 `pages/p-001.png` 源页；录入抽屉显示“源页 1/2/3…”，
+- PDF/Word 准备时渲 `pages/p-001.png` 源页；录入页显示“源页 1/2/3…”，
   点开用现有 `pageView` 对照原页。
 - `GET /api/ingest/jobs` / `GET /api/ingest/jobs/{id}` 支持“继续最近任务”；
   任务只保存源材料和派生件，不保存题库正文。
@@ -134,7 +157,7 @@ python3 -m amti.content_store clear    # 删掉，下次读自动重建
   `POST /api/ingest/jobs/prune` 手动清理，`DELETE /api/ingest/jobs/{id}` 删单个。
 - 界面已拆成 `web/src/app/ingest/`：`useIngest.tsx` 管状态/handlers，
   `SourceStage` / `ReviewStage` 通过 `IngestContext` 取字段，`CommitBar` 独立；
-  `IngestDrawer` 只剩 69 行壳。
+  `IngestWorkspace` 管整页布局，`SourceStage` / `ReviewStage` 互不反向依赖。
 
 
 ## 三·五、开源素材与小初章节讲义

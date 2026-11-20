@@ -16,6 +16,8 @@ from amti.web.present import brief as _brief
 from amti.web.core import _brief_cached_lite
 from amti.web.query import QuestionFilter
 from amti.web.query import csv_set as _csv_set
+from amti.web.query import point_groups_of as _point_groups_of
+from amti.web.query import point_mode_of as _point_mode_of
 from amti.web.query import tag_ids_matching as _tag_ids_matching
 
 router = APIRouter(prefix="/api", tags=["generate"])
@@ -37,21 +39,20 @@ class GenerateBody(BaseModel):
     `mode`：
       * `gaokao`    按高考卷面结构（8+3+3+5，填补位置）
       * `test`      不约束，按传入顺序
-      * `coverage`  **按考点覆盖率组卷**（易→难排序）
+
+    `coverage`（考点覆盖卷）这个卷型已经**删掉**了（用户 2026-11-13 要求）。
+    老客户端若还传 `mode="coverage"`，下面**明确 400**——不能让它静默落进
+    `generate()` 的"非 gaokao 全收"分支，否则用户会拿到一份普通筛选结果，
+    还以为是覆盖卷。
     """
     mode: str = "gaokao"
-    coverage: float = 0.9               # coverage 模式的目标覆盖率
-    want: int = 19                      # coverage 模式要几道题
-    # coverage 模式：**要不要保住高考卷面的题型比例**（8 单选 3 多选 3 填空 5 解答，
-    # 按 want 等比缩放）。默认保——不保的话贪心只认考点个数，
-    # 46 道题能挑出 23 道解答题（解答题考点密度最高），那卷子没法用。
-    # 代价是覆盖率约掉 2.6 个百分点（85.5% → 82.9%），说明里会报出来。
-    keep_structure: bool = True
     seed: int | None = None             # 同 seed 出同一套
     q: str = ""
     type: str = ""
     kind: str = ""
     point: str = ""
+    # 考点命中方式：any（默认）/ all（交集）。与 /api/questions 同一口径。
+    point_mode: str = ""
     difficulty: str = ""
     year: str = ""
     source: str = ""
@@ -87,6 +88,9 @@ def api_generate(body: GenerateBody) -> dict:
     规则见 `amti/generate.py`：分值结构、解答题板块顺序、小题章节上限。
     """
     from amti import generate as _gen
+    if body.mode not in ("gaokao", "test"):
+        raise HTTPException(
+            400, f"未知组卷模式 {body.mode!r}（「考点覆盖卷」已移除，只支持 gaokao / test）")
     # 与列表共用搜索框语法；显式参数优先。
     pq = parse_query(body.q)
     kw = pq.keyword
@@ -97,19 +101,18 @@ def api_generate(body: GenerateBody) -> dict:
     year_v = body.year or pq.year
     source_v = body.source or pq.source
     region_v = body.region or pq.region
-    point_ids = set(_csv_set(body.point))
-    if pq.point and not body.point:
-        for part in _csv_set(pq.point):
-            got = _tag_ids_matching(part)
-            if got:
-                point_ids |= got
-            else:
-                point_ids.add("__none__")
+    # 考点摊成「必须同时命中的组」：交集模式下组组都要露头。
+    # 口径与 /api/questions 同一个函数，列表筛到什么、组卷就从什么里挑。
+    p_mode = _point_mode_of(body.point_mode, pq.point_mode)
+    p_groups, point_ids = _point_groups_of(body.point, pq.point,
+                                           resolve=_tag_ids_matching)
     # **同一个 QuestionFilter**：列表筛到什么，组卷就从什么里挑。
     # `regions` 以前只解析没使用（region 选择器形同虚设），一并接上。
     flt = QuestionFilter(
         qtype=qtype, kind=body.kind,
-        points=frozenset(point_ids),
+        points=point_ids,
+        point_mode=p_mode,
+        point_groups=p_groups,
         difficulties=_csv_set(difficulty_v),
         years=_csv_set(year_v),
         sources=_csv_set(source_v),
@@ -140,26 +143,17 @@ def api_generate(body: GenerateBody) -> dict:
             min_solution_len=body.min_solution_len,
             year_from=body.year_from)
 
-    if body.mode == "coverage":
-        # **按考点覆盖率组卷**：以「尽量多覆盖考点」为目标挑题，
-        # 挑完**按易→难排好**。跟 `gaokao` 那种"填卷面位置"是两回事。
-        mix = _gen.gaokao_mix(body.want) if body.keep_structure else None
-        r = _gen.generate_by_coverage(pool, want=body.want, coverage=body.coverage,
-                                      seed=body.seed, type_mix=mix,
-                                      report_cost=bool(mix))
-        r["slots"] = []
-    else:
-        # 非 `gaokao` 模式是"照单全收"：`generate()` 会把整个池子摊成卷子。
-        # 筛完 2.8 万道再点「取筛选结果」，前端会拿到 2.8 万条 brief——卡死。
-        cap = max(1, int(body.max_items or 500))
-        r = _gen.generate(pool[:cap], mode=body.mode, seed=body.seed,
-                          exclude_missing_figure=body.exclude_missing_figure,
-                          min_solution_len=body.min_solution_len,
-                          year_from=body.year_from,
-                          point_quota=body.point_quota)
-        if len(pool) > cap:
-            r["report"]["note"] = (
-                f"筛选到 {len(pool):,} 道，按当前顺序取前 {cap:,} 道入卷")
+    # 非 `gaokao` 模式是"照单全收"：`generate()` 会把整个池子摊成卷子。
+    # 筛完 2.8 万道再点「取筛选结果」，前端会拿到 2.8 万条 brief——卡死。
+    cap = max(1, int(body.max_items or 500))
+    r = _gen.generate(pool[:cap], mode=body.mode, seed=body.seed,
+                      exclude_missing_figure=body.exclude_missing_figure,
+                      min_solution_len=body.min_solution_len,
+                      year_from=body.year_from,
+                      point_quota=body.point_quota)
+    if len(pool) > cap:
+        r["report"]["note"] = (
+            f"筛选到 {len(pool):,} 道，按当前顺序取前 {cap:,} 道入卷")
 
     # 顺带把每道题的显示信息带上，前端要列卷子。
     # **只给真正入卷的那几道渲染 brief**：`pool` 可能是筛选后的 2.8 万道，

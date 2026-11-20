@@ -15,7 +15,6 @@ from pydantic import BaseModel
 from amti import knowledge
 from amti import knowledge_map
 from amti import open_lectures
-from amti import papers
 from amti import readmodel
 from amti import review as review_mod
 from amti import store

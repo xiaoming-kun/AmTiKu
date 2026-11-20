@@ -267,8 +267,6 @@ def bands_of(img: Path, *, tol: int | None = None,
     # 上一行的字里，把数字切成半个——实测「9.」被切成了「3.」、「10.」成了
     # 「4.」，那几道题的解析整段归错题、等于丢了。
     # 现在往上/往下找最近的空白行，找不到就不切（宁可条带大一点）。
-    blank = [(i, i + 1) for i, v in enumerate(ink <= 2) if v]
-
     def snap_up(y: int) -> int:
         cur = y
         while cur > 0 and ink[cur] > 2:
@@ -1118,7 +1116,6 @@ def scan_pdf(pdf: Path, *, work: Path | None = None, workers: int = 1,
     imgs = pages_of(pdf, work / "pages")
     cache = work / "scan"
     cache.mkdir(parents=True, exist_ok=True)
-    crops = work / "crops"
     rows: list[dict | None] = [None] * len(imgs)
 
     def one(i: int, img: Path) -> dict:

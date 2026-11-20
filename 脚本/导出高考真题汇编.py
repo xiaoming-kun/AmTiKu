@@ -128,7 +128,7 @@ def build_tex(by_year: dict[int, list], *, with_answers: bool = True) -> str:
     head = [
         "% " + "=" * 72,
         "%% 高考数学真题汇编（%d--%d）" % (min(years), max(years)),
-        "% 由 AmTiKu 题库自动生成，请勿手改；题目有误请改 题目/*.tex 后重新导出。",
+        "% 由 AmMath 题库自动生成，请勿手改；题目有误请改 题目/*.tex 后重新导出。",
         "% 编译：xelatex 两遍（目录与交叉引用）。",
         "% 只要题目、不要答案：把下面 \\AMTIanswerstrue 改成 \\AMTIanswersfalse。",
         "% " + "=" * 72,
@@ -162,7 +162,7 @@ def build_tex(by_year: dict[int, list], *, with_answers: bool = True) -> str:
         r"\vspace{0.9em}",
         r"{\large 题目卷\quad{}·\quad{}参考答案与解析}\par",
         r"\vfill",
-        r"{\large AmTiKu 题库导出}\par",
+        r"{\large AmMath 题库导出}\par",
         r"\vspace{0.5em}",
         r"{\large \today}\par",
         r"\end{titlepage}",

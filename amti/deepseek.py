@@ -23,15 +23,24 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+from amti.logutil import get_logger
+
 from .paths import ROOT
+
+log = get_logger(__name__)
 
 #: 配置落盘位置。和 `数据/` 下其它运行时文件放在一起。
 CFG_PATH = ROOT / "数据" / "AI设置.json"
+#: 每次 DeepSeek 调用的用量流水；给「录入」首页显示今日/累计花费。
+USAGE_PATH = ROOT / "数据" / "AI用量.jsonl"
+_USAGE_LOCK = threading.Lock()
 
 #: 默认值。`base_url` 不带 `/v1`（DeepSeek 两种都收，它以 `/chat/completions` 为准）。
 DEFAULTS: dict = {
@@ -61,6 +70,67 @@ def cost_cny(model: str, usage: dict) -> float:
     inp = int((usage or {}).get("prompt_tokens") or 0)
     out = int((usage or {}).get("completion_tokens") or 0)
     return round(inp / 1_000_000 * p["in"] + out / 1_000_000 * p["out"], 4)
+
+
+def record_usage(usage: dict, model: str = "") -> None:
+    """把一次调用的 token/估算费用追加到本地流水。失败绝不影响主请求。"""
+    u = usage or {}
+    if not u:
+        return
+    model = model or load()["model"]
+    row = {
+        "ts": int(time.time()),
+        "date": time.strftime("%Y-%m-%d"),
+        "model": model,
+        "prompt_tokens": int(u.get("prompt_tokens") or 0),
+        "completion_tokens": int(u.get("completion_tokens") or 0),
+        "total_tokens": int(u.get("total_tokens") or 0),
+        "cost_cny": cost_cny(model, u),
+    }
+    try:
+        with _USAGE_LOCK:
+            USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with USAGE_PATH.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError as e:                    # 记账失败不影响调用，但必须留痕
+        log.warning("AI 用量流水写失败（本次调用照常计费）：%s", e)
+
+
+def usage_summary() -> dict:
+    """今日 / 累计的 token 与估算费用。只读本地流水。"""
+    today = time.strftime("%Y-%m-%d")
+    out = {
+        "ok": True, "date": today, "model": load()["model"],
+        "today": {"cost_cny": 0.0, "tokens": 0, "calls": 0},
+        "total": {"cost_cny": 0.0, "tokens": 0, "calls": 0},
+        "since": "", "unit": "CNY",
+        "note": "估算价，以 DeepSeek 控制台账单为准；从本地流水启用后开始累计",
+    }
+    try:
+        if not USAGE_PATH.is_file():
+            return out
+        with USAGE_PATH.open("r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                tok = int(r.get("total_tokens") or 0)
+                cost = float(r.get("cost_cny") or 0)
+                out["total"]["tokens"] += tok
+                out["total"]["cost_cny"] += cost
+                out["total"]["calls"] += 1
+                if str(r.get("date") or "") == today:
+                    out["today"]["tokens"] += tok
+                    out["today"]["cost_cny"] += cost
+                    out["today"]["calls"] += 1
+                if not out["since"]:
+                    out["since"] = str(r.get("date") or "")
+    except OSError as e:                    # 读不到就当空账，但别装没事
+        log.warning("AI 用量流水读失败，本次按空账显示：%s", e)
+    out["total"]["cost_cny"] = round(out["total"]["cost_cny"], 4)
+    out["today"]["cost_cny"] = round(out["today"]["cost_cny"], 4)
+    return out
 
 
 class AIError(RuntimeError):
@@ -237,56 +307,75 @@ def _content_of(data: dict) -> str:
     return "" if c is None else str(c)
 
 
-def chat(prompt: str, images: list[bytes] | None = None, *,
-         system: str = "", timeout: float = 240, max_tokens: int = 32000,
-         json_mode: bool = False, on_usage=None) -> str:
-    """一次调用。`images` 是 PNG/JPEG 的字节，按顺序放进同一条 user 消息。
+_FENCE = re.compile(r"^```[a-zA-Z]*\s*|\s*```$")
 
-    ## 一定是**非思考模式**（`thinking: disabled`）
 
-    `deepseek-flash` 默认开思考，而且默认 `reasoning_effort=high`。实测一份
-    答案册 2 页：思考烧掉 **7443** 个 token、最终只吐出 580 字，还常常把
-    8192 的输出额度吃光 → 返回空内容，界面上表现成「模型没回 JSON：」。
-    关掉思考后同一批 **2.5 秒**、289 token 就抄完了。抄录/结构化不需要推理，
-    这条必须关。
+def json_obj(raw: str) -> dict:
+    """模型返回的 JSON → dict；容忍 ```json 围栏和前后解释。
 
-    `json_mode=True` 时带 `response_format=json_object`：官方保证返回合法
-    JSON（非 JSON 内容会被替换成空格）。代价是**必须**在提示词里明确要求 JSON。
+    `json_mode=True` 不保证只回 JSON，所以先剥围栏，再退一步抓第一个大括号块。
+    各 AI 模块原来各抄一份，改这里一处即可。
+    """
+    s = _FENCE.sub("", str(raw or "").strip()).strip()
+    try:
+        v = json.loads(s)
+        return v if isinstance(v, dict) else {}
+    except ValueError:
+        m = re.search(r"\{.*\}", s, re.S)
+        if not m:
+            return {}
+        try:
+            v = json.loads(m.group(0))
+            return v if isinstance(v, dict) else {}
+        except ValueError:
+            return {}
 
-    DeepSeek 的限制：图片只能出现在 user 消息里；每张图约 1024 token；
-    `detail=original` 才能保住公式细节（`low` 会缩到 512×512，公式直接糊）。
+
+def chat_messages(messages: list[dict], images: list[bytes] | None = None, *,
+                  timeout: float = 240, max_tokens: int = 32000,
+                  json_mode: bool = False, on_usage=None) -> str:
+    """按完整 messages 调一次模型；图片附到最后一条 user 消息。
+
+    这是持久会话的底层：调用方负责保存/恢复 messages，本函数不猜历史。
     """
     cfg = load()
     if not cfg["api_key"]:
-        raise AIError("还没填 API Key —— 点「AI 读资料」旁边的设置，填一次就行")
-    blocks: list[dict] = [{"type": "text", "text": prompt}]
-    for raw in (images or []):
-        if not raw:
-            continue
-        import base64
-        b64 = base64.b64encode(raw).decode("ascii")
-        blocks.append({"type": "image_url",
-                       "image_url": {"url": "data:image/png;base64," + b64,
-                                     "detail": "original"}})
-    messages: list[dict] = []
-    if system.strip():
-        messages.append({"role": "system", "content": system.strip()})
-    messages.append({"role": "user", "content": blocks})
+        raise AIError("还没填 API Key —— 点「DeepSeek 录题」里的设置，填一次就行")
+    msgs: list[dict] = [dict(m) for m in (messages or [])]
+    if not msgs:
+        raise AIError("messages 为空")
+    if images:
+        imgs = []
+        for raw in images:
+            if not raw:
+                continue
+            import base64
+            b64 = base64.b64encode(raw).decode("ascii")
+            imgs.append({"type": "image_url",
+                         "image_url": {"url": "data:image/png;base64," + b64,
+                                       "detail": "original"}})
+        if imgs:
+            # 图片只能放 user 消息；附到最后一条 user 上。
+            idx = next((i for i in range(len(msgs) - 1, -1, -1)
+                        if msgs[i].get("role") == "user"), -1)
+            if idx < 0:
+                msgs.append({"role": "user", "content": imgs})
+            else:
+                old = msgs[idx].get("content")
+                if isinstance(old, list):
+                    msgs[idx]["content"] = old + imgs
+                else:
+                    msgs[idx]["content"] = [{"type": "text", "text": str(old or "")}] + imgs
     payload = {
-        "model": cfg["model"],
-        "messages": messages,
-        "temperature": 0,
+        "model": cfg["model"], "messages": msgs, "temperature": 0,
         "max_tokens": max_tokens,
-        # 抄录不是推理：关思考，否则输出额度会被思维链吃光（见上面那段）
-        "thinking": {"type": "disabled"},
-        "stream": False,
+        "thinking": {"type": "disabled"}, "stream": False,
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
     try:
         data = _post(cfg, payload, timeout=timeout)
     except AIError as e:
-        # 换了个兼容端点、或者官方改了参数名：去掉"可选"参数再试一次。
         msg = str(e)
         if not any(k in msg for k in ("max_tokens", "temperature", "thinking",
                                       "response_format", "请求被拒绝")):
@@ -295,17 +384,29 @@ def chat(prompt: str, images: list[bytes] | None = None, *,
             payload.pop(k, None)
         data = _post(cfg, payload, timeout=timeout)
     ch = (data.get("choices") or [{}])[0]
-    # **先记 usage 再判截断**：截断的那次调用也已经计费，不能漏记。
     usage = data.get("usage") or {}
     if on_usage is not None and usage:
         try:
             on_usage(usage)
-        except Exception:                    # noqa: BLE001
-            pass
+        except Exception as e:               # 回调是调用方的事，不能拖垮请求
+            log.warning("on_usage 回调失败（费用已记流水，界面统计可能少一笔）：%s", e)
+    if usage:
+        record_usage(usage, cfg["model"])
     if str(ch.get("finish_reason") or "") == "length":
         raise AIError("这一批输出被截断了（max_tokens 用完）——把「每批页数」调小再试")
     return _content_of(data)
 
+
+def chat(prompt: str, images: list[bytes] | None = None, *,
+         system: str = "", timeout: float = 240, max_tokens: int = 32000,
+         json_mode: bool = False, on_usage=None) -> str:
+    """单轮便捷入口：内部转成 messages 后走 chat_messages。"""
+    msgs: list[dict] = []
+    if system.strip():
+        msgs.append({"role": "system", "content": system.strip()})
+    msgs.append({"role": "user", "content": prompt})
+    return chat_messages(msgs, images, timeout=timeout, max_tokens=max_tokens,
+                         json_mode=json_mode, on_usage=on_usage)
 
 def check() -> dict:
     """连通性测试：一句话、零图片，测的是 key/地址/模型名三件事。"""

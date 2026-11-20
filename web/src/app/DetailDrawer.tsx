@@ -3,7 +3,7 @@
  *  从 App.tsx 抽出来的。**宽屏占一栏**（列表自己缩窄，内容不被遮），
  *  窄屏才是盖上去的抽屉；宽度可拖、带记忆。
  */
-import type { Q, Facets, SavedHandler } from '@/lib/types'
+import type { Q, Facets, SavedHandler, SourceBatchDone } from '@/lib/types'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { CloseBtn, Grip } from '@/app/ui'
 import { Detail } from '@/app/Detail'
@@ -12,7 +12,7 @@ export default function DetailDrawer({
   open, closing, width, setWidth, maxWidth, loading, loadingFull, sel, full, facets, kw,
   autoSourceKey, autoSourceN,
   onPrev, onNext, canPrev, canNext, position,
-  onClose, onFindPoint, onDeleteAsk, onPick, onSaved,
+  onClose, onFindPoint, onDeleteAsk, onPick, onSaved, onBatchSource,
 }: {
   open: boolean
   closing: boolean
@@ -41,6 +41,8 @@ export default function DetailDrawer({
   /** 相似题：点一条就切到那道题。 */
   onPick?: (q: Q) => void
   onSaved: SavedHandler
+  /** 详情页「批量改出处」完成：App 负责迁移卷子/列表里的旧 key。 */
+  onBatchSource?: (res: SourceBatchDone) => void
 }) {
   if (!open) return null
 
@@ -62,13 +64,13 @@ export default function DetailDrawer({
                  min-[1400px]:shadow-none`}>
       {/* 拖宽的手柄贴在**抽屉左边缘**：覆盖式和占栏式左边都在同一处 */}
       <div className="absolute inset-y-0 -left-[3px] z-40 flex">
-        <Grip width={width} setWidth={setWidth} min={380} max={940} />
+        <Grip width={width} setWidth={setWidth} min={380} max={900} />
       </div>
         <span className="pointer-events-none absolute inset-x-0 top-0 h-px
                          bg-gradient-to-r from-transparent via-brand/70 to-transparent" />
-        <div className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border/70 px-3">
+        <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
           <span className="live-dot ml-1" />
-          <span className="px-1 text-[12.5px] font-semibold text-ink-soft">题目详情</span>
+          <span className="px-1 text-[12px] font-semibold text-ink">题目</span>
           <span className="min-w-0 flex-1" />
           {position && (
             <span className="tnum mr-1 hidden text-[10.5px] text-ink-faint sm:inline">
@@ -100,7 +102,8 @@ export default function DetailDrawer({
               onFindPoint={(pid, title) => { onFindPoint(pid, title); onClose() }}
               onDeleteAsk={onDeleteAsk}
               onPick={onPick}
-              onSaved={onSaved} />
+              onSaved={onSaved}
+              onBatchSource={onBatchSource} />
           </div>
         )}
       </aside>

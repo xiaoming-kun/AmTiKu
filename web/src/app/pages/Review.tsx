@@ -318,16 +318,14 @@ export default function Review({ stage, onChanged, onOpenSource }: {
 
   if (!senior) {
     return (
-      <div className="mx-auto w-full max-w-[900px] px-6 py-8">
-        <div className="b-eyebrow flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
-          K12 数学题库 · {meta.name} · 审阅
+      <div className="b-page max-w-[900px]">
+        <div className="rounded-[var(--radius-card)] border border-border bg-surface p-5">
+          <div className="text-[13px] font-semibold text-ink">正式题库目前只有高中</div>
+          <p className="mt-1.5 max-w-[640px] text-[11.5px] leading-relaxed text-ink-faint">
+            审阅队列统计的是 {meta.name} 的正式题；目前这一学段以诊断题和章节讲义为主。
+            等正式题入库后，这一页会自动接上，不需要另建一套审阅。
+          </p>
         </div>
-        <h1 className="mt-1.5 text-[30px] font-semibold tracking-tight">正式题库目前只有高中</h1>
-        <p className="mt-1 max-w-[620px] text-[12px] leading-relaxed text-ink-faint">
-          审阅队列统计的是 `题目/*.tex` 里的正式题。小学/初中目前以诊断题和讲义为主，
-          等正式题入库后，这一页会自动接上。
-        </p>
       </div>
     )
   }
@@ -335,20 +333,10 @@ export default function Review({ stage, onChanged, onOpenSource }: {
   return (
     <div className="b-scroll h-full overflow-y-auto bg-bg">
       <div className="mx-auto w-full max-w-[1440px] px-5 py-5">
-        <header className="flex flex-wrap items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="b-eyebrow flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
-              K12 数学题库 · 高中 · 审阅
-            </div>
-            <h1 className="mt-1 flex items-center gap-2 text-[28px] font-semibold tracking-tight">
-              <ClipboardCheck size={22} className="text-brand" />
-              审阅队列
-            </h1>
-            <p className="mt-0.5 text-[12px] text-ink-faint">
-              先自己判，再看答案。通过/需修改/存疑都会记住复核人和正文指纹；正文一改，原复核自动失效。
-            </p>
-          </div>
+        <header className="flex flex-wrap items-center gap-2">
+          <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-faint">
+            先自己判，再看答案。通过 / 需修改 / 存疑都会记住复核人和正文指纹；正文一改，原复核自动失效。
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-[11px] text-ink-faint">复核人</label>
             <input value={reviewer} onChange={(e) => setReviewer(e.target.value)}

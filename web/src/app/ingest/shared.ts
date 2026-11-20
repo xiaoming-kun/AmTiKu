@@ -1,8 +1,8 @@
-/** 录入抽屉的共享常量/类型：Source、Review、useIngest 都用这一份。 */
+/** 录入工作区的共享常量/类型：Source、Review、useIngest 都用这一份。 */
 export const FIELD = `h-[32px] rounded-lg border border-border bg-bg px-2.5 text-[12.5px] outline-none
                transition-[border-color,box-shadow] duration-150 placeholder:text-ink-faint
                focus:border-brand-line focus:bg-surface focus:shadow-[0_0_0_3px_var(--color-brand-soft)]`
-export const LABEL = 'text-[11px] font-semibold tracking-[0.08em] text-ink-faint'
+export const LABEL = 'shrink-0 whitespace-nowrap text-[11px] font-semibold tracking-[0.08em] text-ink-faint'
 export const MINI = `press inline-flex items-center gap-1 rounded-md border border-border bg-surface
               px-1.5 py-[2px] text-[10.5px] text-ink-soft hover:border-brand-line
               hover:text-brand-ink disabled:opacity-40`

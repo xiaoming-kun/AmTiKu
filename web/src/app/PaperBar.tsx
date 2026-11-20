@@ -3,7 +3,7 @@
  *  从 App.tsx 抽出来的。它只认「卷子」这一件事，不该和筛选、列表、详情
  *  混在一个 1000 行的组件里。
  */
-import { ChevronRight, ClipboardList } from 'lucide-react'
+import { Check, ChevronRight, ClipboardList, TriangleAlert } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { Num } from '@/app/ui'
 
@@ -19,18 +19,23 @@ export default function PaperBar({
   onExport: () => void
 }) {
   if (!paper.length) return null
+  // 「能不能印」在这里就给结论——别让人排完、点导出、编译完才在报告里
+  // 看到"3 道缺解析"。答案/解析两样都齐才算可印。
+  const missingAns = paper.filter((q) => !q.flags?.['答案']).length
+  const missingSol = paper.length - answered
+  const ready = missingAns === 0 && missingSol === 0
   return (
-    <div className={`app-chrome anim-slide-d flex shrink-0 items-center gap-2.5 border-b px-4 py-2
-                     text-[12.5px] backdrop-blur-xl ${view === 'paper'
+    <div className={`anim-slide-d flex shrink-0 items-center gap-2.5 border-b px-4 py-2
+                     text-[12.5px] ${view === 'paper'
                        ? 'border-brand-line bg-brand-soft/40'
-                       : 'border-border/70 bg-[color-mix(in_srgb,var(--color-surface)_62%,transparent)]'}`}>
+                       : 'border-border bg-surface'}`}>
       <button onClick={onToggleView}
         className="press flex min-w-0 flex-1 items-center gap-2.5 text-left">
         <ClipboardList size={14}
           className={view === 'paper' ? 'shrink-0 text-brand' : 'shrink-0 text-ink-faint'} />
         <span className="inline-flex shrink-0 items-baseline gap-1">
           <span className={view === 'paper' ? 'font-semibold text-brand-ink' : 'font-semibold text-ink'}>
-            {view === 'paper' ? '当前卷子' : '已选'}
+            {view === 'paper' ? '当前卷子' : '卷子'}
           </span>
           <Num value={paper.length} className="font-semibold text-brand-ink" />
           <span className={view === 'paper' ? 'text-brand-ink' : 'text-ink'}>题</span>
@@ -38,9 +43,22 @@ export default function PaperBar({
         <span className="shrink-0 text-ink-soft">
           <Num value={paperScore} /> 分
         </span>
-        <span className={`tnum shrink-0 ${answered === paper.length ? 'text-has' : 'text-warn'}`}>
-          有解析 {answered}/{paper.length}
-        </span>
+        {ready ? (
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-has-soft px-1.5 py-[1px]
+                           text-[11px] font-medium text-has"
+            title="每一道都有答案和解析，可以直接导出印刷">
+            <Check size={10} strokeWidth={3} />可以印
+          </span>
+        ) : (
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-warn-soft px-1.5 py-[1px]
+                           text-[11px] font-medium text-warn"
+            title="导出仍会继续，但报告里会列出这些题——先补完再印更像一份正式卷">
+            <TriangleAlert size={10} />
+            {missingAns > 0 && <>缺答案 <Num value={missingAns} /></>}
+            {missingAns > 0 && missingSol > 0 && <span className="opacity-60">·</span>}
+            {missingSol > 0 && <>缺解析 <Num value={missingSol} /></>}
+          </span>
+        )}
         <span className="hidden min-w-0 flex-1 truncate text-[11.5px] text-ink-faint md:block">
           {view === 'paper'
             ? '每题右侧 ▲▼ 在题型内调顺序，✕ 移出，或直接导出'
@@ -61,8 +79,8 @@ export default function PaperBar({
           （见 App.tsx 的快捷键），不是导出。按钮上标错会让人按了以后
           卷子多一道、导出弹层却没出现。 */}
       <button onClick={onExport} title="导出这份卷子"
-        className="press grad-primary shrink-0 rounded-full px-3 py-[4px] text-[11.5px]
-                   font-medium text-white shadow-[var(--shadow-brand)] hover:brightness-110">
+        className="press grad-primary shrink-0 rounded-full px-3 py-[5px] text-[11.5px]
+                   font-medium text-white hover:brightness-105">
         导出
       </button>
     </div>

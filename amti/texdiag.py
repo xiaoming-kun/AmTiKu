@@ -33,7 +33,6 @@ r"""把 xelatex 的报错翻译成「哪道题、什么原因、怎么修」。
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 #: 每题前面那行注释的前缀。`paper.py` 写、这里读，**改一处就得改两处**。
 QID_PREFIX = "% AMTIKU-Q: "

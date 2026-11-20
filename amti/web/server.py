@@ -8,6 +8,7 @@
     GET  /api/questions      列表（带筛选）—— 工作台左中栏
     GET  /api/questions/{key} 单题详情
     POST /api/questions/{key}/source  改源码（默认只检查不写盘）
+    POST /api/questions/source/batch  按「来源 + 出处」批量改题（默认只预览）
     GET  /api/stats          统计
     GET  /api/facets         筛选项（题型/来源/考点，带计数）
     POST /api/generate/replace 单题换题候选
@@ -36,7 +37,7 @@ from amti.logutil import get_logger                       # noqa: E402
 from amti import lite_cache                                # noqa: E402
 from amti import store                                    # noqa: E402
 from amti.web.core import (_SEQ, _brief_cached_lite, _lite_hash, _seq_of,  # noqa: E402
-                           _usage, _usage_bump)
+                           )
 from amti.web.runtime import (EXIT_IDLE_SEC, INFLIGHT as _INFLIGHT,  # noqa: E402
                               LAST_PING as _LAST_PING, PING_SEEN as _PING_SEEN)
 from amti.web.routers.papers import router as papers_router  # noqa: E402
@@ -46,12 +47,15 @@ from amti.web.routers.meta import router as meta_router      # noqa: E402
 from amti.web.routers.stats import router as stats_router    # noqa: E402
 from amti.web.routers.topics import router as topics_router  # noqa: E402
 from amti.web.routers.questions import router as questions_router  # noqa: E402
+from amti.web.routers.questions_edit import router as questions_edit_router  # noqa: E402
+from amti.web.routers.questions_source import router as questions_source_router  # noqa: E402
+from amti.web.routers.sets import router as sets_router      # noqa: E402
 from amti.web.routers.insights import router as insights_router  # noqa: E402
 from amti.web.routers.generate import router as generate_router  # noqa: E402
 from amti.web.routers.exporting import router as exporting_router  # noqa: E402
 from amti.web.routers.share import router as share_router  # noqa: E402
 from amti.web.routers.ai import (router as ai_router,        # noqa: E402
-                                 _AI_JOBS, _AI_CANCELS)
+                                 )
 
 log = get_logger(__name__)
 
@@ -76,6 +80,9 @@ app.include_router(meta_router)
 app.include_router(stats_router)
 app.include_router(topics_router)
 app.include_router(questions_router)
+app.include_router(questions_edit_router)
+app.include_router(questions_source_router)
+app.include_router(sets_router)
 app.include_router(insights_router)
 app.include_router(generate_router)
 app.include_router(exporting_router)

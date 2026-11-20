@@ -392,7 +392,7 @@ def verdict_of(hit: dict) -> str:
 # ── 自检 ──────────────────────────────────────────────────────────────
 
 def _selftest() -> int:
-    from .schema import Option, Question
+    from .schema import Question
 
     fails = 0
 

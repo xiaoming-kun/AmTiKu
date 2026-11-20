@@ -11,12 +11,17 @@
     python3 测试/接口测试.py          # 不需要 pytest
     pytest 测试/接口测试.py -q        # 有 pytest 时按用例粒度报告
 
-说明：用 `fastapi.testclient.TestClient`，**不用起服务**、不动真实数据
-（只读端点 + 一个会被拒绝的越界请求）。
+说明：用 `fastapi.testclient.TestClient`，**不用起服务**。
+大多数用例只读；少数写回用例（PATCH、改出处）会挑真实题目改一道、再**立刻
+改回去**——为了证明"改了之后能存、存了之后能读回来"。内容能还原，但
+`edited_at` 这类时间戳会被盖新值，`amti.py diff` 就会把它记成「界面补录」。
+所以本文件带一道**收尾护栏**：导入时记下全库的指纹和五个时间戳，退出时
+只把"指纹没变"的题的时间戳写回（`store.update` 直写，不经路由、不再盖戳）。
 """
 
 from __future__ import annotations
 
+import atexit
 import io
 import shutil
 import zipfile
@@ -33,6 +38,66 @@ from fastapi.testclient import TestClient          # noqa: E402
 from amti.web.server import app                    # noqa: E402
 
 client = TestClient(app)
+
+# ── 收尾护栏：把写回用例盖上的时间戳还原 ──────────────────────
+# 为什么必须还原：`amti.py diff` 用「指纹变了但时间戳没变」判定"规则偷偷动了
+# 存量"；反过来说，时间戳变了就会被记成「界面补录」。测试不是人，它盖的戳
+# 属于噪音——accept 层④ 读的正是这份 diff，噪音多了真报警就没人看了。
+# 只在**指纹没变**时还原：内容若真被改坏，宁可让 diff 报出来，也不替它掩盖。
+_STAMP_FIELDS = ("solved_at", "upgraded_at", "edited_at", "migrated_at", "fixed_at")
+_STAMPS: dict[str, tuple[str, dict[str, str]]] = {}
+
+
+def _stamp_begin() -> None:
+    try:
+        from amti import store
+        for _f, q in store.iter_questions():
+            _STAMPS[q.key] = (
+                q.content_hash(),
+                {k: ((q.meta or {}).get(k) or "") for k in _STAMP_FIELDS},
+            )
+    except Exception as e:                       # noqa: BLE001 —— 护栏不能挡住测试本身
+        print("⚠️ 时间戳护栏未启用：%s" % e)
+        _STAMPS.clear()
+
+
+def _stamp_end() -> None:
+    if not _STAMPS:
+        return
+    from amti import store
+    restored: list[str] = []
+
+    def _restore(qs):
+        for q in qs:
+            saved = _STAMPS.get(q.key)
+            if saved is None or q.content_hash() != saved[0]:
+                continue
+            meta = q.meta or {}
+            hit = False
+            for k, v in saved[1].items():
+                if (meta.get(k) or "") == v:
+                    continue
+                if v:
+                    meta[k] = v
+                else:
+                    meta.pop(k, None)
+                hit = True
+            if hit:
+                restored.append(q.key)
+        return None
+
+    try:
+        store.update(_restore)
+    except Exception as e:                       # noqa: BLE001
+        print("⚠️ 时间戳护栏还原失败：%s" % e)
+        return
+    if restored:
+        print("\n时间戳护栏：还原了 %d 道题的时间戳（内容未动）" % len(restored))
+
+
+_stamp_begin()
+atexit.register(_stamp_end)
+
 
 
 # ── 列表与分页边界 ────────────────────────────────────────────
@@ -800,7 +865,7 @@ def test_source_edit_serializes_metadata_and_body_in_sync():
     """
     import json
     from amti import store
-    from amti.web.routers.questions import _source_candidate
+    from amti.web.routers.questions_source import _source_candidate
 
     key = client.get("/api/questions?has=解析&limit=1").json()["items"][0]["key"]
     tex = client.get(f"/api/questions/{_enc(key)}").json()["tex"]
@@ -946,8 +1011,19 @@ def test_settings_reports_kind_folders():
     assert d.get("kinds", {}).get("gaokao") == "试卷", d
     assert d.get("kinds", {}).get("test") == "测试卷", d
     assert d.get("kinds", {}).get("handout") == "讲义", d
-    # 「考点覆盖卷」在界面上是独立卷型，但归 试卷（渲染用 test 卷型）
-    assert d.get("kinds", {}).get("coverage") == "试卷", d
+    # 「考点覆盖卷」已删（2026-11-13），不该再出现在卷型表里
+    assert "coverage" not in d.get("kinds", {}), d
+
+
+def test_generate_rejects_removed_coverage_mode():
+    r"""「考点覆盖卷」已删（2026-11-13）：老请求再传 mode=coverage 必须**明确 400**。
+
+    不能静默落进 `generate()` 的「非 gaokao 全收」分支——那样用户会拿到一份
+    普通筛选结果，还以为自己导出的是覆盖卷（静默错比报错危险得多）。
+    """
+    r = client.post("/api/generate", json={"mode": "coverage"})
+    assert r.status_code == 400, r.text
+    assert "coverage" in r.json().get("detail", ""), r.text
 
 
 def test_export_preview_does_not_archive_or_count():
@@ -957,12 +1033,12 @@ def test_export_preview_does_not_archive_or_count():
     题目的「用过 N 次」还 +1（默认按 used 排序都跟着变）。
     """
     from amti import papers, paths, store
-    from amti.web import server as srv
+    from amti.web.core import _usage
 
     keys = [q.key for _f, q in store.iter_questions()][:1]
     assert keys, "库里没有题，测不了导出"
     name = "预览自检"
-    usage_before = dict(srv._usage())
+    usage_before = dict(_usage())
     archived_before = {x.get("name") for x in papers.all_items()}
     r = client.post("/api/export", json={
         "keys": keys, "title": "__预览自检", "out": name,
@@ -976,7 +1052,7 @@ def test_export_preview_does_not_archive_or_count():
         assert "预览" in d.get("saved_hint", ""), d.get("saved_hint")
         assert {x.get("name") for x in papers.all_items()} == archived_before, \
             "预览不该进存档"
-        assert srv._usage() == usage_before, "预览不该改使用频次"
+        assert _usage() == usage_before, "预览不该改使用频次"
     finally:
         Path(d["tex_abs"]).unlink(missing_ok=True)
 
@@ -992,7 +1068,7 @@ def test_export_unknown_mode_rejected():
 
 def test_export_qid_marks_only_when_compiling():
     """`qid_marks` 只在要编译时才写 —— 不编译的导出不该多出 N 行注释。"""
-    from amti import export, store
+    from amti import store
 
     keys = [q.key for _f, q in store.iter_questions()][:2]
     from amti import paper
@@ -1022,7 +1098,7 @@ def test_rename_migrates_ledger_and_meta_refs():
       一条对不上就整批不执行；
     - `dup_of` / `also_in` / `merged_keys` 不迁 → 查重提示/孪生题对账指向空。
     """
-    from amti.web.routers import questions as srv
+    from amti.web.routers import questions_edit as srv
 
     assert "数据/订正台账.json" in srv._KEY_REF_FILES, "改名落点漏了订正台账"
 
@@ -1046,7 +1122,7 @@ def test_migrate_key_refs_rewrites_ledger_json_safely():
     并且**改完仍是合法 JSON**（改坏了宁可不写）。"""
     import json
     import tempfile
-    from amti.web.routers import questions as srv
+    from amti.web.routers import questions_edit as srv
 
     d = Path(tempfile.mkdtemp())
     f = d / "台账.json"
@@ -1394,9 +1470,9 @@ def test_patch_source_rename_keeps_usage_count():
     而且内存缓存 `_usage_cache` 也要一起换 key，否则下次导出写盘会覆盖回去。
     """
     from amti import store
-    from amti.web import server as srv
+    from amti.web.core import _usage
 
-    usage = srv._usage()
+    usage = _usage()
     pick = None
     for q in store.load_cached():
         tail = q.key.rsplit("#", 1)[-1] if "#" in q.key else ""
@@ -1429,15 +1505,15 @@ def test_patch_source_rename_keeps_usage_count():
                          json={"source": {"book": book, "label": tmp_label, "year": year}})
         assert r.status_code == 200, r.text
         cur_key = r.json()["key"]
-        assert srv._usage().get(cur_key) == n, (
-            f"改名后使用频次没迁过去：{srv._usage().get(cur_key)!r}（应为 {n}）")
-        assert key not in srv._usage(), "旧 key 的计数该被迁走，不能留一份"
+        assert _usage().get(cur_key) == n, (
+            f"改名后使用频次没迁过去：{_usage().get(cur_key)!r}（应为 {n}）")
+        assert key not in _usage(), "旧 key 的计数该被迁走，不能留一份"
     finally:
         if cur_key != key:
             back = client.patch(f"/api/questions/{_enc(cur_key)}",
                                 json={"source": {"book": book, "label": label, "year": year}})
             assert back.status_code == 200, back.text
-        assert srv._usage().get(key) == n, "改回来之后使用频次没还原"
+        assert _usage().get(key) == n, "改回来之后使用频次没还原"
         for f in set(audit_dir.glob("*界面改出处*")) - before_logs:
             f.unlink(missing_ok=True)
         if old_ledger is None:
@@ -1594,6 +1670,205 @@ def test_patch_source_number_must_be_positive_int():
                          json={"source": {**src, "no": bad}})
         assert r.status_code == 400, f"题号 {bad!r} 该被拒：{r.status_code} {r.text}"
     assert client.get(f"/api/questions/{_enc(key)}").json()["key"] == key, "被拒时不许改名"
+
+
+def test_batch_source_preview_then_apply_without_rename():
+    r"""批量改出处：先预览（不写库）→ 确认 → 改完再还原。
+
+    这条走**不改 key** 的路：key 是历史结构（`书/年份/卷名#号`），和出处
+    不同构，单题改出处也只改标签。批量必须一样——否则二十多道题会一起
+    换身份，卷子/讲义的引用全断。
+    """
+    from amti import store
+
+    rows = store.scan_meta()
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        groups.setdefault((r["book"].strip(), r["label"].strip()), []).append(r)
+    pick = None
+    for (book, label), rs in groups.items():
+        if len(rs) != 1 or not book or not label:
+            continue
+        r = rs[0]
+        head, sep, _tail = r["key"].rpartition("#")
+        if not sep or head == "%s/%s" % (r["book"], r["label"]):
+            continue                                  # 要的是**不同构**的反例
+        pick = (book, label, r)
+        break
+    if pick is None:
+        print("    （没有单题且不同构的出处，跳过批量预览用例）")
+        return
+    book, label, row = pick
+    key = row["key"]
+    full = client.get(f"/api/questions/{_enc(key)}").json()
+    before_hash = full["hash"]
+    old_year = (full.get("meta") or {}).get("year") or ""
+    tmp_label = label + "（批量测试）"
+    ledger = ROOT / "数据" / "改出处.jsonl"
+    old_ledger = ledger.read_text(encoding="utf-8") if ledger.is_file() else None
+    audit_dir = ROOT / "变更记录"
+    before_logs = set(audit_dir.glob("*批量改出处*")) if audit_dir.exists() else set()
+    applied = False
+    try:
+        r = client.post("/api/questions/source/batch", json={
+            "old_book": book, "old_label": label,
+            "new_book": book, "new_label": tmp_label,
+            "new_year": 2031, "dry_run": True, "focus_key": key})
+        assert r.status_code == 200, r.text
+        pv = r.json()
+        assert pv["dry_run"] is True and pv["matched"] == 1, pv
+        assert pv["renamed"] == 0 and not pv["conflicts"], pv
+        assert pv["items"][0]["key"] == key
+        assert client.get(f"/api/questions/{_enc(key)}").json()["meta"]["source_label"] == label, \
+            "预览不许写库"
+        # 没变化时按钮该禁用：前端靠 noop 判断
+        same = client.post("/api/questions/source/batch", json={
+            "old_book": book, "old_label": label,
+            "new_book": book, "new_label": label,
+            "new_year": old_year, "dry_run": True}).json()
+        assert same["noop"] is True, same
+
+        # 套卷视图派生自 source_label：改完出处，同一次进程里的 /api/sets
+        # 必须马上按新卷名分组（用户报的「套卷也要实时更新」）。
+        before_sets = client.get("/api/sets", params={"q": label}).json()
+        assert any(x["title"] == label for x in before_sets["items"]), before_sets
+
+        r = client.post("/api/questions/source/batch", json={
+            "old_book": book, "old_label": label,
+            "new_book": book, "new_label": tmp_label,
+            "new_year": 2031, "dry_run": False, "focus_key": key})
+        assert r.status_code == 200, r.text
+        d = r.json()
+        applied = True
+        after_sets = client.get("/api/sets", params={"q": tmp_label}).json()
+        hit = next((x for x in after_sets["items"] if x["title"] == tmp_label), None)
+        assert hit is not None, ("套卷没跟着改出处：", after_sets["items"][:3])
+        assert hit["n"] == 1 and hit["year"] == 2031, hit
+        assert d["changed"] == 1 and d["renamed"] == 0, d
+        assert d["renames"] == [], d
+        assert d["current"]["key"] == key, d["current"]["key"]
+        assert d["current"]["meta"]["source_label"] == tmp_label
+        got = client.get(f"/api/questions/{_enc(key)}").json()
+        assert got["key"] == key, "不同构的 key 不该改名"
+        assert got["hash"] == before_hash, "改出处不该动内容指纹"
+        assert got["meta"]["source_label"] == tmp_label
+        assert got["meta"].get("year") == 2031
+    finally:
+        if applied:
+            back = client.post("/api/questions/source/batch", json={
+                "old_book": book, "old_label": tmp_label,
+                "new_book": book, "new_label": label,
+                "new_year": old_year, "dry_run": False})
+            assert back.status_code == 200, back.text
+        q = client.get(f"/api/questions/{_enc(key)}").json()
+        assert q["meta"]["source_label"] == label, q["meta"]
+        assert (q["meta"].get("year") or "") == (int(old_year) if old_year else ""), q["meta"]
+        back_sets = client.get("/api/sets", params={"q": label}).json()
+        assert any(x["title"] == label for x in back_sets["items"]), "套卷没改回去"
+        for f in set(audit_dir.glob("*批量改出处*")) - before_logs:
+            f.unlink(missing_ok=True)
+        if old_ledger is None:
+            ledger.unlink(missing_ok=True)
+        else:
+            ledger.write_text(old_ledger, encoding="utf-8")
+
+
+def test_batch_source_rename_roundtrip():
+    r"""批量改出处：key 由出处拼出来的题要**一起改名**，改完能原样改回来。
+
+    选一个 2–6 道、key 全部同构、年份一致的小出处，免得太慢；改名前
+    记下每道题的 key/内容指纹，改回后逐一核对。
+    """
+    from amti import store
+
+    rows = store.scan_meta()
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        groups.setdefault((r["book"].strip(), r["label"].strip()), []).append(r)
+    pick = None
+    for (book, label), rs in groups.items():
+        if not (2 <= len(rs) <= 6) or not book or not label:
+            continue
+        ok = True
+        for r in rs:
+            head, sep, _tail = r["key"].rpartition("#")
+            if not sep or head != "%s/%s" % (r["book"], r["label"]):
+                ok = False
+                break
+        if not ok:
+            continue
+        years = {str(r["year"]).strip() for r in rs}
+        if len(years) != 1:
+            continue
+        pick = (book, label, rs)
+        break
+    if pick is None:
+        print("    （没有 2–6 道的小同构出处，跳过批量改名用例）")
+        return
+    book, label, rs = pick
+    snap = []
+    for r in rs:
+        full = client.get(f"/api/questions/{_enc(r['key'])}").json()
+        snap.append((r["key"], full["hash"], (full.get("meta") or {}).get("year") or ""))
+    old_year = snap[0][2]
+    tmp_label = label + "（批量测试）"
+    ledger = ROOT / "数据" / "改出处.jsonl"
+    old_ledger = ledger.read_text(encoding="utf-8") if ledger.is_file() else None
+    audit_dir = ROOT / "变更记录"
+    before_logs = set(audit_dir.glob("*批量改出处*")) if audit_dir.exists() else set()
+    applied = False
+    try:
+        r = client.post("/api/questions/source/batch", json={
+            "old_book": book, "old_label": label,
+            "new_book": book, "new_label": tmp_label,
+            "new_year": old_year, "dry_run": True,
+            "focus_key": snap[0][0]})
+        assert r.status_code == 200, r.text
+        pv = r.json()
+        assert pv["matched"] == len(snap), pv
+        assert pv["renamed"] == len(snap), pv
+        assert not pv["conflicts"], pv
+
+        r = client.post("/api/questions/source/batch", json={
+            "old_book": book, "old_label": label,
+            "new_book": book, "new_label": tmp_label,
+            "new_year": old_year, "dry_run": False,
+            "focus_key": snap[0][0]})
+        assert r.status_code == 200, r.text
+        d = r.json()
+        applied = True
+        assert d["changed"] == len(snap), d
+        assert d["renamed"] == len(snap), d
+        assert len(d["renames"]) == len(snap), d["renames"]
+        assert d["current"]["key"] == d["renames"][0]["new"], d["current"]["key"]
+        for old_key, old_hash, _y in snap:
+            tail = old_key.rsplit("#", 1)[-1]
+            new_key = f"{book}/{tmp_label}#{tail}"
+            assert client.get(f"/api/questions/{_enc(old_key)}").status_code == 404, old_key
+            q = client.get(f"/api/questions/{_enc(new_key)}")
+            assert q.status_code == 200, q.text
+            q = q.json()
+            assert q["hash"] == old_hash, "改出处不该动内容指纹"
+            assert q["meta"]["source_label"] == tmp_label
+    finally:
+        if applied:
+            back = client.post("/api/questions/source/batch", json={
+                "old_book": book, "old_label": tmp_label,
+                "new_book": book, "new_label": label,
+                "new_year": old_year, "dry_run": False})
+            assert back.status_code == 200, back.text
+        for old_key, old_hash, _y in snap:
+            q = client.get(f"/api/questions/{_enc(old_key)}")
+            assert q.status_code == 200, f"没改回来：{old_key}"
+            q = q.json()
+            assert q["hash"] == old_hash, old_key
+            assert q["meta"]["source_label"] == label, q["meta"]
+        for f in set(audit_dir.glob("*批量改出处*")) - before_logs:
+            f.unlink(missing_ok=True)
+        if old_ledger is None:
+            ledger.unlink(missing_ok=True)
+        else:
+            ledger.write_text(old_ledger, encoding="utf-8")
 
 
 def test_search_ranked_by_stem():
@@ -1796,19 +2071,228 @@ def test_search_fts_status():
     assert st["n"] == total, (st, total)
 
 
-def test_pdf_layout_markers_and_score_seal():
+def test_pdf_overwide_formula_fit():
+    r"""行间公式超宽：**按题定位**包 `resizebox`，编完溢出归零；太宽的跳过并报出来。
+
+    为什么要按题：`detected at line N` 的 N 是 TeX 完成盒子的行，公式往往在 N
+    前面好几行（实测公式结束在 171、报的是 177）——按行号硬匹配会全部落空。
+    太宽（> `MATH_FIT_MAX_PT`）的不缩：缩完只剩六成字号，字会糊成一条线。
+    """
+    import tempfile
+    from pathlib import Path as _P
+    from amti import export, layout, pdfcheck, paper
+    from amti.schema import Question
+
+    wide = "+".join("a_{%d}b_{%d}" % (i, i + 1) for i in range(18))
+    sol = "解析：代入得\n\\[" + wide + "=1\\]\n所以成立。"
+    q = Question(key="排版回归/宽公式#1", type="single_choice", stem="求 $x$。",
+                 options=[], answer="1", solution=sol)
+    text = paper.render_paper([q], mode="test", title="宽公式",
+                              show_answers=True, qid_marks=True)
+    with tempfile.TemporaryDirectory() as td:
+        tex = _P(td) / "wide.tex"
+        tex.write_text(text, encoding="utf-8")
+        ok, log = export.compile_tex(tex)
+        assert ok, (log or "")[:400]
+        over = pdfcheck.overfull(tex.with_suffix(".log"), tex)
+        over = [o for o in over if o["pt"] >= layout.OVERFULL_PT]
+        assert over, "合成文档应当报公式 Overfull"
+        assert over[0]["key"] == "排版回归/宽公式#1", over[0]
+        assert over[0]["pt"] <= layout.MATH_FIT_MAX_PT, (
+            "测试用的公式太宽（%.0fpt），会被「缩了看不清」的阈值跳过" % over[0]["pt"])
+        fitted, n = paper.fit_math_in_questions(tex.read_text(encoding="utf-8"), over)
+        assert n == 1, "应当包一个公式，实际 %d" % n
+        assert "amtimaxwidth" in fitted, "应当用只缩不放的盒子"
+        tex.write_text(fitted, encoding="utf-8")
+        ok, log = export.compile_tex(tex)
+        assert ok, (log or "")[:400]
+        left = [o for o in pdfcheck.overfull(tex.with_suffix(".log"), tex)
+                if o["pt"] >= layout.OVERFULL_PT]
+        assert not left, "包完公式还有溢出：%s" % left[:2]
+
+    # 太宽的公式跳过（缩了看不清），并且重复调用幂等
+    huge = [{"pt": layout.MATH_FIT_MAX_PT + 100, "line": 1,
+             "key": "排版回归/宽公式#1"}]
+    assert paper.fit_math_in_questions(fitted, huge)[1] == 0
+    assert paper.fit_math_in_questions(fitted, over)[1] == 0
+
+
+def test_pdf_inline_env_math_fit():
+    r"""行内 `$…\begin{cases}…\end{cases}…$` 溢出 → 改成独立一行并缩到版心。
+
+    这类公式块**不可断行**，夹在段落里必然出血（实测那道概率题冲出 108.9pt）。
+    这里只钉源码层：转换出来的形态、只动报溢出那一行、以及**幂等**
+    （重排多遍不会越套越深）。
+    """
+    from amti import layout, paper
+
+    seg = "\\begin{cases}" + "+".join("x_{%d}" % i for i in range(20)) + r" &=1\\ y &=2\end{cases}"
+    src = "所以 $E(X)=%s$ 成立。\n" % seg
+    tex = "% AMTIKU-Q: 排版回归/行内公式#1\n" + src
+    out, n = paper.fit_inline_env_math(tex, [{"pt": 108.9, "line": 2,
+                                              "key": "排版回归/行内公式#1"}])
+    assert n == 1, n
+    # 行内公式转显示时**保持文本样式**，并用「只缩不放」的盒子（不能拉宽）
+    assert "\\amtimaxwidth{$" in out and "\\displaystyle" not in out, out[:160]
+    assert "\\begin{cases}" in out and out.count("\\amtimaxwidth") == 1
+    assert out.startswith("% AMTIKU-Q: 排版回归/行内公式#1"), "题标记不能丢"
+    assert paper.fit_inline_env_math(out, [{"pt": 108.9, "line": 2,
+                                            "key": "排版回归/行内公式#1"}])[1] == 0, "不是幂等"
+    # 小于阈值的溢出不动
+    assert paper.fit_inline_env_math(tex, [{"pt": layout.OVERFULL_PT / 2, "line": 2,
+                                            "key": "排版回归/行内公式#1"}])[1] == 0
+
+
+def test_pdf_overwide_aligned_formula_fit():
+    r"""多行公式（`aligned`/`cases`）也能缩：它们能合法地放进 `$\displaystyle …$`。
+
+    与外层 `equation/align` 不同，`aligned/cases/array/matrix` 是**内层**数学环境，
+    包进 `$…$` 不会报错，所以多行公式的溢出也能自动收。合成 20 项对齐公式实测：
+    205.7pt → 包 resizebox → 重编 → 0。
+    """
+    import tempfile
+    from pathlib import Path as _P
+    from amti import export, layout, pdfcheck, paper
+    from amti.schema import Question
+
+    body = "\n".join(
+        "%s &= %d" % ("+".join("a_{%d}" % (i + 100 * k) for i in range(20)), k)
+        + (" \\\\" if k < 2 else "") for k in range(3))
+    sol = "解析：\\[\n\\begin{aligned}\n" + body + "\n\\end{aligned}\n\\]\n完毕。"
+    q = Question(key="排版回归/多行公式#1", type="single_choice", stem="求 $x$。",
+                 options=[], answer="1", solution=sol)
+    text = paper.render_paper([q], mode="test", title="多行公式",
+                              show_answers=True, qid_marks=True)
+    with tempfile.TemporaryDirectory() as td:
+        tex = _P(td) / "aligned.tex"
+        tex.write_text(text, encoding="utf-8")
+        ok, log = export.compile_tex(tex)
+        assert ok, (log or "")[:400]
+        over = [o for o in pdfcheck.overfull(tex.with_suffix(".log"), tex)
+                if o["pt"] >= layout.OVERFULL_PT]
+        assert over and over[0]["key"] == "排版回归/多行公式#1", over[:2]
+        fitted, n = paper.fit_math_in_questions(tex.read_text(encoding="utf-8"), over)
+        assert n == 1, "多行公式应当也能包，实际 %d" % n
+        tex.write_text(fitted, encoding="utf-8")
+        ok, log = export.compile_tex(tex)
+        assert ok, "包完多行公式编译失败：%s" % (log or "")[:400]
+        left = [o for o in pdfcheck.overfull(tex.with_suffix(".log"), tex)
+                if o["pt"] >= layout.OVERFULL_PT]
+        assert not left, "包完多行公式还有溢出：%s" % left[:2]
+
+
+def test_pdf_overwide_table_fit():
+    r"""超宽表格：只有"溢出确实落在表里"才包 `\resizebox`，包完再编一遍溢出归零。
+
+    合成一个 12 列宽表 → 编译必然 `Overfull \hbox`（实测 +470pt）→
+    `paper.fit_tables_at_lines()` 按行号包表 → 重新编译 → 不再溢出；
+    再包一次是空操作（幂等，重排多遍也不会越包越深）。
+    """
+    import tempfile
+    from pathlib import Path as _P
+    from amti import export, pdfcheck, paper
+    from amti.schema import Question
+
+    stem = ("下面这张表很宽：\n\\begin{center}\n"
+            "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|}\n\\hline\n"
+            + " & ".join(["一二三四五六"] * 12) + " \\\\\n\\hline\n"
+            "\\end{tabular}\n\\end{center}")
+    q = Question(key="排版回归/宽表#1", type="single_choice", stem=stem,
+                 options=[], answer="A", solution="略")
+    text = paper.render_paper([q], mode="test", title="宽表", qid_marks=True)
+    with tempfile.TemporaryDirectory() as td:
+        tex = _P(td) / "wide.tex"
+        tex.write_text(text, encoding="utf-8")
+        ok, log = export.compile_tex(tex)
+        assert ok, (log or "")[:400]
+        over = pdfcheck.overfull(tex.with_suffix(".log"), tex)
+        assert over, "合成文档应当报 Overfull"
+        fitted, n = paper.fit_tables_at_lines(
+            tex.read_text(encoding="utf-8"), [o["line"] for o in over])
+        assert n == 1, "应当正好包一张表，实际 %d" % n
+        assert "\\resizebox{\\linewidth}{!}{%" in fitted
+        tex.write_text(fitted, encoding="utf-8")
+        ok, log = export.compile_tex(tex)
+        assert ok, (log or "")[:400]
+        from amti import layout as _L
+        left = [o for o in pdfcheck.overfull(tex.with_suffix(".log"), tex)
+                if o["pt"] >= _L.OVERFULL_PT]
+        assert not left, "包完表还有溢出：%s" % left[:2]
+    assert paper.fit_tables_at_lines(fitted, [1])[1] == 0, "重复包表不是幂等的"
+
+
+def test_pdf_layout_markers():
     from amti import paper, store
     det = next(q for q in store.load_all() if q.type == "detailed_answer")
-    tex = paper.render_paper([det], mode="test", title="体检",
-                             qid_marks=True, score_box=True, seal_line=True)
+    tex = paper.render_paper([det], mode="test", title="体检", qid_marks=True)
     assert "% AMTIKU-DETAIL: 1" in tex
     assert "\\label{amtiq1}" in tex and "\\label{amtiqend1}" in tex
-    assert "总分" in tex and "密封线内不要答题" in tex
+    # **第一页密封线已按用户要求删除**（2026-11-14）：竖线和"密封线内不要答题"都不许再出现
+    assert "密封线内不要答题" not in tex, "密封线又被加回来了"
     assert tex.count("\\needspace{12\\baselineskip}") >= 1
+    # **卷头总分框已去掉**（用户 2026-11-13：「不要总分这个表格」，所有卷型都不印）。
+    # 钉住那张表的两处特征，别哪天又被加回来（题干里出现「总分」不算，只认表格）。
+    assert "得分 &" not in tex, "卷头又出现总分框（得分行）"
+    assert "\\begin{tabular}{|c|c|c|c|c|c|}" not in tex, "卷头又出现六列总分框"
+    assert "题号 & 一" not in tex, "卷头又出现题号/一/二/三/四/总分那行"
+
+
+def test_pdf_relayout_primitives():
+    r"""跨页修复/讲义降级/溢出解析的**最小单元**（不编译，只钉源码层）。
+
+    · `force_newpage={N}`：第 N 题前必须出现 `\needspace{\textheight}`
+      ——"除非整页空着，否则断页"，跨页修复循环就靠它；
+    · `handout_tight=True`：讲义图上限再压一档（落到 `OPT_TIGHT_*`）；
+    · `pdfcheck.overfull()`：能从 .log 里认出 Overflow 并翻回题 key。
+    """
+    import tempfile
+    from pathlib import Path as _P
+    from amti import paper, pdfcheck, store
+
+    q = store.find("高考真题汇编/2010/广东卷（理）#6") or next(
+        x for x in store.load_all() if paper._image_option_question(x))
+    tex = paper.render_paper([q], mode="test", title="重排", force_newpage={1})
+    assert "\\needspace{\\textheight}" in tex, "强制断页标记没写进去"
+    loose = paper.render_paper([q], mode="handout", title="讲义")
+    tight = paper.render_paper([q], mode="handout", title="讲义", handout_tight=True)
+    assert loose != tight, "讲义降级没生效"
+    assert "0.10\\textheight" in tight, "降级后图上限应是 OPT_TIGHT_H"
+
+    # 独立成行、又没写 width 的图 → 补版心宽上限；行内图不动
+    from amti.paper import _cap_figure_width
+    assert "width=0.85\\textwidth" in _cap_figure_width("\\includegraphics{a.png}")
+    assert _cap_figure_width("如图\\includegraphics{a.png}") == "如图\\includegraphics{a.png}"
+    assert "width=6cm" in _cap_figure_width("\\includegraphics[width=6cm]{a.png}")
+
+    # Overfull 解析：假日志 + 假 tex，行号要能翻回题 key
+    with tempfile.TemporaryDirectory() as td:
+        texf = _P(td) / "a.tex"
+        texf.write_text("\\begin{document}\n% AMTIKU-Q: 模拟题/x#3\nbody\n"
+                        "\\end{document}\n", encoding="utf-8")
+        logf = _P(td) / "a.log"
+        logf.write_text(
+            "(./a.tex\nOverfull \\hbox (17.3pt too wide) in paragraph at lines 3--3\n)\n",
+            encoding="utf-8")
+        over = pdfcheck.overfull(logf, texf)
+    assert over and over[0]["pt"] == 17.3 and over[0]["key"] == "模拟题/x#3", over
+
+
+def test_layout_cache_roundtrip():
+    r"""跨页档案：记录 → 命中 → 忘掉。用假 key，不污染真档案。"""
+    from amti import layout_cache
+    fake = "__排版回归__/假题#1"
+    assert fake not in layout_cache.known_splitters([fake], "test")
+    layout_cache.mark_splitters([fake], "test")
+    assert fake in layout_cache.known_splitters([fake], "test")
+    assert layout_cache.forget([fake]) >= 1
+    assert fake not in layout_cache.known_splitters([fake], "test")
 
 
 def test_pdf_brand_header_footer():
-    r"""卷子和讲义都要有 AmTiKu 页眉页脚（**版式，不是水印**）。
+    r"""卷子和讲义都要有 AmMath 页眉页脚（**版式，不是水印**）。
+
+    产品名是 AmMath（安装包/仓库等历史标识才沿用 AmTiKu），卷面印的
+    必须是 AmMath——用户 2026-11-13 指着导出 PDF 的页眉说的就是这一条。
 
     这条只钉 LaTeX 源码这一层：PDF 里到底排没排出来，由
     `accept` 的端到端/人工看图兜底（xelatex 才是真相）。
@@ -1817,11 +2301,13 @@ def test_pdf_brand_header_footer():
     q = next(iter(store.load_all()))
     tex = paper.render_paper([q], mode="test", title="品牌页眉")
     assert r"\fancyhead[L]" in tex and r"\fancyhead[R]" in tex
-    assert "AmTiKu" in tex and "K12 数学题库" in tex
+    assert "AmMath" in tex and "K12 数学题库" in tex
+    assert "AmTiKu" not in tex, "卷面上还印着旧名 AmTiKu"
     assert r"\fancyfoot[C]" in tex and r"\pageref{LastPage}" in tex
     # 讲义走的是另一个文档类（elegantnote），版式也必须同一份
     h = paper.render_paper([q], mode="handout", title="品牌讲义")
-    assert r"\fancyhead[L]" in h and "AmTiKu" in h
+    assert r"\fancyhead[L]" in h and "AmMath" in h
+    assert "AmTiKu" not in h, "讲义里还印着旧名 AmTiKu"
     assert "K12 数学讲义" in h
 
 
@@ -1943,15 +2429,24 @@ def test_pdf_layout_bracket_and_figure():
                        for line in q.stem.splitlines()))
     ftex = paper.render_paper([fig], mode="gaokao", title="配图")
     assert "\\begin{center}\n\\includegraphics" in ftex, "独立成行的配图要居中"
-    assert "height=0.32\\textheight" in ftex, "配图要有高度上限"
+    assert "width=5.0cm" in ftex, "配图统一按 5cm 封顶"
+    assert "height=4.0cm" in ftex, "配图高度统一 4cm"
+    # 作者写的更小就保留；大的才压到 5×4cm（只缩不放）
+    row = paper.fit_figure_rows(
+        "\\includegraphics[width=9.0cm]{A}\\quad"
+        "\\includegraphics[width=2.0cm]{B}")
+    assert row.count("width=5.0cm") == 1 and "width=2.0cm" in row, row
 
 
 def test_pdf_image_options_not_split():
     r"""**四个图选项的题不许被拆到两页**（2010 广东卷（理）第 6 题实测）。
 
-    措施两条，缺一不可：
-    1. 图选项 ≥3 个时，把 `width=0.4\linewidth` 压到 0.30（整块从 12.4cm 收到 8cm）；
-    2. 这类题按半页预留（`\needspace{0.5\textheight}`），节标题跟首题一起留
+    措施三条，缺一不可：
+    1. 图选项 ≥3 个时，把 `width=0.4\linewidth` 压到 `0.84 / 列数`（4 列 → 0.21），
+       整块从 12.4cm 收到 8cm 以内；
+    2. 每一项都是图时**钉死列数**（`\begin{choices}[columns = 4]`），四张排一行，
+       不再退成 2×2（用户 2026-11-13：「A/B/C/D 最好能横排」）；
+    3. 这类题按半页预留（`\needspace{0.5\textheight}`），节标题跟首题一起留
        （`0.58\textheight`），否则会留下孤零零一行「一、选择题」。
     """
     from amti import paper, store
@@ -1964,8 +2459,13 @@ def test_pdf_image_options_not_split():
             1 for o in q.options
             if "includegraphics" in (o.text or "") or "tikzpicture" in (o.text or "")) >= 3:
         tex = paper.render_paper([q], mode="gaokao", title="图选项")
-        assert "\\needspace{0.5\\textheight}" in tex
-        assert "width=0.30\\linewidth" in tex, "三个图选项以上要收到 0.30 行宽"
+        # 图选项题的预留从 0.5 收到 0.40（跨页修复循环兜底），见 `layout.NEED_IMG_OPT`
+        assert "\\needspace{0.40\\textheight}" in tex
+        # 四张全图选项：列数钉死 4、宽度按 0.84/4 收、再有高度上限
+        assert "\\begin{choices}[columns = 4]" in tex, "四个图选项要横排成一行"
+        # 上限按 \textwidth 记（exam-zh 的 choices 里 \linewidth 是列宽，会缩成 20pt）
+        assert "width=0.18\\textwidth" in tex, "四列时图宽要收到 0.18 版心宽"
+        assert "height=0.20\\textheight" in tex, "图选项要有高度上限"
         assert "width=0.4\\linewidth" not in tex.split("\\begin{choices}", 1)[1]
 
     # 表格单元格里的图不包 center（LR 模式会报 Not allowed in LR mode）
@@ -2009,7 +2509,7 @@ def test_ai_cancel_sets_flag_and_state():
     """取消端点只置位 + 改状态，不碰网络；用一个假任务验证。"""
     import threading
     import time
-    from amti.web import server as _srv
+    from amti.web.routers import ai as _srv
     jid = "ai-test-cancel"
     ev = threading.Event()
     _srv._AI_JOBS[jid] = {"state": "running", "done": 1, "total": 2,
@@ -2032,8 +2532,8 @@ def test_ai_cancel_end_to_end_keeps_partial():
     import base64
     import threading
     import time
-    from amti import aiingest as _ai
-    from amti.web import server as _srv
+    from amti import ai_spec as _ai
+    from amti.web.routers import ai as _srv
     if not client.get("/api/ai/status").json().get("configured"):
         return                                  # 没配 key 时 /run 本来就 400
 
@@ -2044,12 +2544,10 @@ def test_ai_cancel_end_to_end_keeps_partial():
         stop = kw.get("should_stop") or (lambda: False)
         for _ in range(500):
             if stop():
-                return {"ok": True, "latex": "", "title": "", "cancelled": True,
-                        "crop_dir": "",
-                        "stats": {"pages": 1, "ok": 0, "cancelled": True},
-                        "pending": [], "problems": [], "warnings": ["任务已取消"]}
+                # 真实 run() 就是这样取消的：抛 Cancelled，不返回半份结果。
+                raise _ai.Cancelled("已取消")
             time.sleep(0.01)
-        return {"ok": True, "latex": "", "title": "", "cancelled": False,
+        return {"ok": True, "latex": "", "title": "",
                 "crop_dir": "", "stats": {"pages": 1, "ok": 0},
                 "pending": [], "problems": [], "warnings": []}
 
@@ -2070,7 +2568,8 @@ def test_ai_cancel_end_to_end_keeps_partial():
                 break
             time.sleep(0.01)
         assert j.get("state") == "cancelled", j
-        assert (j.get("result") or {}).get("cancelled") is True, j
+        assert j.get("result") is None, j
+        assert j.get("error") == "已取消", j
     finally:
         _ai.run = old
         if job:
@@ -2229,6 +2728,79 @@ def test_duplicates_endpoint():
     assert isinstance(got["items"], list)
     for it in got["items"]:
         assert it["key"] != key
+
+
+# ── 套卷（原卷） ────────────────────────────────────────────
+
+def test_sets_list_and_detail():
+    r = client.get("/api/sets")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["total"] == len(d["items"]) and d["total"] > 0, "套卷列表空了"
+    first = d["items"][0]
+    # 列表只带摘要（不带 keys），明细才带题号顺序
+    for k in ("id", "title", "n", "answers", "solutions", "stage"):
+        assert k in first, f"套卷缺字段 {k}"
+    # 明细：按**原卷题号**排，不是按录入顺序
+    r2 = client.get("/api/sets/" + urllib.parse.quote(first["id"]))
+    assert r2.status_code == 200, r2.text
+    det = r2.json()
+    assert len(det["keys"]) == first["n"], (len(det["keys"]), first["n"])
+    assert [x["key"] for x in det["items"]] == det["keys"]
+    nos = [int(x["source_no"]) for x in det["items"] if str(x.get("source_no", "")).isdigit()]
+    assert nos == sorted(nos), f"题号没有升序：{nos[:10]}"
+
+
+def test_sets_unknown_404():
+    assert client.get("/api/sets/" + urllib.parse.quote("不存在的卷名")).status_code == 404
+
+
+# ── 考点交集 / 并集 ──────────────────────────────────────────
+
+def test_point_mode_all_vs_any():
+    """同一个考点组合：交集的结果必须是并集的子集，且每题都挂齐了。"""
+    facets = client.get("/api/facets").json()
+    pts = [p for p in facets["points"] if p["n"] > 0][:2]
+    if len(pts) < 2:
+        return
+    ids = ",".join(p["value"] for p in pts)
+    any_ = client.get("/api/questions", params={"point": ids, "limit": 1000}).json()
+    all_ = client.get("/api/questions", params={"point": ids, "point_mode": "all",
+                                                "limit": 1000}).json()
+    assert all_["total"] <= any_["total"], (
+        f"交集 {all_['total']} 比并集 {any_['total']} 还多")
+    want = {p["value"] for p in pts}
+    for it in all_["items"]:
+        assert want <= set(it["points"]), f"{it['key']} 没挂齐 {want}"
+
+
+def test_point_mode_via_search_syntax():
+    """搜索框 `考点:A&B` 与显式参数是同一口径。"""
+    facets = client.get("/api/facets").json()
+    pts = [p for p in facets["points"] if p["n"] > 0][:2]
+    if len(pts) < 2:
+        return
+    a, b = pts[0]["value"], pts[1]["value"]
+    q = f"考点:{a}&{b}"
+    got = client.get("/api/questions", params={"q": q, "limit": 1000}).json()
+    want = {a, b}
+    for it in got["items"]:
+        assert want <= set(it["points"])
+    # 语法解析不到考点时必须是 0 结果，不能退化成“不筛”
+    assert client.get("/api/questions", params={"q": "考点:不存在的考点名"}).json()["total"] == 0
+
+
+def test_incomplete_filter_is_subset_and_accepts_param():
+    """「待补」= 缺答案**或**缺解析：只能是全库子集，且返回的每一条都确实不全。
+
+    库很干净时这个数可能是 0——**0 也是有效结果**，不能当成参数坏了。
+    """
+    base = client.get("/api/questions?limit=1").json()["total"]
+    d = client.get("/api/questions", params={"incomplete": "1", "limit": 500}).json()
+    assert d["total"] <= base, (d["total"], base)
+    for it in d["items"]:
+        assert not (it["flags"]["答案"] and it["flags"]["解析"]), (
+            f"{it['key']} 两样都有却被列进「待补」")
 
 
 # ── 无 pytest 时的运行器 ──────────────────────────────────────

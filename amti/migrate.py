@@ -20,7 +20,6 @@ import argparse
 import json
 import re
 import sqlite3
-import sys
 import os
 from pathlib import Path
 

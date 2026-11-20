@@ -6,14 +6,15 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle, BookOpen, Check, CheckCircle2, ChevronDown, ChevronRight,
-  FileCode2, FileText, Info, Loader2, Pencil, Plus, Save, Search, Sparkles, Tags, Trash2, X,
+  FileCode2, FileText, Info, Layers, Loader2, Pencil, Plus, Save, Search, Sparkles, Tags, Trash2, X,
 } from 'lucide-react'
 import { Highlight, renderBlocks } from '@/lib/render'
-import type { Q, SavedHandler } from '@/lib/types'
+import type { Q, SavedHandler, SourceBatchDone } from '@/lib/types'
 
 import { api, reportErr } from '@/lib/api'
 import { Flags } from '@/app/ui'
 import SourceEditor from '@/app/SourceEditor'
+import SourceBatchDialog from '@/app/SourceBatchDialog'
 import BusyOverlay from '@/app/BusyOverlay'
 import { DIFF_STARS, hasImageOptions, optionRange, starsLabel, dispPoint } from '@/lib/display'
 
@@ -168,9 +169,11 @@ export function SolutionEditor({ q, onSaved, onCancel }: {
   )
 }
 
-export function Detail({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPick, refreshing = false, kw, loadingFull = false, autoSourceKey = '', autoSourceN = 0 }: {
+export function Detail({ q, onSaved, onBatchSource, facets, onFindPoint, onDeleteAsk, onPick, refreshing = false, kw, loadingFull = false, autoSourceKey = '', autoSourceN = 0 }: {
   q: Q | null
   onSaved: SavedHandler
+  /** 批量改出处完成：把改名映射交给 App（卷子/列表里还存着旧 key）。 */
+  onBatchSource?: (res: SourceBatchDone) => void
   facets: any
   /** 搜索词：详情里的题干/答案/解析也高亮命中（可选） */
   kw?: string
@@ -190,7 +193,8 @@ export function Detail({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPick, r
 }) {
   if (!q) return <div className="flex h-full items-center justify-center text-[13px] text-ink-faint">选一道题</div>
 
-  return <DetailBody q={q} onSaved={onSaved} facets={facets} refreshing={refreshing}
+  return <DetailBody q={q} onSaved={onSaved} onBatchSource={onBatchSource}
+                     facets={facets} refreshing={refreshing}
                      onFindPoint={onFindPoint} onDeleteAsk={onDeleteAsk} onPick={onPick} kw={kw}
                      loadingFull={loadingFull}
                      autoSourceKey={autoSourceKey} autoSourceN={autoSourceN} />
@@ -203,8 +207,10 @@ const SRC_INPUT = 'h-[30px] w-full rounded-lg border border-border bg-bg px-2 te
   'focus:shadow-[0_0_0_3px_var(--color-brand-soft)]'
 
 /** 难度、考点、出处的**编辑**控件（下拉抽屉式）。 */
-export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }: {
+export function TagsEditor({ q, onSaved, onBatchSource, facets, refreshing = false, searchKw }: {
   q: Q; onSaved: SavedHandler; facets: any
+  /** 批量改出处完成（App 迁移卷子/列表里的旧 key 并刷新当前题）。 */
+  onBatchSource?: (res: SourceBatchDone) => void
   /** 列表正在重新拉取（由 App 的 loading 传下来） */
   refreshing?: boolean
   /** 搜索词：考点名也高亮命中（注意和下面管搜索框的 `kw` 区分） */
@@ -219,6 +225,8 @@ export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }:
   const [srcLabel, setSrcLabel] = useState('')
   const [srcNo, setSrcNo] = useState('')     // 题号 = key 里 `#` 后面那截
   const [srcYear, setSrcYear] = useState('')
+  // 「批量改出处」弹窗：把全库同来源+同出处的题一次改成当前草稿里的新值。
+  const [batchSrcOpen, setBatchSrcOpen] = useState(false)
   // 保存成功后**这一行闪一下 + 冒一个「已保存」**。改难度/考点是高频动作，
   // 值虽然当场就变了，但没有"收到了"的反馈，人不知道到底存没存。
   const [flash, setFlash] = useState<'' | '难度' | '考点' | '出处'>('')
@@ -265,6 +273,9 @@ export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }:
   // 题号统一成不带前导零的正整数——和后端 `patch_question` 同一套规则，
   // 也保证 `#` 后面那截永远是纯数字。
   const noOk = /^[1-9]\d*$/.test(no)
+  // 批量改**不碰题号**（同一份卷子的题号本来就不同）；草稿里改了题号时
+  // 先让人单独保存，别让批量按钮把改了一半的题号悄悄吞掉。
+  const noDirty = no !== keyTail
   // key 是不是**由出处拼出来的**。历史数据里有 `书/年份/卷名#号` 这种多一层
   // 目录的 key，和 `meta.book`+`source_label` 不同构；那种题改出处只动标签，
   // key 的目录保持原样（否则等于换身份，组过的卷子就断引用）。规则与后端同一份。
@@ -552,13 +563,44 @@ export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }:
             <>key 不变：<code className="font-mono text-ink-soft">{q.key}</code></>
           )}
         </div>
-        <button disabled={busy || !srcBook.trim() || !srcLabel.trim() || !noOk} onClick={saveSrc}
-          className="press mt-2 h-[28px] w-full rounded-lg border border-brand-line bg-brand-soft
-                     text-[12px] font-medium text-brand-ink transition-colors
-                     hover:bg-brand hover:text-white disabled:cursor-not-allowed
-                     disabled:border-border disabled:bg-muted disabled:text-ink-faint">
-          保存出处
-        </button>
+        <div className="mt-2 flex items-center gap-1.5">
+          <button disabled={busy || !srcBook.trim() || !srcLabel.trim() || !noOk} onClick={saveSrc}
+            className="press h-[28px] flex-1 rounded-lg border border-brand-line bg-brand-soft
+                       text-[12px] font-medium text-brand-ink transition-colors
+                       hover:bg-brand hover:text-white disabled:cursor-not-allowed
+                       disabled:border-border disabled:bg-muted disabled:text-ink-faint">
+            保存出处
+          </button>
+          {onBatchSource && (
+            <button disabled={busy || !srcBook.trim() || !srcLabel.trim() || !noOk
+                              || noDirty
+                              || !String(q.meta?.book || '').trim()
+                              || !String(q.meta?.source_label || '').trim()}
+              onClick={() => setBatchSrcOpen(true)}
+              title={!String(q.meta?.book || '').trim() || !String(q.meta?.source_label || '').trim()
+                ? '这道题还没标出处，先用「保存出处」存一次'
+                : noDirty
+                  ? '批量改保留每道题的原题号；题号也要改的话，先用「保存出处」存一次'
+                  : '搜索全库「来源 + 出处」相同的题，一次改成上面的新值（题号各自保留）'}
+              className="press inline-flex h-[28px] shrink-0 items-center gap-1 rounded-lg
+                         border border-border bg-surface px-2.5 text-[12px] text-ink-soft
+                         transition-colors hover:border-brand-line hover:bg-brand-soft/50
+                         hover:text-brand-ink disabled:cursor-not-allowed disabled:opacity-40">
+              <Layers size={12} />批量改
+            </button>
+          )}
+        </div>
+        {batchSrcOpen && (
+          <SourceBatchDialog
+            focusKey={q.key}
+            oldBook={String(q.meta?.book || '')}
+            oldLabel={String(q.meta?.source_label || '')}
+            newBook={srcBook.trim()}
+            newLabel={srcLabel.trim()}
+            year={srcYear.trim()}
+            onClose={() => setBatchSrcOpen(false)}
+            onDone={(res) => { setBatchSrcOpen(false); onBatchSource?.(res) }} />
+        )}
       </Drawer>
 
       {err && (
@@ -585,8 +627,10 @@ export function TagsEditor({ q, onSaved, facets, refreshing = false, searchKw }:
   )
 }
 
-export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPick, refreshing = false, kw, loadingFull = false, autoSourceKey = '', autoSourceN = 0 }: {
+export function DetailBody({ q, onSaved, onBatchSource, facets, onFindPoint, onDeleteAsk, onPick, refreshing = false, kw, loadingFull = false, autoSourceKey = '', autoSourceN = 0 }: {
   q: Q; onSaved: SavedHandler; facets: any
+  /** 批量改出处完成：透传给 TagsEditor。 */
+  onBatchSource?: (res: SourceBatchDone) => void
   refreshing?: boolean
   kw?: string
   loadingFull?: boolean
@@ -762,7 +806,7 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPic
   const panel = 'pop rounded-[var(--radius-card)] border border-border bg-surface p-3 ' +
     'shadow-[var(--shadow-card)]'
   // 详情里的每一块都像中间那道题一样有独立边框，而不是一条长线切到底。
-  const card = 'rounded-[18px] border border-border/80 bg-surface p-3.5 ' +
+  const card = 'rounded-[18px] border border-border bg-surface p-3.5 ' +
     'shadow-[var(--shadow-card)]'
   const cardHead = 'mb-2.5 flex flex-wrap items-center gap-2'
   const cardTitle = 'text-[11.5px] font-semibold tracking-[0.06em] text-ink-soft'
@@ -792,47 +836,46 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPic
           {q.type_label}
           <Pencil size={13} className="opacity-60" />
         </button>
-        <span className={`inline-flex items-center rounded-full border px-2.5 py-[5px]
-                          text-[12.5px] font-medium ${
-          q.kind === '高考' ? 'border-brand bg-brand text-white' : 'border-border bg-surface text-ink-soft'}`}>
+        <span className="inline-flex items-center rounded-full border border-border
+                          bg-muted px-2.5 py-[5px] text-[12px] font-medium text-ink-soft">
           {q.kind}题
         </span>
         <Flags flags={q.flags} size="md" type={q.type} />
-        {/* **改源码**：题干/选项/答案/解析整段 LaTeX 都在这里改。
-            不设口令；打开就是编辑器，保存前过规范审查。 */}
-        <button onClick={() => setSrcEdit(true)}
-          title="直接改这道题的 LaTeX 源码"
-          className="press inline-flex items-center gap-1.5 rounded-full border border-border
-                     bg-surface px-2.5 py-[5px] text-[12.5px] text-ink-faint
-                     transition-colors hover:border-brand-line hover:bg-brand-soft/50
-                     hover:text-brand-ink">
-          <FileCode2 size={13} />改源码
-        </button>
-        {onPick && (
-          <button onClick={openSimilar}
-            title="同考点 / 同公式结构"
-            className="press inline-flex items-center gap-1.5 rounded-full border border-border
-                       bg-surface px-2.5 py-[5px] text-[12.5px] text-ink-faint
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
+          {/* 三个动作放一组：状态归状态，操作归操作，不再混成一条长胶囊。 */}
+          <button onClick={() => setSrcEdit(true)}
+            title="直接改这道题的 LaTeX 源码"
+            className="press inline-flex items-center gap-1 rounded-md border border-border
+                       bg-surface px-2 py-[4px] text-[11.5px] text-ink-faint
                        transition-colors hover:border-brand-line hover:bg-brand-soft/50
                        hover:text-brand-ink">
-            <Sparkles size={13} />相似题
+            <FileCode2 size={12} />改源码
           </button>
-        )}
-        {(q.meta?.duplicate_group || q.meta?.dup_of) && (
-          <span title="与库内另一题重复/疑似重复；只提示，不自动合并"
-            className="inline-flex items-center gap-1 rounded-full border border-border
-                       bg-warn-soft px-2.5 py-[5px] text-[12px] font-medium text-warn">
-            <AlertTriangle size={12} />重复题
-          </span>
-        )}
-        <button onClick={openDuplicates}
-          title="查同指纹 / 同 duplicate_group / dup_of 的题"
-          className="press inline-flex items-center gap-1.5 rounded-full border border-border
-                     bg-surface px-2.5 py-[5px] text-[12.5px] text-ink-faint
-                     transition-colors hover:border-warn/50 hover:bg-warn-soft/40 hover:text-warn">
-          <AlertTriangle size={13} />查重
-        </button>
-        <span className="ml-auto font-mono text-[10.5px] text-ink-faint">#{q.hash}</span>
+          {onPick && (
+            <button onClick={openSimilar} title="同考点 / 同公式结构"
+              className="press inline-flex items-center gap-1 rounded-md border border-border
+                         bg-surface px-2 py-[4px] text-[11.5px] text-ink-faint
+                         transition-colors hover:border-brand-line hover:bg-brand-soft/50
+                         hover:text-brand-ink">
+              <Sparkles size={12} />相似题
+            </button>
+          )}
+          {(q.meta?.duplicate_group || q.meta?.dup_of) && (
+            <span title="与库内另一题重复/疑似重复；只提示，不自动合并"
+              className="inline-flex items-center gap-1 rounded-md border border-warn-line
+                         bg-warn-soft px-2 py-[4px] text-[11px] font-medium text-warn">
+              <AlertTriangle size={11} />重复题
+            </span>
+          )}
+          <button onClick={openDuplicates}
+            title="查同指纹 / 同 duplicate_group / dup_of 的题"
+            className="press inline-flex items-center gap-1 rounded-md border border-border
+                       bg-surface px-2 py-[4px] text-[11.5px] text-ink-faint
+                       transition-colors hover:border-warn/50 hover:bg-warn-soft/40 hover:text-warn">
+            <AlertTriangle size={12} />查重
+          </button>
+          <span className="hidden font-mono text-[10px] text-ink-faint 2xl:inline">#{q.hash}</span>
+        </span>
       </div>
 
       {typeEdit && (
@@ -1018,8 +1061,8 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPic
       {/* **答案**：可以直接改。 */}
       <section id="detail-answer" className={`${card} mb-3 scroll-mt-24`}>
         <div className={cardHead}>
-          <span className={`${cardIcon} bg-danger-soft text-danger`}><CheckCircle2 size={13} /></span>
-          <span className={`${cardTitle} text-danger`}>答案</span>
+          <span className={`${cardIcon} bg-has-soft text-has`}><CheckCircle2 size={13} /></span>
+          <span className={`${cardTitle} text-ink-soft`}>答案</span>
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
             {!ansEdit && (
               <button onClick={() => { setAnsEdit(true); setAnsText(q.answer || ''); setAnsErr('') }}
@@ -1173,7 +1216,8 @@ export function DetailBody({ q, onSaved, facets, onFindPoint, onDeleteAsk, onPic
         </section>
       )}
 
-      <TagsEditor q={q} onSaved={onSaved} facets={facets} refreshing={refreshing} searchKw={kw} />
+      <TagsEditor q={q} onSaved={onSaved} onBatchSource={onBatchSource}
+        facets={facets} refreshing={refreshing} searchKw={kw} />
 
       <section id="detail-info" className={`${card} mt-3 scroll-mt-24`}>
         <div className={cardHead}>

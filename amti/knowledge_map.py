@@ -30,7 +30,6 @@ from __future__ import annotations
 from .paths import ROOT
 import json
 import re
-from pathlib import Path
 
 from . import knowledge
 from . import store

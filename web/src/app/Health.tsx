@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import {
-  Activity, ArrowRight, BookOpen, CircleAlert, FileText, Image as ImageIcon,
+  ArrowRight, BookOpen, CircleAlert, FileText, Image as ImageIcon,
   RefreshCw, Tags, TriangleAlert,
 } from 'lucide-react'
 import { api, reportErr } from '@/lib/api'
@@ -121,24 +121,17 @@ export default function Health({ onScope, stage = 'senior', onMap, onIngest, onR
   if (stage !== 'senior') {
     const meta = STAGE_BY_KEY[stage]
     return (
-      <div className="mx-auto w-full max-w-[980px] px-6 py-8">
-        <div className="b-eyebrow flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
-          K12 数学题库 · {meta.name} · 题库体检
-        </div>
-        <h1 className="mt-1.5 text-[30px] font-semibold tracking-tight">这个学段还没有正式题库</h1>
-        <p className="mt-1 max-w-[620px] text-[12px] leading-relaxed text-ink-faint">
-          题库体检统计的是正式入库的题。{meta.name}目前以知识图谱和诊断题为主，
-          题目录进来之后，这一页会自动有覆盖、难度和缺口数据。
-        </p>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {onMap && <button onClick={onMap} className="b-btn b-btn-primary">去知识图谱</button>}
-          {onIngest && <button onClick={onIngest} className="b-btn b-btn-secondary">去录题</button>}
-        </div>
-        <div className="b-card mt-5 p-5 text-[11.5px] leading-relaxed text-ink-faint">
-          现在能看的：<b className="text-ink-soft">知识图谱</b>（教材顺序、先修关系）、
-          <b className="text-ink-soft">诊断题</b>（题库页里按知识点筛）、
-          <b className="text-ink-soft">讲义</b>（建设进度）。这三块都在左侧导航里。
+      <div className="b-page max-w-[980px]">
+        <div className="rounded-[var(--radius-card)] border border-border bg-surface p-5">
+          <div className="text-[13px] font-semibold text-ink">{meta.name}还没有正式题库</div>
+          <p className="mt-1.5 max-w-[640px] text-[11.5px] leading-relaxed text-ink-faint">
+            题库体检统计的是正式入库的题。{meta.name}目前以知识图谱和诊断题为主，
+            题目录进来之后，这一页会自动有覆盖、难度和缺口数据。
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {onMap && <button onClick={onMap} className="b-btn b-btn-primary">去知识图谱</button>}
+            {onIngest && <button onClick={onIngest} className="b-btn b-btn-secondary">去录题</button>}
+          </div>
         </div>
       </div>
     )
@@ -173,20 +166,12 @@ export default function Health({ onScope, stage = 'senior', onMap, onIngest, onR
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-bg">
       <div className="mx-auto w-full max-w-[1180px] space-y-4 px-6 py-5">
-        <header className="flex items-end gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-2 text-[28px] font-semibold tracking-tight">
-              <Activity size={22} className="text-brand" />
-              健康度 <span className="grad-text">总览</span>
-            </h1>
-            <p className="mt-0.5 text-[12px] text-ink-faint">
-              覆盖、难度、缺口和待补队列。点数字/考点直接跳到工作台筛题。
-            </p>
-          </div>
+        <header className="flex items-center gap-3">
+          <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-faint">
+            覆盖、难度、缺口和待补队列。点数字或考点直接跳到题库筛题。
+          </p>
           <button onClick={load} disabled={busy}
-            className="press flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg border
-                       border-border bg-surface px-2.5 text-[12px] text-ink-soft
-                       hover:border-border-strong hover:text-ink disabled:opacity-50">
+            className="b-btn b-btn-secondary h-8 shrink-0">
             <RefreshCw size={13} className={busy ? 'animate-spin' : ''} />刷新
           </button>
         </header>

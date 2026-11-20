@@ -1,5 +1,5 @@
 /**
- * AmTiKu · 块级 IR → React
+ * AmMath · 块级 IR → React
  *
  * **这里不解析 LaTeX。** 解析在 Python 那边（`amti/latex_blocks.py`），
  * 前端只把已经切好的块画出来，公式交给 KaTeX。分工定死：

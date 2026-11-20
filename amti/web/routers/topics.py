@@ -24,7 +24,7 @@ from amti import topic_export as topic_export_mod
 from amti import topics
 from amti.logutil import get_logger
 from amti import store
-from amti.web.core import _STAGE_NAMES, _brief_cached, _point_stage, _stage_set
+from amti.web.core import _brief_cached, _point_stage, _stage_set
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["topics"])

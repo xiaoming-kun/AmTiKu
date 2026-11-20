@@ -24,10 +24,8 @@ r"""AmTiKu · 规范化验证
 from __future__ import annotations
 
 import re
-import sys
 
 from . import images as im
-from . import knowledge as kb
 from .schema import Question
 
 from amti.logutil import get_logger
@@ -742,7 +740,6 @@ def main(*, strict_style: bool = False) -> int:
 # 所以每一项检查都要有一个**必须被抓到的坏样本**和一个**必须放过的干净样本**。
 
 def _q(stem="", answer="", solution="", qtype="fill_in_blank", options=None):
-    from .schema import Option
     return Question(key="自检/1", type=qtype, stem=stem, answer=answer,
                     solution=solution, options=options or [])
 

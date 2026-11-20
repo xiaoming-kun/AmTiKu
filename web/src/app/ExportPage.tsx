@@ -12,7 +12,7 @@ import type { Q, ExportResult } from '@/lib/types'
 import { api, reportErr } from '@/lib/api'
 import { CloseBtn, useFlag } from '@/app/ui'
 import { SECTION_LABEL, SHORT_NAME, questionScore, paperScore as totalScore } from '@/lib/paper'
-import CompileOverlay, { LATEX_STAGES, COVER_STAGES } from '@/app/CompileOverlay'
+import CompileOverlay, { LATEX_STAGES, GEN_STAGES } from '@/app/CompileOverlay'
 
 /** 输入框的统一长相（左栏里到处都是，写一遍省得十处走样）。 */
 const INPUT = 'h-[32px] w-full rounded-lg border border-border bg-bg px-2.5 text-[12.5px] outline-none ' +
@@ -150,14 +150,14 @@ function pillCls(on: boolean) {
     : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/50 hover:text-brand-ink'}`
 }
 
-type Mode = 'gaokao' | 'test' | 'coverage' | 'handout'
+type Mode = 'gaokao' | 'test' | 'handout'
 
 /** 卷型对应的默认卷面标题。
  *
  *  这个名字会**印在卷面上**，也是导出文件名的前缀，所以每种卷型给一个
- *  说得清自己的名字——而不是四种卷型混用同一个。 */
+ *  说得清自己的名字——而不是三种卷型混用同一个。 */
 const MODE_TITLE: Record<Mode, string> = {
-  gaokao: '数学试卷', test: '测试卷', coverage: '考点覆盖卷', handout: '讲义',
+  gaokao: '数学试卷', test: '测试卷', handout: '讲义',
 }
 
 /** 时间戳 `20260923_2034`。
@@ -185,13 +185,10 @@ function safeName(out: string) {
   return out.replace(/[^\w\u4e00-\u9fff-]+/g, '_').replace(/^_+|_+$/g, '') || '试卷'
 }
 
-export default function ExportPage({ init, pageItems, poolTotal, from, filters, onClose, closing }: {
+export default function ExportPage({ init, pageItems, from, filters, onClose, closing }: {
   init: Q[]; from: string
   /** **当前这一页**的题——就是列表里看得见的这一百道。只用来做「加本页」。 */
   pageItems: Q[]
-  /** **筛选集**的总数：后端按同一套筛选条件算出来的真实条数。
-   *  组卷/覆盖率用的都是它，不是上面那一页。 */
-  poolTotal: number
   filters: Record<string, string>; onClose: () => void
   /** 正在播退场动画（父组件用 `useUnmount` 控制，播完才真卸载）。 */
   closing?: boolean
@@ -202,7 +199,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
    *
    *  以前这里是空的 + 一句 placeholder「留空用…」，而文件名却有默认值——
    *  两栏不对称，用户还得先自己给卷子起个名。现在打开就是
-   *  「数学试卷 / 测试卷 / 考点覆盖卷 / 讲义」，想改就地改。 */
+   *  「数学试卷 / 测试卷 / 讲义」，想改就地改。 */
   const [title, setTitle] = useState(MODE_TITLE.gaokao)
   /** 用户手改过卷面标题没有。没改 → 换卷型时标题跟着换；改了 → 一切以他写的为准。 */
   const [titleEdited, setTitleEdited] = useState(false)
@@ -220,8 +217,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
   // **答案与解析放不放卷末**。真高考卷是"卷面只有题，答案另附"，
   // 所以留空版（学生做）时默认勾上，讲义版（要看解析）时自动取消。
   const [ansAtEnd, setAnsAtEnd] = useState(true)
-  /** 卷头总分框 + 第一页密封线。 */
-  const [scoreSeal, setScoreSeal] = useState(true)
   // 讲义是否印答案（A4 讲义用）
   const [showAns, setShowAns] = useState(false)
   /** 题干第一行是否印出处（年份/卷别）。**不印原卷题号**——用户明确说
@@ -236,7 +231,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
   const [layout, setLayoutRaw] = useState<'compact' | 'roomy'>('roomy')
   /** 忙什么。**必须分开**：组卷是"挑题"（几秒，没有 LaTeX 阶段），
    *  编译是"跑两遍 xelatex"（几十秒，有阶段）。早先共用一个 `busy`，
-   *  于是点「按覆盖率组卷」也会弹出「正在编译 PDF」+ 一串 xelatex 阶段，
+   *  于是点「随机组卷」也会弹出「正在编译 PDF」+ 一串 xelatex 阶段，
    *  而且 roll() 没设 `busySince`，秒表直接显示 57 年。 */
   const [busyKind, setBusyKind] = useState<'none' | 'gen' | 'compile'>('none')
   const busy = busyKind !== 'none'
@@ -262,9 +257,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
   const outKind = outDir.kinds[mode] || '试卷'
   /** 界面上显示、也是真实落盘的相对路径：`阿明的辅导讲义/试卷/名字.pdf`。 */
   const outPath = `${outDir.name ? `${outDir.name}/` : ''}${outKind}/${safeName(out)}.pdf`
-  // 组卷方案（`coverage`）：**要几道题、想覆盖多少考点**。
-  // 目标是「尽量用最少的题把考点铺满」，所以先定题量再谈覆盖率。
-  const [want, setWant] = useState('46')
   /** 目标时长（分钟）。只用来提示，不自动换题。 */
   const [targetMin, setTargetMin] = useState('120')
   /** 地区/卷别：只从该地区选题（空 = 不限）。 */
@@ -272,14 +264,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
   const [regions, setRegions] = useState<{ value: string; n: number }[]>([])
   /** 最近一次组卷的 seed：复制方案时带上，同 seed 可复现。 */
   const [lastSeed, setLastSeed] = useState<number | null>(null)
-  const [cov, setCov] = useState('0.9')
-  /** 覆盖卷要不要保住高考卷面的题型比例。
-   *
-   *  不保的话贪心只认"考点个数"，实测 46 道题能挑出 23 道解答题——
-   *  因为解答题平均挂 2.34 个考点，比单选题的 1.74 高，对目标函数而言
-   *  它是"对的"，但那卷子没法用。保住的代价约 2.6 个百分点，
-   *  组卷说明里会把这个代价报出来（后端多跑一遍不限题型的）。 */
-  const [keepStruct, setKeepStruct] = useState(true)
   const [saved, setSaved] = useState<any[]>([])
   const [saveName, setSaveName] = useState('')
   const [saveKind, setSaveKind] = useState<'试卷' | '合集'>('试卷')
@@ -314,7 +298,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
   // 「点左边编译预览」的空态。文件名 `out` 不影响卷面内容，故意不进指纹。
   const previewKey = JSON.stringify([
     mode, title, showAns, showSource, ansAtEnd,
-    scoreSeal, handoutFont, sep, blank, list.map((q) => q.key),
+    handoutFont, sep, blank, list.map((q) => q.key),
   ])
   useEffect(() => {
     setRes(null)
@@ -353,12 +337,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
     const outNow = outEdited ? out : defaultOut(title, mode)
     if (!outEdited) setOut(outNow)
 
-    // **「组卷方案」和「卷面格式」是两回事，两个接口认的模式不是一套。**
-    // `/api/generate` 认 gaokao / test / coverage（怎么挑题），
-    // `/api/export`  只认 gaokao / test / handout（怎么排版）。
-    // 考点覆盖卷挑完题之后，卷面就该按**测试卷**排（小字列考点、每题标出处）——
-    // 它本来就是"考点专练"。早先直接把 `coverage` 透传给导出接口，
-    // 结果一点「导出」就 HTTP 400「未知卷型 'coverage'」，压根导不出来。
     const call = api.export(makeBody(outNow, preview))
     call.then((d) => {
       if (d.detail) { setErr(String(d.detail)); setRes(null) }
@@ -369,16 +347,15 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
   /** 一次导出的完整请求体。`over` 用来给学生版/教师版/答案册换参数。 */
   const makeBody = (outNow: string, preview: boolean,
                     over: Record<string, unknown> = {}) => {
-    const renderMode = mode === 'coverage' ? 'test' : mode
     return {
-      title, out: outNow, mode: renderMode, show_answers: showAns,
+      title, out: outNow, mode, show_answers: showAns,
       show_source: showSource, bottom_sep: sep,
-      // 分类子目录由**界面的卷型**决定（考点覆盖卷算试卷，虽然按 test 排版），
-      // 后端拿它当落盘目录；与上面「存为 …/」显示的那行是同一个值。
+      // 分类子目录由**界面的卷型**决定，后端拿它当落盘目录；
+      // 与上面「存为 …/」显示的那行是同一个值。
       kind: outKind, preview,
       problem_blank_cm: Number(blank) || 0, compile: true,
       keys: list.map((q) => q.key), answers_at_end: ansAtEnd,
-      score_box: scoreSeal, seal_line: scoreSeal, handout_font: handoutFont,
+      handout_font: handoutFont,
       ...over,
     }
   }
@@ -474,14 +451,12 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
-  /** 随机组卷：`gaokao` 按卷面结构填位置；`coverage` 按考点覆盖率挑题。 */
+  /** 随机组卷：`gaokao` 按卷面结构填位置；`test` 取当前筛选结果。 */
   const roll = () => {
     setBusyKind('gen'); setBusySince(Date.now()); setErr(''); setGenMsg(''); setBp(null)
     const seed = Math.floor(Math.random() * 1e9)
     setLastSeed(seed)
     api.generate({ ...filters, mode, seed,
-                   want: Number(want) || 19, coverage: Number(cov) || 0.9,
-                   keep_structure: keepStruct,
                    target_minutes: Number(targetMin) || 0,
                    region: regionStyle })
       .then((d) => {
@@ -490,17 +465,9 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
         setGen(d)
         const rep = d.report || {}
         setBp(rep.blueprint || null)
-        const mixTxt = rep.mix
-          ? Object.entries(rep.mix).filter(([, n]) => n)
-              .map(([t, n]) => `${SHORT_NAME[t] || t}${n}`).join(' ')
-          : ''
         // **不要再重复"多少题多少分"**——弹层头部左边已经算过一份了，
         // 这里只说"怎么挑的、挑成什么样"。
         setGenMsg([
-          mixTxt,
-          rep.ratio != null ? `覆盖 ${Math.round(rep.ratio * 100)}%（${rep.covered}/${rep.reachable}）` : '',
-          // 保结构的代价：**明说**，用户才知道这个开关值不值
-          rep.ratio_free ? `不限题型可到 ${Math.round(rep.ratio_free * 100)}%` : '',
           rep.unfilled?.length ? `⚠ ${rep.unfilled.length} 个位置没填上` : '',
           rep.note || '',
         ].filter(Boolean).join(' · '))
@@ -517,8 +484,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
     const payload = {
       title, mode, seed: lastSeed, keys: list.map((q) => q.key),
       filters, target_minutes: Number(targetMin) || 0, region: regionStyle,
-      layout: { score_box: scoreSeal, seal_line: scoreSeal,
-                answers_at_end: ansAtEnd, show_answers: showAns },
+      layout: { answers_at_end: ansAtEnd, show_answers: showAns },
     }
     navigator.clipboard?.writeText(JSON.stringify(payload, null, 2))
       .then(() => setGenMsg('组卷方案 JSON 已复制'))
@@ -545,8 +511,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
         if (p.show_answers != null) setShowAns(!!p.show_answers)
         if (p.show_source != null) setShowSource(!!p.show_source)
         if (p.answers_at_end != null) setAnsAtEnd(!!p.answers_at_end)
-        if (p.score_box != null) setScoreSeal(!!p.score_box)
-        if (p.seal_line != null) setScoreSeal(!!p.seal_line)
         if (p.region != null) setRegionStyle(String(p.region))
         if (p.target_minutes != null) setTargetMin(String(p.target_minutes))
         if (p.bottom_sep) setSep(String(p.bottom_sep))
@@ -570,7 +534,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
       name: saveName.trim(), keys: list.map((q) => q.key), title: title || saveName.trim(),
       mode, kind: saveKind, note: `${list.length} 题`,
       params: { mode, show_answers: showAns, answers_at_end: ansAtEnd,
-                score_box: scoreSeal, seal_line: scoreSeal,
                 region: regionStyle, target_minutes: Number(targetMin) || 0,
                 bottom_sep: sep, problem_blank_cm: Number(blank) || 0 },
     }).then(() => { setSaveName(''); setGenMsg('已存档'); refreshSaved() })
@@ -631,7 +594,7 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                           border-r border-border bg-surface px-4 py-4">
             <Group title="卷型">
               <div className="grid grid-cols-2 gap-1.5">
-                {([['gaokao', '高考卷'], ['test', '纯测试题'], ['coverage', '考点覆盖卷'],
+                {([['gaokao', '高考卷'], ['test', '纯测试题'],
                    ['handout', '讲义']] as const).map(([v, label]) => (
                   <button key={v} onClick={() => setMode(v)} className={pickCls(mode === v)}>
                     {label}
@@ -645,8 +608,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                   ? '与高考真题一致：信息行 + 注意事项 + 四大题分节；默认标原卷出处（可关）'
                   : mode === 'test'
                   ? '考点专练：小字列出考点；默认标原卷出处（可关）'
-                  : mode === 'coverage'
-                  ? '按考点覆盖率挑题：用尽量少的题把考点铺满，挑完易→难排好'
                   : '讲义：一题一页 · A4 横版 · 不印答案；默认标原卷出处（可关）'}
               </div>
             </Group>
@@ -672,48 +633,13 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
               </label>
             </Group>
 
-            {mode === 'coverage' && (
-              <Group title="组卷方案"
-                className="rounded-[var(--radius-card)] border border-border bg-bg p-3.5">
-                <label className="block space-y-1">
-                  <span className="block text-[11.5px] text-ink-soft">题量</span>
-                  <input value={want} onChange={(e) => setWant(e.target.value)}
-                    className={`${INPUT} tnum`} />
-                </label>
-                <label className="block space-y-1">
-                  <span className="block text-[11.5px] text-ink-soft">目标覆盖率</span>
-                  <input value={cov} onChange={(e) => setCov(e.target.value)}
-                    className={`${INPUT} tnum`} />
-                </label>
-                <label className={pillCls(keepStruct)}>
-                  <input type="checkbox" checked={keepStruct}
-                    onChange={(e) => setKeepStruct(e.target.checked)} className="sr-only" />
-                  <Check size={12} strokeWidth={2.8}
-                    className={keepStruct ? 'shrink-0' : 'shrink-0 opacity-30'} />
-                  保持高考卷面比例
-                </label>
-                <div className="text-[11px] leading-relaxed text-ink-faint">
-                  参考：19 题 ≈ 38%，46 题 ≈ 84%，60 题 ≈ 97%，80 题铺满。
-                  覆盖率按当前筛选的 {poolTotal.toLocaleString()} 道里能覆盖到的考点算。
-                </div>
-                <div className="text-[11px] leading-relaxed text-ink-faint">
-                  {keepStruct
-                    ? '题型按高考比例缩放（46 题 → 单选 20 · 多选 7 · 填空 7 · 解答 12）。'
-                      + '贪心只认考点个数，不约束的话会挑出一半解答题（解答题考点密度最高）。'
-                    : '⚠ 不限题型：能多覆盖约 2~3 个百分点的考点，但题型分布会失衡'
-                      + '（46 题实测挑出 23 道解答题）。'}
-                </div>
-              </Group>
-            )}
-
             <div className="space-y-2">
               <button onClick={roll} disabled={busy}
                 className="press flex w-full items-center justify-center gap-1.5 rounded-lg border
                            border-brand-line bg-brand-soft px-3 py-2 text-[12.5px] font-medium
                            text-brand-ink transition-colors hover:bg-brand-soft/70 disabled:opacity-50">
                 <Shuffle size={13} />
-                {mode === 'gaokao' ? '随机组卷（按高考结构）'
-                  : mode === 'coverage' ? '按覆盖率组卷' : '取筛选结果'}
+                {mode === 'gaokao' ? '随机组卷（按高考结构）' : '取筛选结果'}
               </button>
               {pageN > 0 && (
                 <button onClick={addPageItems} disabled={busy}
@@ -904,15 +830,6 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                     </span></span>
                 </label>
               </div>
-              {mode !== 'handout' && (
-                <label className={`${PILL} border-border bg-surface text-ink-soft
-                                   hover:border-brand-line hover:bg-brand-soft/50`}>
-                  <input type="checkbox" checked={scoreSeal}
-                    onChange={(e) => setScoreSeal(e.target.checked)} className="sr-only" />
-                  <Check size={12} strokeWidth={2.8} className={scoreSeal ? 'shrink-0' : 'shrink-0 opacity-30'} />
-                  总分框 + 密封线
-                </label>
-              )}
               <div className="text-[11px] leading-relaxed text-ink-faint">
                 两个都不勾＝学生卷：卷面干净、解答题留白，没有答案
               </div>
@@ -1139,6 +1056,17 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
                         <span>{w}</span>
                       </div>
                     ))}
+                    {/* 自动重排说明：跨页题被挪到新页 / 讲义压图降级——
+                        用户不需要知道细节，但要知道"这份卷子多编了一遍才排好"。 */}
+                    {(res.layout?.passes || 1) > 1 && (
+                      <div className="text-[10.5px] text-ink-faint">
+                        ✓ 已自动重排（第 {res.layout!.passes} 遍）
+                        {(res.layout!.forced || []).length
+                          ? `：${res.layout!.forced.length} 道跨页题改为从新页开始`
+                          : ''}
+                        {res.layout!.tight ? '；图已压小一档塞进一页' : ''}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -1250,8 +1178,8 @@ export default function ExportPage({ init, pageItems, poolTotal, from, filters, 
               {busy && (
                 <CompileOverlay since={busySince}
                   label={busyKind === 'compile' ? '正在编译 PDF'
-                       : mode === 'coverage' ? '正在按覆盖率挑题' : '正在随机组卷'}
-                  stages={busyKind === 'compile' ? LATEX_STAGES : COVER_STAGES}
+                       : mode === 'gaokao' ? '正在随机组卷' : '正在取筛选结果'}
+                  stages={busyKind === 'compile' ? LATEX_STAGES : GEN_STAGES}
                   hint={busyKind === 'compile'
                     ? '两遍 xelatex，题越多越慢；中途不用重复点，编译完会自动出预览'
                     : '在筛选出的题目里挑，几秒钟；中途不用重复点'} />

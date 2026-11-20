@@ -119,7 +119,7 @@ def vlm_extract(body: VlmBody) -> dict:
 #
 # 四个接口：状态 / 存配置 / 连通性测试 / 跑一次（异步 + 进度轮询）。
 #
-# **为什么要异步**：一份 100 页的资料要读几分钟到十几分钟。同步接口会让
+# **为什么要异步**：一份十几页的资料要读几分钟。同步接口会让
 # 浏览器一直挂着、还可能被看门狗当成"没活干"。所以开线程跑，前端每秒
 # 拉一次 `/api/ai/job/{id}`，进度是"已读 N / M 页"。
 #
@@ -135,14 +135,23 @@ _AI_CANCELS: dict[str, threading.Event] = {}
 _AI_LOCK = threading.Lock()
 
 
+class AIFile(BaseModel):
+    name: str = "资料.pdf"
+    data: str = ""                       # PDF / 图片的 base64（不带 data: 前缀）
+
+
 class AIBody(BaseModel):
     name: str = "资料.pdf"
-    data: str = ""                       # 试题：PDF / 图片的 base64（不带 data: 前缀）
-    #: 答案 / 解析——**另一份文件**。一份试题一份答案是最常见的形态，
-    #: 不传也能跑（只是缺答案的题会被拦下）。
+    data: str = ""                       # 兼容旧客户端：单份试题
+    #: 新前端：试题可以多份（卷一/卷二/照片），按顺序合并后再读。
+    files: list[AIFile] = Field(default_factory=list)
+    #: 答案 / 解析——可以是多份文件；不传也能跑（缺答案的题会被拦下）。
     answer_name: str = ""
     answer_data: str = ""
-    pages_per_call: int = 0              # 0 = 用配置里的
+    answer_files: list[AIFile] = Field(default_factory=list)
+    pages_per_call: int = 0              # 旧客户端字段；规范管线一次读完，已不生效
+    #: 缺解析的题是否让 DeepSeek 补写；必须由用户在界面上显式勾选。
+    fill_solutions: bool = False
 
 
 class AIConfigBody(BaseModel):
@@ -151,6 +160,175 @@ class AIConfigBody(BaseModel):
     model: str = ""
     pages_per_call: int = 0
     workers: int = 0
+
+
+class CurateBody(BaseModel):
+    keys: list[str] = Field(default_factory=list)
+    tasks: list[str] = Field(default_factory=list)
+    stage: str = "k12"
+
+
+@router.post("/ai/curate")
+def ai_curate(body: CurateBody) -> dict:
+    """只生成建议：给已有题补考点/难度/答案/解析，不写库。"""
+    from amti import aicurate
+    try:
+        return aicurate.curate(body.keys, body.tasks, stage=body.stage)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                       # noqa: BLE001
+        raise HTTPException(502, "DeepSeek 整理失败：%s" % str(e)[:300])
+
+
+class ProofBody(BaseModel):
+    key: str = ""
+
+
+class AITagItem(BaseModel):
+    stem: str = ""
+    options: list[dict] = Field(default_factory=list)
+    type: str = ""
+
+
+class AITagBody(BaseModel):
+    items: list[AITagItem] = Field(default_factory=list)
+    stage: str = "senior"
+
+
+@router.post("/ai/tag")
+def ai_tag(body: AITagBody) -> dict:
+    """AI 录题漏考点时的兜底：只用 DeepSeek 补，不用本地 qwen。"""
+    from amti import aicurate
+    try:
+        return aicurate.tag_items([x.model_dump() for x in body.items],
+                                  stage=body.stage or "senior")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                       # noqa: BLE001
+        raise HTTPException(502, "DeepSeek 补考点失败：%s" % str(e)[:300])
+
+
+class RewriteSolutionBody(BaseModel):
+    stem: str = ""
+    answer: str = ""
+    solution: str = ""
+    qtype: str = ""
+
+
+class RepairAgentBody(BaseModel):
+    tex: str = ""
+    problems: list[str] = Field(default_factory=list)
+    source_no: str = ""
+    src_dir: str = ""
+
+
+@router.post("/ai/repair-agent")
+def ai_repair_agent(body: RepairAgentBody) -> dict:
+    """单题修复 agent：模型可调 check_source/compile_tikz，多轮后再检查。"""
+    from amti import ai_agent
+    try:
+        return ai_agent.repair_agent(
+            body.tex, body.problems, source_no=body.source_no,
+            src_dir=body.src_dir)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                       # noqa: BLE001
+        raise HTTPException(502, "DeepSeek 修复 agent 失败：%s" % str(e)[:300])
+
+
+@router.post("/ai/rewrite-solution")
+def ai_rewrite_solution(body: RewriteSolutionBody) -> dict:
+    """只把已有解析改成规范 LaTeX；不写库。"""
+    from amti import ai_rewrite
+    try:
+        return ai_rewrite.rewrite_solution(
+            stem=body.stem, answer=body.answer, solution=body.solution,
+            qtype=body.qtype)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                       # noqa: BLE001
+        raise HTTPException(502, "DeepSeek 重写解析失败：%s" % str(e)[:300])
+
+
+class TikzBody(BaseModel):
+    key: str
+
+
+@router.post("/ai/tikz")
+def ai_tikz(body: TikzBody) -> dict:
+    """只判断缺不缺图并给 TikZ；不写库，插入要人确认。"""
+    from amti import aiproof
+    try:
+        return aiproof.suggest_tikz(body.key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                       # noqa: BLE001
+        raise HTTPException(502, "DeepSeek 补图失败：%s" % str(e)[:300])
+
+
+@router.post("/ai/proofread")
+def ai_proofread(body: ProofBody) -> dict:
+    """单题校对：只返回答案/解析/配图建议，不写库。"""
+    from amti import aiproof
+    try:
+        return aiproof.proofread(body.key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                       # noqa: BLE001
+        raise HTTPException(502, "DeepSeek 校对失败：%s" % str(e)[:300])
+
+
+class RepairBody(BaseModel):
+    tex: str = ""
+    problems: list[str] = Field(default_factory=list)
+    source_no: str = ""
+    instruction: str = ""
+    src_dir: str = ""
+
+
+@router.post("/ai/repair")
+def ai_repair(body: RepairBody) -> dict:
+    """按 conformance 报错修一道题；只返回源码，不写库。"""
+    from amti import airepair
+    try:
+        return airepair.repair(body.tex, body.problems, body.source_no,
+                               instruction=body.instruction, src_dir=body.src_dir)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                       # noqa: BLE001
+        raise HTTPException(502, "DeepSeek 修复失败：%s" % str(e)[:300])
+
+
+@router.get("/ai/history")
+def ai_history_list(limit: int = 20) -> dict:
+    from amti import ai_history
+    return {"ok": True, "items": ai_history.list_jobs(limit)}
+
+
+@router.get("/ai/history/{job}")
+def ai_history_get(job: str) -> dict:
+    from amti import ai_history
+    try:
+        return ai_history.get_job(job)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.delete("/ai/history/{job}")
+def ai_history_delete(job: str) -> dict:
+    from amti import ai_history
+    try:
+        ai_history.delete_job(job)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/ai/usage")
+def ai_usage() -> dict:
+    """录入首页：今日 / 累计 token 与估算费用。"""
+    from amti import deepseek as _ds
+    return _ds.usage_summary()
 
 
 @router.get("/ai/status")
@@ -198,25 +376,58 @@ def ai_test() -> dict:
 def ai_run(body: AIBody) -> dict:
     """开一个后台任务。**只读不写库**：结果是一段源材料文本。"""
     import base64 as _b64
+    from amti import ai_history as _hist
+    from amti import ai_spec as _ai
     from amti import deepseek as _ds
-    if not body.data.strip():
-        raise HTTPException(400, "没有收到文件内容")
-    try:
-        raw = _b64.b64decode(body.data, validate=True)
-    except Exception:                            # noqa: BLE001
-        raise HTTPException(400, "文件内容不是合法的 base64")
-    if len(raw) > 200 * 1024 * 1024:
-        raise HTTPException(413, "文件太大（>200MB）")
     if not _ds.load()["api_key"]:
         raise HTTPException(400, "还没填 DeepSeek API Key")
-    answer_raw = b""
-    if body.answer_data.strip():
-        try:
-            answer_raw = _b64.b64decode(body.answer_data, validate=True)
-        except Exception:                        # noqa: BLE001
-            raise HTTPException(400, "答案文件的 base64 不合法")
-        if len(answer_raw) > 200 * 1024 * 1024:
-            raise HTTPException(413, "答案文件太大（>200MB）")
+
+    def _decode(items: list[AIFile], label: str) -> list[tuple[bytes, str]]:
+        out: list[tuple[bytes, str]] = []
+        total = 0
+        for f in items:
+            try:
+                b = _b64.b64decode(f.data, validate=True)
+            except Exception:                    # noqa: BLE001
+                raise HTTPException(400, "%s的 base64 不合法：%s" % (label, f.name))
+            total += len(b)
+            if total > 200 * 1024 * 1024:
+                raise HTTPException(413, "%s合计太大（>200MB）" % label)
+            out.append((b, f.name))
+        return out
+
+    read_name = (body.name or "资料.pdf").strip()
+    try:
+        if body.files:
+            parts = _decode(body.files, "试题文件")
+            raw = _ai.merge_parts(parts, label="试题文件")
+            if len(parts) == 1:
+                read_name = parts[0][1]
+            else:
+                read_name = "%s 等%d份" % (parts[0][1], len(parts))
+        else:
+            if not body.data.strip():
+                raise HTTPException(400, "没有收到文件内容")
+            try:
+                raw = _b64.b64decode(body.data, validate=True)
+            except Exception:                    # noqa: BLE001
+                raise HTTPException(400, "文件内容不是合法的 base64")
+            if len(raw) > 200 * 1024 * 1024:
+                raise HTTPException(413, "文件太大（>200MB）")
+        if body.answer_files:
+            answer_raw = _ai.merge_parts(_decode(body.answer_files, "答案文件"),
+                                         label="答案文件")
+        elif body.answer_data.strip():
+            try:
+                answer_raw = _b64.b64decode(body.answer_data, validate=True)
+            except Exception:                    # noqa: BLE001
+                raise HTTPException(400, "答案文件的 base64 不合法")
+            if len(answer_raw) > 200 * 1024 * 1024:
+                raise HTTPException(413, "答案文件太大（>200MB）")
+        else:
+            answer_raw = b""
+    except _ai.deepseek.AIError as e:
+        raise HTTPException(400, str(e))
 
     job_id = "ai-%s" % (time.strftime("%H%M%S") + "-%d" % int(time.time() * 1000 % 1000))
     cancel = threading.Event()
@@ -232,6 +443,14 @@ def ai_run(body: AIBody) -> dict:
                             "msg": "排队中…", "at": time.time(),
                             "result": None, "error": ""}
         _AI_CANCELS[job_id] = cancel
+    try:
+        _hist.save_job(
+            job_id, source=raw, answer=answer_raw, name=read_name,
+            answer_name=body.answer_name or (body.answer_files[0].name if body.answer_files else ""),
+            source_files=[f.name for f in body.files],
+            fill_solutions=body.fill_solutions)
+    except Exception:                            # noqa: BLE001
+        pass
 
     def progress(done_pages: int, total_pages: int, msg: str) -> None:
         with _AI_LOCK:
@@ -243,24 +462,26 @@ def ai_run(body: AIBody) -> dict:
                           "total": total_pages, "msg": msg})
 
     def work() -> None:
-        from amti import aiingest as _ai
-        # 计入"在跑"，看门狗这期间不会把服务退掉（读 100 页要好几分钟）
+        from amti import ai_spec as _ai
+        # 计入"在跑"，看门狗这期间不会把服务退掉（读满 14 页要好几分钟）
         _INFLIGHT[0] += 1
         try:
-            res = _ai.run(raw, name=body.name,
+            res = _ai.run(raw, name=read_name,
                           answer_data=answer_raw or None,
                           answer_name=body.answer_name,
-                          pages_per_call=body.pages_per_call or None,
+                          fill_solutions=body.fill_solutions,
                           on_progress=progress,
                           should_stop=cancel.is_set)
-            state = "cancelled" if res.get("cancelled") else "done"
-            msg = ("已取消：保留已核对 %d 道题" % res["stats"].get("ok", 0)
-                   if state == "cancelled" else
-                   "读完了：%d 道题通过第二遍核对" % res["stats"]["ok"])
+            # 取消走下面的 `except Cancelled`；能走到这里就是读完了。
+            msg = "读完了：%d 道题已生成规范题卡" % res["stats"]["ok"]
+            try:
+                _hist.save_result(job_id, res)
+            except Exception:                    # noqa: BLE001
+                pass
             with _AI_LOCK:
                 j = _AI_JOBS.get(job_id)
                 if j is not None:
-                    j.update({"state": state, "result": res, "msg": msg,
+                    j.update({"state": "done", "result": res, "msg": msg,
                               "total": res["stats"].get("pages", j.get("total", 0))})
         except _ai.Cancelled as e:
             with _AI_LOCK:
@@ -269,6 +490,10 @@ def ai_run(body: AIBody) -> dict:
                     j.update({"state": "cancelled", "result": None,
                               "error": str(e) or "已取消", "msg": "已取消"})
         except Exception as e:                   # noqa: BLE001
+            try:
+                _hist.mark_error(job_id, str(e) or "读不出来")
+            except Exception:                    # noqa: BLE001
+                pass
             with _AI_LOCK:
                 j = _AI_JOBS.get(job_id)
                 if j is not None:
@@ -319,7 +544,6 @@ def ai_cancel(job_id: str) -> dict:
 @router.post("/ingest/preview")
 def ingest_preview(body: IngestBody) -> dict:
     """**干跑**：解析 + 图片预检 + 查重 + 校验 + 影响面。什么都不写。"""
-    from amti import dedup as _dd
     from amti import ingest as _ig
     src = [body.src_dir] if body.src_dir.strip() else None
     pts = [x.strip() for x in body.points.split(",") if x.strip()]
@@ -358,7 +582,6 @@ def ingest_preview(body: IngestBody) -> dict:
 @router.post("/ingest/commit")
 def ingest_commit(body: IngestBody) -> dict:
     """正式导入：图片入库 → 追加主文件。返回变更报告。"""
-    from amti import dedup as _dd
     from amti import ingest as _ig
     src = [body.src_dir] if body.src_dir.strip() else None
     pts = [x.strip() for x in body.points.split(",") if x.strip()]

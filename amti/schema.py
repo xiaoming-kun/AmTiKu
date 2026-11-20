@@ -167,6 +167,29 @@ class Question:
 
     # ── 内容指纹 ──────────────────────────────────────
 
+    def record_hash(self) -> str:
+        r"""整条记录的指纹：**正文 + 标签 + 元数据全算**。
+
+        单题写回用它做并发校验：别的进程只改了别的题/别的卷时，
+        目标题整条记录没变，就可以安全地只替换这一道题，不必因为
+        “库里有人写过”把保存全部拒绝。比 `content_hash()` 严，
+        任何会落盘的字段变了都算冲突。
+        """
+        payload = {
+            "key": self.key,
+            "type": self.type,
+            "stem": self.stem,
+            "options": [[o.label, o.text] for o in self.options],
+            "answer": self.answer,
+            "solution": self.solution,
+            "figures": [[f.id, f.kind, f.width, f.tikz, f.source]
+                        for f in self.figures],
+            "points": list(self.points),
+            "meta": self.meta,
+        }
+        blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
     def content_hash(self) -> str:
         r"""内容指纹。**只算 HASH_FIELDS**——标签和元数据变化不影响它。
 

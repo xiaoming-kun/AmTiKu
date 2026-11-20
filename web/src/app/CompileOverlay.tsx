@@ -21,13 +21,14 @@ export const LATEX_STAGES: Stage[] = [
   [28, '收尾：生成 PDF'],
 ]
 
-/** 组卷（按考点覆盖率挑题）。挑题是纯 CPU 的贪心，
- *  46 道题要在两万道的池子里滚 46 轮，实测 4~5 秒——够慢到需要给个交代。 */
-export const COVER_STAGES: Stage[] = [
-  [0, '统计这批题能覆盖到的考点'],
-  [1, '贪心挑题：每轮取"带来新考点最多"的那道'],
-  [3, '按易 → 难排好'],
-  [6, '收尾：算出卷面总分'],
+/** 组卷（挑题）。纯 CPU：筛池子 + 按卷面结构填位置，两万道的池子上
+ *  实测 1~5 秒——够慢到需要给个交代。
+ *
+ *  （原名 `COVER_STAGES`，配的是已删除的「考点覆盖卷」的贪心阶段。） */
+export const GEN_STAGES: Stage[] = [
+  [0, '筛池子：按筛选条件取候选'],
+  [1, '挑题：按卷面结构填位置'],
+  [3, '收尾：算卷面总分与预计时长'],
 ]
 
 export default function CompileOverlay({ since, label, stages = LATEX_STAGES, hint }:

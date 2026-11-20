@@ -1,6 +1,6 @@
-/** 录入抽屉的全部状态/handlers。
+/** 录入工作区的全部状态/handlers。
  *
- *  IngestDrawer 只负责壳和阶段布局；Source/Review 通过 IngestContext
+ *  IngestWorkspace 只负责壳和阶段布局；Source/Review 通过 IngestContext
  *  读这里的字段。这样改录入逻辑不用再碰 JSX，改布局也不用碰状态。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -62,6 +62,8 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   const [aiMiss, setAiMiss] = useState<Record<number, boolean>>({})
   const [busy, setBusy] = useState(false)
   const [tagging, setTagging] = useState(false)
+  const [repairing, setRepairing] = useState<Record<number, boolean>>({})
+  const [repairNote, setRepairNote] = useState<Record<number, string>>({})
   const [drag, setDrag] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -89,7 +91,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   const [aiProg, setAiProg] = useState<{ done: number; total: number; msg: string; sec?: number } | null>(null)
   /** 答案 / 解析——**和试题分开的一份文件**。最常见的形态是「一份试题 + 一份答案」，
    *  所以它跟试题一样是必填的引导项，只是允许留空（留空时缺答案的题会被拦下）。 */
-  const [aiAns, setAiAns] = useState<{ name: string; b64: string } | null>(null)
+  const [aiAns, setAiAns] = useState<{ name: string; b64: string }[]>([])
   const [aiErr, setAiErr] = useState('')
   const [aiNote, setAiNote] = useState('')
   /** 后台任务 id / 是否已点取消。取消接口只发一次，状态靠轮询推进。 */
@@ -97,6 +99,8 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   const [aiCancelling, setAiCancelling] = useState(false)
   /** AI 结果的逐题核对元数据：block → {pages, answer_pages, answer_quote, ...} */
   const [aiCards, setAiCards] = useState<Record<number, any>>({})
+  /** 最后一次 AI 读取的报告（页数/命中/费用/覆盖/警告）；只给结果卡用。 */
+  const [aiReport, setAiReport] = useState<any>(null)
   const [aiPageDir, setAiPageDir] = useState('')
   const [pageView, setPageView] = useState<{ dir: string; name: string; title: string } | null>(null)
   /** 最近任务的源页：准备/继续后显示，点开用现有 pageView 看原页。 */
@@ -104,13 +108,13 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   const [sourceDir, setSourceDir] = useState('')
   const [sourceJob, setSourceJob] = useState('')
   const [recentJobs, setRecentJobs] = useState<any[]>([])
-  /** 高级设置：模型 / 接口地址 / 每批页数 / 并发。 */
+  /** 高级设置：模型 / 接口地址。规范管线一次读完，没有分批和并发可调。 */
   const [aiModel, setAiModel] = useState('')
   const [aiBase, setAiBase] = useState('')
-  const [aiPages, setAiPages] = useState('')
-  const [aiWorkers, setAiWorkers] = useState('')
-  /** 任务序号：关掉抽屉/换文件时，旧轮询的结果一律丢掉。 */
+  /** 任务序号：关掉录入页/换文件时，旧轮询的结果一律丢掉。 */
   const aiSeq = useRef(0)
+  const aiSourceName = useRef('')
+  const aiSourceFields = useRef<{ book: string; label: string; year: string; region: string } | null>(null)
 
   useEffect(() => {
     api.vlmStatus().then((s: any) => {
@@ -273,9 +277,12 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
       setAiCfg(cfg)
       setAiModel(String(cfg?.model || ''))
       setAiBase(String(cfg?.base_url || ''))
-      setAiPages(String(cfg?.pages_per_call || 6))
-      setAiWorkers(String(cfg?.workers || 2))
-    } catch { /* 状态拿不到不挡录入 */ }
+    } catch (e) {
+      // 状态接口失败时不能永远停在「正在读取配置」；退回未配置，
+      // 让人还能打开设置、填 Key、点「保存并测试」。
+      setAiCfg((cur: any) => cur || { ok: false, configured: false })
+      setAiErr(`读取 AI 配置失败：${String((e as any)?.message || e)}；仍可在下面重新填写 Key`)
+    }
   }
   useEffect(() => { void aiRefresh() }, [])
   useEffect(() => {
@@ -285,25 +292,13 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   const aiSaveKey = async () => {
     setAiErr(''); setAiTesting(true)
     try {
-      const pg = Math.round(Number(aiPages))
-      const wk = Math.round(Number(aiWorkers))
-      if (aiPages.trim() && (!Number.isFinite(pg) || pg < 1 || pg > 12)) {
-        setAiErr('每批页数填 1–12'); return
-      }
-      if (aiWorkers.trim() && (!Number.isFinite(wk) || wk < 1 || wk > 4)) {
-        setAiErr('并发填 1–4'); return
-      }
       const body: any = { api_key: aiKey.trim() || undefined }
       if (aiModel.trim()) body.model = aiModel.trim()
       if (aiBase.trim()) body.base_url = aiBase.trim()
-      if (aiPages.trim()) body.pages_per_call = pg
-      if (aiWorkers.trim()) body.workers = wk
       const cfg: any = await api.aiConfig(body)
       setAiCfg(cfg); setAiKey('')
       setAiModel(String(cfg?.model || ''))
       setAiBase(String(cfg?.base_url || ''))
-      setAiPages(String(cfg?.pages_per_call || 6))
-      setAiWorkers(String(cfg?.workers || 2))
       if (!cfg?.configured) { setAiErr('还没填 Key'); return }
       const t: any = await api.aiTest()
       setAiSetup(false)
@@ -321,7 +316,6 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     } catch (e) { setAiErr(String((e as any)?.message || e)) }
   }
 
-  /** 轮询任务。**不设死循环**：最多等 2 小时（100 页也用不了这么久）。 */
   /** 把一次 AI 结果里的逐题核对/覆盖/用量展开成一句人话。 */
   const aiResultNote = (res: any, cancelled: boolean): string => {
     const st = res.stats || {}
@@ -330,7 +324,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     const parts = [cancelled
       ? `已取消：保留已核对 ${st.ok || 0} 道`
       : `读完 ${st.pages || 0} 页：${st.ok || 0} 道通过第二遍核对`]
-    if (aiAns?.name) parts.unshift(`答案册：${aiAns.name}`)
+    if (aiAns.length) parts.unshift(`答案册：${aiAns.map((a) => a.name).join('、')}`)
     if (cov.expected) {
       let c = `覆盖 ${cov.transcribed || 0}/${cov.expected}`
       if (cov.flawed?.length) c += `；答案册标错 ${cov.flawed.length} 道（第 ${cov.flawed.join('、')} 题）`
@@ -350,13 +344,64 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     return parts.join('；')
   }
 
-  const setAiResult = (res: any) => {
+  const setAiResult = (res: any, sourceName = '') => {
     const cards: Record<number, any> = {}
     for (const it of (res.items || [])) {
       if (it && typeof it.block === 'number') cards[it.block] = it
     }
     setAiCards(cards)
     setAiPageDir(String(res.page_dir || ''))
+    // AI 已经读出卷名时，直接填进「出处 / 地区 / 年份」，不要再让用户对着一堆默认值。
+    const p = (res.params && typeof res.params === 'object') ? res.params : {}
+    let title = String(p.label || res.title || '').trim()
+    if (["", "资料", "数学", "数学试题", "数学试卷", "试卷", "试题"].includes(title)) {
+      title = String(sourceName || '').split(/\s+/)[0].replace(/\.pdf$/i, '').trim()
+    }
+    const src = String(sourceName || '').trim()
+    const ym = (String(p.year || '') || (title.match(/(?:19|20)\d{2}/) || [])
+      || src.match(/(?:19|20)\d{2}/) || [])[0] || year
+    const stem = src.replace(/\.[^.]+$/, '').replace(/^数学[_-]?/, '')
+    const regionGuess = stem.split(/20\d{2}/)[0].replace(/[_-]+/g, ' ').trim()
+    const bookName = title.replace(/\s*数学(?:试题|试卷|试题卷|试卷).*$/, '').trim()
+    const nextBook = String(p.book || '').trim()
+      || ((!book.trim() || book === DEFAULT_BOOK) ? (bookName || title || book) : book)
+    const nextLabel = title || label
+    const nextRegion = String(p.region || '').trim() || (region.trim() ? region : regionGuess)
+    if (ym) setYear(ym)
+    if (title) {
+      setLabel(nextLabel)
+      setBook(nextBook)
+      if (!region.trim() && regionGuess) setRegion(nextRegion)
+    }
+    const fields = { book: nextBook, label: nextLabel, year: ym, region: nextRegion }
+    aiSourceFields.current = fields
+    setAiReport({ ...res, source_label: nextLabel, source_book: nextBook,
+                  source_region: nextRegion })
+    return fields
+  }
+
+  /** 打开历史读取：不用重新上传，也不重新计费；直接恢复上次结果。 */
+  const loadAiHistory = async (id: string) => {
+    if (aiBusy) { setAiErr('上一份还在读，等它结束再打开历史'); return }
+    setAiBusy(true); setAiErr(''); setAiNote('')
+    setAiProg({ done: 0, total: 0, msg: '正在恢复上次结果…' })
+    try {
+      const d: any = await api.aiHistoryItem(id)
+      if (!d?.result) {
+        setAiErr('这条历史没有保存结果（当时可能失败了），请重新读取')
+        setAiBusy(false); setAiProg(null); return
+      }
+      const res = d.result
+      setSrcDir(String(res.crop_dir || ''))
+      setAiResult(res, String(d.manifest?.name || ''))
+      changeText(String(res.latex || ''))
+      setAiNote(aiResultNote(res, false))
+      setAiBusy(false); setAiProg(null)
+      if (res.latex) void dryRun(String(res.latex), String(res.crop_dir || ''),
+        aiSourceFields.current)
+    } catch (e) {
+      setAiErr(String((e as any)?.message || e)); setAiBusy(false); setAiProg(null)
+    }
   }
 
   const aiWatch = async (id: string, seq: number) => {
@@ -384,12 +429,12 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
         const res = j.result || {}
         if (res.latex) {
           setSrcDir(res.crop_dir || '')
-          setAiResult(res)
+          setAiResult(res, aiSourceName.current)
           changeText(res.latex)
           setAiNote(aiResultNote(res, true))
-          void dryRun(res.latex, res.crop_dir || '')
+          void dryRun(res.latex, res.crop_dir || '', aiSourceFields.current)
         } else {
-          setAiResult(res)
+          setAiResult(res, aiSourceName.current)
           setAiNote(aiResultNote(res, true))
         }
         setAiBusy(false); setAiProg(null); setAiCancelling(false); setAiJobId('')
@@ -398,12 +443,12 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
       if (j.state === 'done') {
         const res = j.result || {}
         setSrcDir(res.crop_dir || '')
-        setAiResult(res)
+        setAiResult(res, aiSourceName.current)
         changeText(res.latex || '')
         setAiNote(aiResultNote(res, false))
         setAiBusy(false); setAiProg(null); setAiCancelling(false); setAiJobId('')
         // 自动解析：让用户直接看到题卡，少点一次
-        if (res.latex) void dryRun(res.latex, res.crop_dir || '')
+        if (res.latex) void dryRun(res.latex, res.crop_dir || '', aiSourceFields.current)
         return
       }
       if (j.state === 'error') {
@@ -412,7 +457,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
         return
       }
     }
-    setAiErr('等了太久还没读完 —— 关掉重试，或把「每批页数」调小')
+    setAiErr('等了太久还没读完 —— 关掉重试，或把资料拆小（一次最多 14 页）')
     setAiBusy(false); setAiCancelling(false)
   }
 
@@ -420,7 +465,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   const aiCancel = async () => {
     if (!aiJobId || aiCancelling) return
     if (!window.confirm('取消这次读题？\n\n'
-      + '已读到的题会保留；已经发给 DeepSeek 的请求收不回来，仍会计费。')) return
+      + '一次请求读完，取消后这次不会产出题卡；已发出的请求收不回来，仍会计费。')) return
     setAiCancelling(true)
     setAiProg((p) => (p ? { ...p, msg: '正在取消…' } : p))
     try { await api.aiCancel(aiJobId) }
@@ -429,58 +474,57 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     }
   }
 
-  const aiRunFile = (f: File) => {
+  const aiRunFiles = async (files: File[], fillSolutions = false) => {
     setAiErr(''); setAiNote('')
     if (aiBusy) {
       setAiErr('上一份还在读，等它读完再换（同时开两个任务会重复计费）')
       return
     }
-    const isPdf = /\.pdf$/i.test(f.name) || f.type === 'application/pdf'
-    const isImg = f.type.startsWith('image/')
-    if (!isPdf && !isImg) {
-      setAiErr('AI 整份读只吃 PDF 和图片；Word 可直接拖到上方输入框，会先转 PDF 再本地读图')
-      return
-    }
-    // **换卷必须清掉旧答案册**。否则模型会把上一份卷子的答案按题号抄到
-    // 这一份上，answer_quote 还是题号，unverified=0，界面看不出错。
-    if (aiAns) {
-      const keep = window.confirm(
-        `这次要带上答案 / 解析《${aiAns.name}》吗？\n\n`
-        + '点「确定」= 带上它（同一份卷子重读时用）。\n'
-        + '点「取消」= 清掉它。换一份卷子时必须清掉，不然会把上一份的答案按题号抄到这一份上。')
-      if (!keep) {
-        setAiAns(null)
-        setAiErr('已清掉上次的答案 / 解析。请先选这次卷子的答案文件，再选试题。')
+    if (!files.length) { setAiErr('先选至少一份试题 PDF / 图片'); return }
+    for (const f of files) {
+      const isPdf = /\.pdf$/i.test(f.name) || f.type === 'application/pdf'
+      const isImg = f.type.startsWith('image/')
+      if (!isPdf && !isImg) {
+        setAiErr(`「${f.name}」不是 PDF / 图片；Word 请先另存为 PDF。`)
+        return
+      }
+      if (f.size > 200 * 1024 * 1024) {
+        setAiErr(`「${f.name}」超过 200 MB，请先拆分或压缩。`)
         return
       }
     }
+    aiSourceName.current = files.map((f) => f.name).join(' ')
     const seq = ++aiSeq.current
     setAiJobId(''); setAiCancelling(false)
-    setAiCards({}); setAiPageDir(''); setPageView(null)
-    setAiBusy(true); setAiProg({ done: 0, total: 0, msg: '正在上传…' })
-    const r = new FileReader()
-    r.onload = async () => {
-      try {
-        if (seq !== aiSeq.current) return
-        const b64 = String(r.result || '').split(',')[1] || ''
-        const j: any = await api.aiRun(b64, f.name, aiAns?.b64 || '', aiAns?.name || '')
-        if (seq !== aiSeq.current) {
-          // 上传途中抽屉被关了/换了文件：任务可能刚好开出来，顺手取消，
-          // 否则它会继续读、继续计费，而界面已经拿不回这个 job id。
-          if (j?.job) void api.aiCancel(j.job).catch(() => { /* 可能已结束 */ })
-          return
-        }
-        setAiJobId(j.job || '')
-        setAiProg({ done: 0, total: 0, msg: '排队中…' })
-        await aiWatch(j.job, seq)
-      } catch (e) {
-        if (seq === aiSeq.current) {
-          setAiErr(String((e as any)?.message || e)); setAiBusy(false); setAiProg(null)
-        }
+    setAiCards({}); setAiPageDir(''); setPageView(null); setAiReport(null)
+    setAiBusy(true); setAiProg({ done: 0, total: 0, msg: '正在读取文件…' })
+    const read = (f: File) => new Promise<string>((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result || '').split(',')[1] || '')
+      r.onerror = () => reject(new Error(`读不出「${f.name}」`))
+      r.readAsDataURL(f)
+    })
+    try {
+      const parts = await Promise.all(files.map(async (f) => ({
+        name: f.name, data: await read(f),
+      })))
+      if (seq !== aiSeq.current) return
+      const answers = aiAns.map((a) => ({ name: a.name, data: a.b64 }))
+      const j: any = await api.aiRunFiles(parts, answers, fillSolutions)
+      if (seq !== aiSeq.current) {
+        // 上传途中录入页被关了/换了文件：任务可能刚好开出来，顺手取消，
+        // 否则它会继续读、继续计费，而界面已经拿不回这个 job id。
+        if (j?.job) void api.aiCancel(j.job).catch(() => { /* 可能已结束 */ })
+        return
+      }
+      setAiJobId(j.job || '')
+      setAiProg({ done: 0, total: 0, msg: '排队中…' })
+      await aiWatch(j.job, seq)
+    } catch (e) {
+      if (seq === aiSeq.current) {
+        setAiErr(String((e as any)?.message || e)); setAiBusy(false); setAiProg(null)
       }
     }
-    r.onerror = () => { setAiErr('读不出这个文件'); setAiBusy(false); setAiProg(null) }
-    r.readAsDataURL(f)
   }
 
   const yNum = () => {
@@ -526,7 +570,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
       + '已经发出去的请求仍会计费。仍要关闭？')) return
     if (text.trim() && !report
       && !window.confirm('关闭录入？材料已自动保存为本地草稿，下次打开可恢复。')) return
-    // 两个确认都过了才真正取消/关抽屉：否则用户点错「关闭」又取消，
+    // 两个确认都过了才真正取消/关页面：否则用户点错「关闭」又取消，
     // 任务已经被取消了，界面却还开着。
     if (aiRunning && aiJobId) {
       void api.aiCancel(aiJobId).catch(() => { /* 任务可能刚好结束 */ })
@@ -539,8 +583,8 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     try { localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
     setText(''); setBook(DEFAULT_BOOK); setLabel(DEFAULT_LABEL); setYear(DEFAULT_YEAR)
     setRegion(''); setSrcDir(''); setAutoTag(false)
-    setAiAns(null); setAiNote(''); setAiErr('')
-    setAiCards({}); setAiPageDir(''); setPageView(null)
+    setAiAns([]); setAiNote(''); setAiErr('')
+    setAiCards({}); setAiPageDir(''); setPageView(null); setAiReport(null)
     setRestored(false)
     resetReview()
   }
@@ -626,20 +670,23 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
    *  都跟出处有关，填完再跑一遍，免得看到的是"空出处"的结果。 */
   /** 干跑。`srcArg` 给文本（AI 刚读回来的），`srcDirArg` 给图片来源目录——
    *  两个都从外面传，是因为 setState 还没生效，直接用会拿到旧值。 */
-  const dryRun = async (srcArg?: string, srcDirArg?: string) => {
+  const dryRun = async (srcArg?: string, srcDirArg?: string,
+    overrides?: { book?: string; label?: string; year?: string; region?: string } | null) => {
     const src = srcArg ?? text
     if (!src.trim()) { setErr('先粘贴题目 LaTeX'); return }
-    if (!sourceCheck()) return
+    if (!overrides && !sourceCheck()) return
+    const bk = overrides?.book ?? book
+    const reg = overrides?.region ?? region
     setBusy(true); setErr(''); setMsg(''); setTagErr('')
     tagSeq.current += 1
     try {
-      let lab = label
-      let yr = year
+      let lab = overrides?.label ?? label
+      let yr = overrides?.year ?? year
       let filled = false
       // **先轻量认标题**，再跑整库查重。否则为了填出处要连跑两遍 preview
       // （一遍空出处、一遍填好出处），29k 道的库上就是白等十几秒。
-      const autoLab = !lab.trim() || lab === lastHint.current.title
-      const autoYr = !yr.trim() || yr === String(lastHint.current.year || '')
+      const autoLab = !overrides && (!lab.trim() || lab === lastHint.current.title)
+      const autoYr = !overrides && (!yr.trim() || yr === String(lastHint.current.year || ''))
       if (autoLab || autoYr) {
         try {
           const h: any = await api.ingestSource(src)
@@ -651,6 +698,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
       }
       const withFields = () => baseBody({
         text: src, src_dir: (srcDirArg ?? srcDir).trim(),
+        book: bk.trim(), region: reg.trim(),
         label: lab, year: yr ? Number(yr) : null,
         items: pv ? itemOverrides() : [],
       })
@@ -660,12 +708,12 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
       // 兜底：轻量接口没认出来、但 preview 认出来了（正常不会发生，
       // 两条路都调用 `extract_source_hint`）。
       let more = false
-      if (d.source_hint?.title
+      if (!overrides && d.source_hint?.title
           && lab.trim() !== d.source_hint.title
           && (!lab.trim() || lab === lastHint.current.title)) {
         lab = d.source_hint.title; more = true
       }
-      if (d.source_hint?.year
+      if (!overrides && d.source_hint?.year
           && yr.trim() !== String(d.source_hint.year)
           && (!yr.trim() || yr === String(lastHint.current.year || ''))) {
         yr = String(d.source_hint.year); more = true
@@ -728,13 +776,12 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     activeTags.current += 1
     setTagging(true); setTagErr('')
     try {
-      const r: any = await api.ingestTag({
-        items: targets.map((it: any) => ({
-          stem: it.stem, options: it.options || [], type: it.type || '',
-        })),
-        workers: 4,
-        model: opts.model || '',
-      })
+      const tagBody = targets.map((it: any) => ({
+        stem: it.stem, options: it.options || [], type: it.type || '',
+      }))
+      const r: any = ai
+        ? await api.aiTag(tagBody, 'senior')
+        : await api.ingestTag({ items: tagBody, workers: 4, model: opts.model || '' })
       if (seq !== tagSeq.current) return
       if (!r || typeof r !== 'object') { setTagErr('标注服务没有返回结果'); return }
       if (!r.ok && r.error) { setTagErr(String(r.error)); return }
@@ -798,16 +845,16 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   /** 卡片内改源码：把整份材料里**这一题块**替换掉，再跑一次完整 preview。
    *  其他卡的勾选/考点/难度按 block 保留（`buildEdits/buildPicks` 会合并）。
    *  校验题数必须不变：如果用户把一段粘成两道题，整批 block 会错位，拒绝保存。 */
-  const saveSource = async (b: number) => {
-    if (!pv) return
+  const saveSource = async (b: number, nextArg?: string): Promise<boolean> => {
+    if (!pv) return false
     const it = pv.items.find((x: any) => x.block === b)
-    if (!it) return
+    if (!it) return false
     const old = String(it.tex || "")
-    const next = (srcEdit[b] ?? old).trim()
-    if (!next) { setErr('源码不能为空'); return }
+    const next = (nextArg ?? srcEdit[b] ?? old).trim()
+    if (!next) { setErr('源码不能为空'); return false }
     if (next === old.trim()) {
       setSrcOpen({ ...srcOpen, [b]: false })
-      return
+      return false
     }
     // 同一段源码可能在材料里出现多次：按 block 顺序数这是第几次。
     let nth = 0
@@ -823,7 +870,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     }
     if (pos < 0) {
       setErr('找不到这道题在原材料里的位置，请重新解析后再改')
-      return
+      return false
     }
     const full = text.slice(0, pos) + next + text.slice(pos + old.length)
     setBusy(true); setErr(''); setMsg('')
@@ -845,9 +892,90 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
       setSrcOpen((prev) => ({ ...prev, [b]: false }))
       setAiMiss((prev) => ({ ...prev, [b]: false }))
       setMsg(`已更新第 ${it.source_no || b + 1} 题源码`)
+      return true
     } catch (e) {
       setErr(String((e as any)?.message || e))
+      return false
     } finally { setBusy(false) }
+  }
+
+  /** 按当前 conformance 报错让 DeepSeek 只修这一道题；修完仍走 preview 才应用。 */
+  const repairQuestion = async (b: number, instruction = '') => {
+    if (!pv || repairing[b]) return
+    const it = pv.items.find((x: any) => x.block === b)
+    if (!it) return
+    const old = String(it.tex || "")
+    const current = srcEdit[b] ?? old
+    const specReasons = (pv.spec?.after || [])
+      .filter((x: any) => x.key === it.key)
+      .map((x: any) => `${x.check || '规范'}：${x.why || ''}`.trim())
+    const problems = [...new Set([
+      ...blockingOf(it),
+      ...((Array.isArray(it.problems) ? it.problems : []) as string[]),
+      ...specReasons,
+    ])]
+    setRepairing((prev) => ({ ...prev, [b]: true }))
+    setRepairNote((prev) => ({ ...prev, [b]: '' }))
+    setErr(''); setMsg('')
+    try {
+      let r: any
+      let label = ''
+      if (instruction) {
+        // 图片转 TikZ 需要原图，仍走带图的单次能力；文本修复走下面的 agent loop。
+        r = await api.aiRepair(current, problems, String(it.source_no || ''),
+          instruction, srcDir)
+        label = '图片转 TikZ'
+        if (r?.unfixable) {
+          setRepairNote((prev) => ({ ...prev, [b]: `原卷问题：${r.note || '需人工确认'}` }))
+          setMsg('DeepSeek 判断这是原卷内容问题，没有自动改；请改源码确认。')
+          return
+        }
+      } else {
+        r = await api.aiRepairAgent({
+          tex: current, problems, source_no: String(it.source_no || ''), src_dir: srcDir,
+        })
+        label = 'DeepSeek agent'
+        if (!r?.passed) {
+          const errs = Array.isArray(r?.errors) ? r.errors : []
+          setRepairNote((prev) => ({ ...prev,
+            [b]: `${r?.note || '多轮修复未通过'}${errs.length ? '：' + errs.slice(0, 4).join('；') : ''}` }))
+          setMsg(`DeepSeek agent 跑了 ${r?.steps?.length || 0} 步，仍未通过单题检查；源码未改动。`)
+          return
+        }
+      }
+      const fixed = String(r?.tex || '').trim()
+      if (!fixed) { setRepairNote((prev) => ({ ...prev, [b]: 'DeepSeek 没有返回修复结果' })); return }
+      // agent / 图片转换都必须再过一次本地单题检查。
+      const checked: any = await api.ingestPreview({
+        ...baseBody({ text: fixed }), items: [],
+      })
+      if (!checked || !Array.isArray(checked.items) || checked.items.length !== 1) {
+        setRepairNote((prev) => ({ ...prev,
+          [b]: '修复后的源码不能恰好解析成一道题，已拒绝应用' }))
+        return
+      }
+      const one = checked.items[0]
+      const still = blockingOf(one)
+      if (still.length) {
+        setRepairNote((prev) => ({ ...prev,
+          [b]: `修完后仍有 ${still.length} 条未过：${still.slice(0, 4).join('；')}` }))
+        setMsg('修复结果未通过单题检查，已拒绝应用；没有改动当前源码。')
+        return
+      }
+      const ok = await saveSource(b, fixed)
+      if (ok) {
+        setMsg(`${label} 已修复第 ${it.source_no || b + 1} 题${r?.note ? `（${r.note}）` : ''}`)
+      } else {
+        setRepairNote((prev) => ({ ...prev, [b]: '单题检查通过，但写回整卷预览时没有应用成功' }))
+      }
+    } catch (e) {
+      setRepairNote((prev) => ({ ...prev, [b]: String((e as any)?.message || e) }))
+      setErr(String((e as any)?.message || e))
+    } finally {
+      setRepairing((prev) => {
+        const n = { ...prev }; delete n[b]; return n
+      })
+    }
   }
 
   const isDup = (it: any) => backfill
@@ -1045,26 +1173,6 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
   /** AI 模式、还没读到东西：先把出处 / 批量 / LaTeX 三块收起来——
    *  小白一打开就看见三组输入框会直接懵。读到内容后自动恢复。 */
   const aiClean = ai && !text.trim()
-  const aiHasText = ai && !!text.trim()
-  /** 选资料的隐藏 input：大框和"换一份"窄条共用同一个处理函数。 */
-  const aiFileInput = (
-    <input type="file" accept=".pdf,image/*" className="hidden"
-      onChange={(e) => {
-        const f = e.target.files?.[0]
-        e.currentTarget.value = ''
-        if (!f) return
-        // **只在"明确没配"时才拦**。`aiCfg` 还没拉回来（null）时照跑不误：
-        // 配置的真假以服务端为准，这里拦一下反而会误伤——页面刚打开就选文件，
-        // 会看到「先把 API Key 填上」，其实早就配好了。
-        if (aiCfg && !aiCfg.configured) {
-          setAiSetup(true)
-          setAiErr('先把 API Key 填上（只需一次），填好后再选一次文件')
-          return
-        }
-        aiRunFile(f)
-      }} />
-  )
-
   const showHint = !!hintTitle && (label.trim() !== hintTitle
     || (!!hintYear && year.trim() !== String(hintYear)))
 
@@ -1166,6 +1274,8 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     setAiCancelling,
     aiCards,
     setAiCards,
+    aiReport,
+    setAiReport,
     aiPageDir,
     setAiPageDir,
     pageView,
@@ -1182,10 +1292,6 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     setAiModel,
     aiBase,
     setAiBase,
-    aiPages,
-    setAiPages,
-    aiWorkers,
-    setAiWorkers,
     aiSeq,
     pointInfo,
     points,
@@ -1203,7 +1309,8 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     setAiResult,
     aiWatch,
     aiCancel,
-    aiRunFile,
+    aiRunFiles,
+    loadAiHistory,
     yNum,
     badKeyPart,
     yearBad,
@@ -1221,6 +1328,9 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     unloadLlm,
     tagItems,
     saveSource,
+    repairQuestion,
+    repairing,
+    repairNote,
     isDup,
     visibleItems,
     filterCounts,
@@ -1239,8 +1349,6 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
     hintTitle,
     hintYear,
     aiClean,
-    aiHasText,
-    aiFileInput,
     showHint,
   }
 }

@@ -31,8 +31,14 @@ export type Q = {
   blocks: { stem: Block[]; answer: Block[]; solution: Block[]; options: Block[][] }
   difficulty: string; stars: number; point_titles: string[]
   seq?: number
+  /** 原卷题号（套卷视图用；`meta.source_no`）。 */
+  source_no?: string
   used?: number                       // 被导出（试卷/讲义）的次数
+  /** 被存档里的卷子组过几次、最近一份叫什么（派生自 试卷/存档.json）。 */
+  papers?: { n: number; last: string }
   meta: Record<string, any>; hash: string
+  /** 配图 id 列表（位图文件名 / TikZ 哈希）。正文是唯一真相，这里只是派生。 */
+  figures?: string[]
   /** 学段：primary / junior / senior（后端按考点现推） */
   stage?: string
   missing: string[]; flags: Flags
@@ -55,6 +61,31 @@ export type SavedHandler = (d: Q, opts?: {
   refreshList?: boolean
   silent?: boolean
 }) => void
+
+/** 批量改出处后，后端回传的单题改名映射（old key → new key）。
+ *
+ *  卷子/列表/详情缓存里存的是 key，不跟着迁的话它们还拿着旧 key，
+ *  导出时才报「找不到题」。 */
+export type KeyRename = {
+  old: string; new: string
+  book?: string; label?: string; year?: number | string
+}
+
+/** 批量改出处完成：改名映射 + 当前题的最新记录（含新出处）。 */
+export type SourceBatchDone = {
+  renames: KeyRename[]
+  current?: Q
+}
+
+/** 改出处后套卷视图要跟到哪一份。
+ *
+ *  套卷按 `meta.source_label` 分组；改一次出处，旧的套卷名可能消失、并入新名。
+ *  `nonce` 自增，让同一对 from→to 连续发生两次也能被识别成新事件。 */
+export type SetsFollow = {
+  from: string
+  to: string
+  nonce: number
+}
 
 export type Facets = {
   types: { value: string; label: string; n: number }[]
@@ -99,6 +130,10 @@ export type ExportResult = {
   page_stats?: { page: number; fill_pct: number; blank_cm: number; empty: boolean }[]
   warnings?: string[]
   question_pages?: Record<string, string[]>
+  /** 排版溢出（编成功也有）：`pt` 超宽多少、落在哪道题。 */
+  overfull?: { pt: number; line: number; key: string }[]
+  /** 这卷编了几遍、哪些题被强制断页、哪些题比一页还高、讲义有没有降级。 */
+  layout?: { passes: number; forced: string[]; still_split: string[]; tight: boolean }
 }
 
 /** 学段驾驶舱的返回结构（`/api/overview`）。 */

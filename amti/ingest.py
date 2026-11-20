@@ -18,10 +18,10 @@ import json
 import re
 import threading
 import time
-from pathlib import Path
 
 from . import dedup, images as im, knowledge as kb, normalize as norm, store
-from .latex_ir import BODY_ENV_RE, parse_question
+from . import latex_blocks as lb
+from .latex_ir import parse_question
 from .schema import QTYPE_LABEL, Option, Question
 
 # 一个题块 = 题目环境 + 紧跟着的 solution 环境（如果有）
@@ -401,7 +401,7 @@ def parse_source(text: str, *, book: str = "手工录入", label: str = "",
                 meta.pop("point_source", None)
 
         # AI 录题的核对溯源：第二遍核对通过才走到这里，来源/置信度不能丢。
-        # 以前这些字段只在 `aiingest` 的返回值里有，commit 重新解析源码时
+        # 以前这些字段只在 AI 返回值里有，commit 重新解析源码时
         # 全部丢掉，题库里看不出这道是答案册核对过的还是模型直读的。
         for f in ("answer_source", "solution_source", "verdict",
                   "verified", "confidence"):
@@ -952,6 +952,8 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
             "point_source": q.meta.get("point_source") or "",
             "tag_model": q.meta.get("tag_model") or "",
             "tagged_at": q.meta.get("tagged_at") or "",
+            "solution_source": q.meta.get("solution_source") or "",
+            "solution_generated": bool(q.meta.get("solution_generated")),
             # 只有**明确写在 meta 里**的难度才算人手定的；`q.difficulty`
             # 可能是主考点派生的——界面要能分清，否则改考点后难度不跟着变。
             "manual_difficulty": q.meta.get("difficulty") or "",
@@ -1091,6 +1093,17 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
                     })
                     it["dups"] = [disp] + [x for x in it["dups"]
                                            if x["key"] != best["key"]]
+        # 库内那道题的正文给**前端渲染用的块 IR**：答案/解析是 LaTeX，
+        # 当纯文本摊开只会看到一片 `\[ ... \]`（实测「疑似重复」里完全读不出来）。
+        # 只给最相似的一道，避免 N 张卡 × 3 道题的整份正文把 payload 撑大。
+        best_dup = (it.get("dups") or [None])[0]
+        if best_dup:
+            src = by_key.get(best_dup.get("key"))
+            if src is not None:
+                best_dup["stem_blocks"] = lb.parse_blocks(src.stem, parts=True)[:16]
+                best_dup["answer_blocks"] = lb.parse_blocks(src.answer)[:8]
+                best_dup["solution_blocks"] = lb.parse_blocks(src.solution)[:24]
+
         # **升级判定**：这道题库里已经有了，但手里这份更全？
         # 干跑就要说清楚"会升级还是会被跳过"，否则点下确认才发现白录了。
         old = by_key.get(it["key"])
@@ -1197,6 +1210,7 @@ def preview(text: str, *, src_dirs=None, book: str = "手工录入", label: str 
         "ok": not missing and not errors and not bad,
         "count": len(qs),
         "items": items,
+        "merged": merged,
         "errors": errors,
         # 前几行里的标题/年份：界面用来预填「出处/年份」，**可改**。
         "source_hint": extract_source_hint(text),

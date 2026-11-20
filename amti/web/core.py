@@ -14,6 +14,7 @@ from collections import OrderedDict
 from amti import content_store
 from amti import knowledge_map
 from amti import lite_cache
+from amti import papers as papers_mod
 from amti import readmodel
 from amti import review as review_mod
 from amti import store
@@ -228,6 +229,15 @@ def _tag_fields(q) -> dict:
     }
 
 
+def _paper_usage() -> dict:
+    """题目 key → 「被几份存档组过 / 最近一份」。派生自 `试卷/存档.json`。
+
+    放这里而不是读模型：存档一变就得跟着变，而读模型按题库卷签名重建，
+    为一份卷子重建 3 万行不值得（见 `amti/papers.usage_index`）。
+    """
+    return papers_mod.usage_index()
+
+
 def _cheap_fields(q) -> dict:
     """不跑 IR 解析就能拿到的字段。筛选只看这些。"""
     d = {
@@ -371,10 +381,14 @@ def _readmodel_page(*, limit: int, offset: int, sort: str, lite: bool = True, **
     seq_map = readmodel.seqs([k for k in keys if k in by])
     if len(seq_map) < len(page):
         seq_map = _seq_map()
+    papers = _paper_usage()
     out = []
     for item in page:
         b = _brief_cached_lite(item) if lite else _brief_cached(item)
         b["seq"] = seq_map.get(item.key, 0)
         b["used"] = usage.get(item.key, 0)
+        hit = papers.get(item.key)
+        if hit:
+            b["papers"] = hit
         out.append(b)
     return {"total": total, "items": out}

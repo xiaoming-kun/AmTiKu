@@ -25,8 +25,8 @@ const K_ACCENT = 'amtiku.accent'
 export const ACCENTS: { id: Accent; label: string; dot: string }[] = [
   // dot 是给选择器里那个小圆点用的实色。写死而不是读 CSS 变量：
   // 下拉要**同时**展示六种颜色，读变量只能读到当前那一种。
-  { id: 'aurora',   label: '系统蓝', dot: '#0a84ff' },
-  { id: 'indigo',   label: '学院蓝', dot: '#0071e3' },
+  { id: 'aurora',   label: '墨蓝',   dot: '#24527a' },
+  { id: 'indigo',   label: '学院蓝', dot: '#2563eb' },
   { id: 'rose',     label: '玫粉',   dot: '#ce338a' },
   { id: 'ocean',    label: '湖蓝',   dot: '#2b7fa8' },
   { id: 'emerald',  label: '翠绿',   dot: '#2b8355' },

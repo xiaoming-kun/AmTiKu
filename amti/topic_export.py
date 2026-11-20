@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 from .paths import ROOT
-import os
 import re
 import shutil
 import subprocess

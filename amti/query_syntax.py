@@ -6,6 +6,7 @@
 支持：
 
     考点:三角 年份:2024 类型:多选 难度:中档 出处:新高考I卷 地区:江苏
+    考点:函数&导数           # `&` = **交集**：这题要同时挂这两个考点
     -导数                    # 排除含“导数”的题
     出处:"2024 新高考I卷"    # 引号把空格并进一个字段值
 
@@ -17,7 +18,7 @@ difficulty/难度、source/出处/来源、region/地区。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 _FIELDS = {
     "考点": "point", "知识点": "point", "point": "point", "kp": "point",
@@ -51,6 +52,9 @@ class ParsedQuery:
     keyword: str = ""
     exclude: tuple[str, ...] = ()
     point: str = ""
+    #: 考点怎么算命中：`any`（默认，命中任一） / `all`（交集，全部都要挂）。
+    #: 语法里只要有一个考点值用了 `&`（如 `考点:函数&导数`）就是 `all`。
+    point_mode: str = ""
     year: str = ""
     type: str = ""
     difficulty: str = ""
@@ -87,6 +91,7 @@ def parse(q: str) -> ParsedQuery:
     vals: dict[str, str] = {}
     words: list[str] = []
     exclude: list[str] = []
+    point_all = False
 
     for tok in _split(q):
         tok = tok.strip()
@@ -109,6 +114,13 @@ def parse(q: str) -> ParsedQuery:
                 elif fld == "difficulty":
                     val = ",".join(_DIFF.get(x.strip(), x.strip())
                                    for x in val.split(",") if x.strip())
+                elif fld == "point" and "&" in val:
+                    # `考点:函数&导数` = 交集。语义只做一个标记，真正的
+                    # 判定在 QuestionFilter（列表与组卷共用同一口径）。
+                    parts = [x.strip() for x in val.split("&") if x.strip()]
+                    if len(parts) > 1:
+                        point_all = True
+                    val = ",".join(parts)
                 vals[fld] = (vals[fld] + "," + val).strip(",") if fld in vals else val
                 continue
         words.append(tok)
@@ -117,6 +129,7 @@ def parse(q: str) -> ParsedQuery:
         keyword=" ".join(words),
         exclude=tuple(dict.fromkeys(exclude)),
         point=vals.get("point", ""),
+        point_mode="all" if point_all else "",
         year=vals.get("year", ""),
         type=vals.get("type", ""),
         difficulty=vals.get("difficulty", ""),
@@ -148,6 +161,14 @@ def _selftest() -> int:
     check("题号不误判字段", p3.keyword == "6.4.2" and not p3.has_fields, repr(p3))
     p4 = parse("年份:2024,2025 年份:2026")
     check("同字段取并集", p4.year == "2024,2025,2026", p4.year)
+    p5 = parse("考点:函数&导数 年份:2024")
+    check("& 表示考点交集",
+          p5.point == "函数,导数" and p5.point_mode == "all", repr(p5))
+    p6 = parse("考点:函数,导数")
+    check("逗号仍是并集", p6.point == "函数,导数" and p6.point_mode == "", repr(p6))
+    p7 = parse("考点:函数&导数&数列")
+    check("多个 & 仍是一组交集",
+          p7.point == "函数,导数,数列" and p7.point_mode == "all", repr(p7))
     print("query_syntax 自检 %s（%d 项失败）"
           % ("通过" if not fails else "未通过", fails))
     return 1 if fails else 0

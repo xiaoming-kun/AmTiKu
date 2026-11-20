@@ -39,6 +39,93 @@ def _aux_pages(aux_path: Path | None) -> dict[int, tuple[str, str]]:
     return {i: (start[i], end[i]) for i in start if i in end}
 
 
+def page_count(pdf_path: str | Path) -> int | None:
+    """PDF 页数（读不出来给 None）。讲义"一题一页"靠它判断有没有题超页。"""
+    try:
+        import fitz
+    except Exception:                                            # noqa: BLE001
+        return None
+    try:
+        doc = fitz.open(str(pdf_path))
+        try:
+            return len(doc)
+        finally:
+            doc.close()
+    except Exception:                                            # noqa: BLE001
+        return None
+
+
+def question_spans(tex_path: str | Path) -> dict[int, tuple[str, str]]:
+    """每题（卷面序号）跨了哪几页：`{1: ("2","2"), 2: ("3","5")}`。
+
+    数据来自 `.aux` 里的 `amtiq{N}` / `amtiqend{N}`（`qid_marks` 时才有）。
+    `start != end` 就是**这道题被分页拆开了**——跨页修复循环靠它。
+    """
+    return _aux_pages(Path(tex_path).with_suffix(".aux"))
+
+
+def split_questions(tex_path: str | Path) -> list[int]:
+    """被拆到两页以上的题号（1 起）。"""
+    return sorted(i for i, (a, b) in question_spans(tex_path).items() if a != b)
+
+
+# Overfull 有三种报法，行号都在里面：
+#   in paragraph at lines 812--815
+#   in alignment at lines 96--96
+#   **detected at line 146**（行间公式溢出走这条——以前只认前两种，公式溢出全漏了）
+_OVERFULL_RE = re.compile(
+    r"Overfull \\hbox \(([\d.]+)pt too wide\)[^\n]*?"
+    r"(?:at lines? (\d+)(?:--(\d+))?)")
+
+
+def _line_owner(tex_path: Path | None) -> list[tuple[int, str]]:
+    """`[(行号, 题 key)]`：每道题的第一行是 `% AMTIKU-Q: <key>` 注释。"""
+    if not tex_path or not tex_path.exists():
+        return []
+    out: list[tuple[int, str]] = []
+    try:
+        for i, line in enumerate(tex_path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.startswith("% AMTIKU-Q: "):
+                out.append((i, line[len("% AMTIKU-Q: "):].strip()))
+    except OSError:
+        return []
+    return out
+
+
+def _owner_of(line: int, owners: list[tuple[int, str]]) -> str:
+    key = ""
+    for ln, k in owners:
+        if ln <= line:
+            key = k
+        else:
+            break
+    return key
+
+
+def overfull(log_path: str | Path, tex_path: str | Path | None = None) -> list[dict]:
+    r"""`.log` 里的**排版溢出**：`[{line, pt, key}]`（按宽度降序）。
+
+    "Overfull \hbox" 是 LaTeX 唯一会明说的版面错误——一行/一张表冲出纸面。
+    以前只在编译失败时翻译它；现在**编成功了也报**：卷子能出，但某一行出血了。
+    """
+    log_path = Path(log_path)
+    if not log_path.exists():
+        return []
+    tex = Path(tex_path) if tex_path else None
+    owners = _line_owner(tex)
+    out: list[dict] = []
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    for m in _OVERFULL_RE.finditer(text):
+        pt = float(m.group(1))
+        line = int(m.group(2))
+        out.append({"pt": pt, "line": line, "key": _owner_of(line, owners)})
+    out.sort(key=lambda x: -x["pt"])
+    return out
+
+
 def inspect(pdf_path: str | Path, *, tex_path: str | Path | None = None,
             aux_path: str | Path | None = None) -> dict:
     r"""返回 `{pages, page_stats, warnings, question_pages}`。"""
@@ -46,7 +133,7 @@ def inspect(pdf_path: str | Path, *, tex_path: str | Path | None = None,
     tex_path = Path(tex_path) if tex_path else None
     aux_path = Path(aux_path) if aux_path else pdf_path.with_suffix(".aux")
     out: dict = {"pages": None, "page_stats": [], "warnings": [],
-                 "question_pages": {}}
+                 "question_pages": {}, "overfull": []}
     try:
         import fitz  # PyMuPDF；没装就走下面的 except
     except Exception:                                            # noqa: BLE001
@@ -115,6 +202,19 @@ def inspect(pdf_path: str | Path, *, tex_path: str | Path | None = None,
             if a != b:
                 out["warnings"].append(
                     "第 %d 个解答题跨页（第 %s–%s 页）" % (idx, a, b))
+
+        # **排版溢出**：编成功了也要报（某一行/某张表冲出纸面）。
+        over = overfull(pdf_path.with_suffix(".log"), tex_path)
+        out["overfull"] = over[:20]
+        # 0.1cm 以下的溢出在纸上不可见，不当问题报（否则每份卷子都挂一条噪声）
+        from . import layout as _L
+        over = [o for o in over if o["pt"] >= _L.OVERFULL_PT]
+        if over:
+            worst = over[0]
+            who = ("「%s」" % worst["key"]) if worst["key"] else ""
+            out["warnings"].append(
+                "有 %d 处排版溢出（最宽 %.1fpt%s），标点/长公式可能顶出纸边"
+                % (len(over), worst["pt"], "，最近的是 " + who if who else ""))
     finally:
         doc.close()
     return out

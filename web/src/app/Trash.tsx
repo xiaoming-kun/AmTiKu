@@ -43,16 +43,12 @@ export function Trash({ onChanged }: { onChanged: () => void }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* ── 页面标题区：是什么 · 有几道 · 能做什么 ── */}
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-5">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-ink-faint">
-          <Trash2 size={16} />
-        </span>
-        <span className="shrink-0 text-[15px] font-semibold tracking-tight text-ink">回收站</span>
-        <span className="tnum shrink-0 rounded-full bg-muted px-2 py-[2px] text-[11.5px]
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-2.5">
+        <span className="tnum shrink-0 rounded bg-muted px-2 py-[2px] text-[11px]
                          font-medium text-ink-soft">
           {items.length} 道
         </span>
-        <span className="text-[11.5px] text-ink-faint">删除的题留在这里，随时能放回去</span>
+        <span className="text-[11px] text-ink-faint">删除的题留在这里，随时能放回去</span>
         {msg && (
           <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-has">
             <Check size={12} className="shrink-0" />{msg}

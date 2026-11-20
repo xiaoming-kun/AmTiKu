@@ -1,7 +1,7 @@
-/** 录入抽屉 · 逐题确认阶段：题卡、批量、报告和提交条。
+/** 录入工作区 · 逐题确认阶段：题卡、批量、报告和提交条。
  *  状态来自 useIngest，本组件只负责右栏渲染。 */
 import {
-  AlertTriangle, Check, Loader2, Play, Sparkles, Undo2, Upload,
+  AlertTriangle, Check, Loader2, Play, RefreshCw, Sparkles, Undo2, Upload, Wrench,
 } from 'lucide-react'
 import { renderBlocks } from '@/lib/render'
 import { Flags, Report } from '@/app/ui'
@@ -13,11 +13,21 @@ import { CommitBar } from './IngestStages'
 export default function ReviewStage() {
   const bag = useIngestCtx()
   const {
-    pv, toggleAll, expanded, setExpanded, ai, tagItems, edits, mainOnly, emptyTagCount, tagging, setReviewFilter, reviewFilter, filterCounts, selected, batchType, setBatchType, applyBatch, batchDiff, setBatchDiff, batchPts, points, setBatchPts, label, setMainOnly, report, backfill, nearThreshold, undoReport, busy, setReport, specAfter, fixedCount, tagErr, visibleItems, aiCards, picks, pointInfo, cardRefs, setActiveCard, activeCard, setPicks, aiMiss, aiPageDir, setPageView, srcDir, setEdits, year, setSrcOpen, srcOpen, commitOne, srcEdit, setSrcEdit, saveSource, err, msg, badSelected, doCommit
+    pv, toggleAll, expanded, setExpanded, ai, tagItems, edits, mainOnly, emptyTagCount, tagging, setReviewFilter, reviewFilter, filterCounts, selected, batchType, setBatchType, applyBatch, batchDiff, setBatchDiff, batchPts, points, setBatchPts, label, setMainOnly, report, backfill, nearThreshold, undoReport, busy, setReport, specAfter, fixedCount, tagErr, visibleItems, aiCards, picks, pointInfo, cardRefs, setActiveCard, activeCard, setPicks, aiMiss, aiPageDir, setPageView, srcDir, setEdits, year, setSrcOpen, srcOpen, commitOne, srcEdit, setSrcEdit, saveSource, repairQuestion, repairing, repairNote, err, msg, badSelected, doCommit, dryRun
   } = bag
+  const blockedItems = pv ? pv.items.filter((it: any) => blockingOf(it).length > 0) : []
+  const missingAns = blockedItems.filter((it: any) => blockingOf(it).some((x) => x.includes('答案'))).length
+  const missingSol = blockedItems.filter((it: any) => blockingOf(it).some((x) => x.includes('解析'))).length
+  const missingPointCount = pv ? pv.items.filter((it: any) => !(edits[it.block]?.points?.length)).length : 0
+  const generatedCount = pv ? pv.items.filter((it: any) => it.solution_generated).length : 0
+  // 一道题可能同时缺答案和解析；总数按题去重，别把同一道算两次。
+  const missingAnswerTotal = blockedItems.filter((it: any) =>
+    blockingOf(it).some((x) => x.includes('答案') || x.includes('解析'))).length
+  const checkOk = !!pv && !pv.errors?.length && blockedItems.length === 0
+    && !!pv.spec?.ok && !(pv.missing_images?.length)
+    && !(pv.dup?.suspect) && missingPointCount === 0 && generatedCount === 0
   return (
-    <div className="flex w-[min(880px,62vw)] min-w-[520px] shrink-0 flex-col border-l
-                    border-border bg-bg">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
 
             <div className="flex min-h-[52px] shrink-0 flex-wrap items-center gap-2 border-b
                             border-border bg-surface px-4 py-2">
@@ -40,18 +50,24 @@ export default function ReviewStage() {
                     ? '全部收起' : '全部展开'}
                 </button>
               </>)}
-              {!ai && (
-                <button onClick={() => pv && void tagItems(pv, edits, { onlyPicked: true, mainOnly })}
-                  disabled={!pv || !emptyTagCount || tagging}
-                  title="用 qwen3.5 只给还没标考点的题补标；已标的不动"
-                  className="press ml-auto inline-flex h-[26px] items-center gap-1 rounded-lg border
-                             border-brand-line bg-brand-soft px-2 text-[11px] font-medium
-                             text-brand-ink hover:border-brand disabled:opacity-40">
-                  {tagging ? <Loader2 size={12} className="animate-spin" />
-                           : <Sparkles size={12} />}
-                  AI 标注空缺{emptyTagCount ? ` (${emptyTagCount})` : ''}
-                </button>
-              )}
+              <button onClick={() => void dryRun()} disabled={busy || !pv}
+                title="按当前来源重新解析并检查"
+                className={`${MINI} ml-auto`}>
+                <RefreshCw size={11} className={busy ? 'animate-spin' : ''} />重新检查
+              </button>
+              <button onClick={() => pv && void tagItems(pv, edits, { onlyPicked: true, mainOnly })}
+                disabled={!pv || !emptyTagCount || tagging}
+                title={ai
+                  ? '用 DeepSeek 给还没标考点的题补标；已标的不动'
+                  : '用 qwen3.5 只给还没标考点的题补标；已标的不动'}
+                className="press inline-flex h-[26px] items-center gap-1 rounded-lg border
+                           border-brand-line bg-brand-soft px-2 text-[11px] font-medium
+                           text-brand-ink hover:border-brand disabled:opacity-40">
+                {tagging ? <Loader2 size={12} className="animate-spin" />
+                         : <Sparkles size={12} />}
+                {ai ? 'DeepSeek 补考点' : 'AI 标注空缺'}
+                {emptyTagCount ? ` (${emptyTagCount})` : ''}
+              </button>
             </div>
 
             {pv && (
@@ -182,7 +198,7 @@ export default function ReviewStage() {
                   <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
                     <Play size={13} className="shrink-0 text-ink-faint" />
                     {ai
-                      ? '左边选一份资料、等它读完，这里就会出现一张张题卡：'
+                      ? '左边连接 DeepSeek、选好试题与答案，点「开始读取」；这里会出现题卡：'
                       : '点左边「解析成题」之后，这里会变成一张张题卡：'}
                   </div>
                   <ol className="space-y-2">
@@ -233,27 +249,61 @@ export default function ReviewStage() {
               )}
 
               {!report && pv && (<>
-                {/* 汇总条：解析/规范/查重/图片。 */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* 入库前检查：不是装饰，是「这份材料能不能入库」的六项事实。 */}
+                {checkOk && (
+                  <div className="flex items-center gap-1.5 rounded-lg border border-has-line
+                                  bg-has-soft px-2.5 py-2 text-[11px] font-medium text-has">
+                    <Check size={12} className="shrink-0" />
+                    结构、规范、查重、答案与图片全部通过；可以勾选入库。
+                  </div>
+                )}
+                {!checkOk && (
+                  <div className="rounded-lg border border-warn-line bg-warn-soft/70 px-2.5 py-2
+                                  text-[11px] leading-relaxed text-warn">
+                    <div className="flex items-center gap-1.5 font-medium">
+                      <AlertTriangle size={12} className="shrink-0" />
+                      入库前还有几项值得确认
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10.5px]">
+                      {pv.errors?.length ? <span>解析问题 {pv.errors.length}</span> : null}
+                      {blockedItems.length ? <span>硬伤 {blockedItems.length} 道</span> : null}
+                      {pv.dup?.suspect ? <span>疑似重复 {pv.dup.suspect} 道</span> : null}
+                      {missingPointCount ? <span>缺考点 {missingPointCount} 道</span> : null}
+                      {generatedCount ? <span>补写解析 {generatedCount} 道</span> : null}
+                      {missingAnswerTotal ? <span>答案/解析待补 {missingAnswerTotal} 道</span> : null}
+                      {pv.missing_images?.length ? <span>缺图 {pv.missing_images.length} 张</span> : null}
+                      {badSelected.length ? <span>勾选里 {badSelected.length} 道有硬伤</span> : null}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
                   {([
-                    ['解析', `${pv.count} 道`,
-                     pv.errors?.length ? `${pv.errors.length} 个问题` : '全部认出',
+                    ['切题', `${pv.count} 道`,
+                     pv.errors?.length ? `${pv.errors.length} 个解析问题` : '题块完整',
                      pv.errors?.length ? 'warn' : 'has'],
-                    ['规范', pv.spec?.ok ? '复核通过' : `${specAfter} 处未过`,
+                    ['规范', pv.spec?.ok ? '通过' : `${specAfter} 处未过`,
                      pv.spec?.ok ? `自动修 ${fixedCount} 处` : '只拦勾选的题',
                      pv.spec?.ok ? 'has' : 'warn'],
                     backfill
-                      ? ['补旧题', `已有 ${pv.items.filter((it: any) => it.same_key).length
-                          } 道 · 已选 ${selected.length}`,
-                         '只补空考点/难度，不新增、不改正文', 'has']
-                      : ['查重', `新 ${pv.dup.new} · 跳过 ${
-                          pv.dup.skip ?? (pv.dup.merge + (pv.dup.near || 0))}`,
-                         `疑似 ${pv.dup.suspect} · 已有/相似不更新`,
+                      ? ['补旧题', `已有 ${pv.items.filter((it: any) => it.same_key).length} 道`,
+                         `已选 ${selected.length} 道；只补空考点/难度`, 'has']
+                      : ['查重', `新 ${pv.dup.new} · 跳过 ${pv.dup.skip ?? (pv.dup.merge + (pv.dup.near || 0))}`,
+                         `疑似 ${pv.dup.suspect} 道；已有/相似不更新`,
                          pv.dup.suspect ? 'warn' : 'has'],
                     ['图片', pv.missing_images?.length
                       ? `缺 ${pv.missing_images.length} 张` : '齐全',
                      `${Object.keys(pv.images || {}).length} 张引用`,
                      pv.missing_images?.length ? 'warn' : 'has'],
+                    ['答案/解析', missingAnswerTotal
+                      ? `${missingAnswerTotal} 道待补`
+                      : generatedCount ? `${generatedCount} 道补写` : '齐全',
+                     missingAnswerTotal
+                       ? `缺答案 ${missingAns} · 缺解析 ${missingSol}`
+                       : generatedCount ? 'DeepSeek 生成，需逐题核对' : '每道都有答案与解析',
+                     missingAnswerTotal || generatedCount ? 'warn' : 'has'],
+                    ['入库', `${selected.length} / ${pv.items.length} 道`,
+                     badSelected.length ? `${badSelected.length} 道勾选有硬伤` : '当前勾选可入库',
+                     badSelected.length ? 'warn' : 'has'],
                   ] as const).map(([k, v, note, tone]) => (
                     <div key={k} className="rounded-lg border border-border bg-surface px-2.5 py-2">
                       <div className="text-[10px] text-ink-faint">{k}</div>
@@ -263,6 +313,33 @@ export default function ReviewStage() {
                     </div>
                   ))}
                 </div>
+
+                {blockedItems.length > 0 && (
+                  <details className="rounded-lg border border-warn-line bg-warn-soft/50">
+                    <summary className="cursor-pointer select-none px-2.5 py-2 text-[11px]
+                                        font-medium text-warn">
+                      逐题检查：{blockedItems.length} 道有硬伤，展开看原因
+                    </summary>
+                    <div className="max-h-[180px] divide-y divide-warn-line/60 overflow-y-auto
+                                    border-t border-warn-line/60 px-2.5">
+                      {blockedItems.slice(0, 50).map((it: any) => (
+                        <div key={it.block} className="flex items-baseline gap-2 py-1.5 text-[10.5px]">
+                          <span className="tnum w-8 shrink-0 text-ink-faint">
+                            {it.source_no || it.block + 1}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-ink-soft">
+                            {blockingOf(it).join('、')}
+                          </span>
+                        </div>
+                      ))}
+                      {blockedItems.length > 50 && (
+                        <div className="py-1.5 text-[10px] text-ink-faint">
+                          … 其余 {blockedItems.length - 50} 道
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
 
                 {tagErr && (
                   <div className="flex items-start gap-1.5 rounded-lg border border-warn-line
@@ -299,6 +376,12 @@ export default function ReviewStage() {
                   const am = aiCards[b]
                   const e = edits[b] || { ...EMPTY, source_no: String(b + 1) }
                   const hard = blockingOf(it)
+                  const hasFigure = (it.figures?.length || 0) > 0
+                    || /\\includegraphics/.test(String(it.tex || ''))
+                  const repairReasons = [...new Set([
+                    ...hard,
+                    ...((Array.isArray(am?.problems) ? am.problems : []) as string[]),
+                  ])]
                   const picked = !!picks[b]
                   const pt = pointInfo.get(e.points[0])
                   const diff = e.difficulty || pt?.difficulty || it.difficulty || ''
@@ -384,8 +467,11 @@ export default function ReviewStage() {
                       {am && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
                           <span className={`rounded px-1.5 py-[1px] font-medium ${
-                            am.verified ? 'bg-has-soft text-has' : 'bg-warn-soft text-warn'}`}>
-                            {am.verified ? '答案已复核' : `核对未过${am.verdict ? `：${am.verdict}` : ''}`}
+                            am.solution_generated ? 'bg-warn-soft text-warn'
+                              : am.verified ? 'bg-has-soft text-has' : 'bg-warn-soft text-warn'}`}>
+                            {am.solution_generated ? '解析补写 · 需核对'
+                              : am.verified ? '答案已复核'
+                                : `核对未过${am.verdict ? `：${am.verdict}` : ''}`}
                           </span>
                           {am.answer_source === 'answer_sheet' && (
                             <span className="text-ink-faint">答案：答案册原文</span>
@@ -569,7 +655,12 @@ export default function ReviewStage() {
                                     : (dup.verdict === '变式' ? '变式' : '疑似重复')}
                             </span>
                             <span className="tnum">整题相似 {sim}%</span>
-                            <span className="min-w-0 flex-1 truncate text-ink-soft">{dup.stem}</span>
+                            {/* 库内题的题干/答案/解析都是 LaTeX：当纯文本摊开只会看到
+                                一片 `$\{a_n\}$`、`\[ ... \]`，人根本没法比对。
+                                后端给块 IR，这里和题库卡片用同一个渲染器。 */}
+                            <span className="min-w-0 flex-1 truncate text-ink-soft">
+                              {dup.stem_blocks?.length ? renderBlocks(dup.stem_blocks) : dup.stem}
+                            </span>
                             <span className="shrink-0">
                               {backfill
                                 ? (it.same_key ? '只补空考点/难度，不改正文' : '补旧题模式不新增')
@@ -593,12 +684,23 @@ export default function ReviewStage() {
                           {(dup?.answer_preview || dup?.solution_preview) && (
                             <details className="mt-1 text-[10px] text-ink-faint">
                               <summary className="cursor-pointer select-none">对比库内答案/解析</summary>
-                              {dup.answer_preview && (
+                              {dup.answer_blocks?.length ? (
+                                <div className="q-compact mt-1 rounded bg-surface-2 p-1.5 text-[11.5px] text-ink">
+                                  <span className="mr-1 text-ink-faint">答案：</span>
+                                  {renderBlocks(dup.answer_blocks)}
+                                </div>
+                              ) : dup.answer_preview && (
                                 <div className="mt-1 whitespace-pre-wrap break-words rounded bg-surface-2 p-1.5 font-mono">
                                   答案：{dup.answer_preview}
                                 </div>
                               )}
-                              {dup.solution_preview && (
+                              {dup.solution_blocks?.length ? (
+                                <div className="q-compact mt-1 max-h-[220px] overflow-y-auto rounded
+                                                bg-surface-2 p-1.5 text-[11.5px] text-ink">
+                                  <span className="mr-1 text-ink-faint">解析：</span>
+                                  {renderBlocks(dup.solution_blocks)}
+                                </div>
+                              ) : dup.solution_preview && (
                                 <div className="mt-1 max-h-[180px] overflow-y-auto whitespace-pre-wrap
                                                 break-words rounded bg-surface-2 p-1.5 font-mono">
                                   解析：{dup.solution_preview}
@@ -619,21 +721,42 @@ export default function ReviewStage() {
                           className={MINI}>
                           {srcOpen[b] ? '收起源码' : '改源码'}
                         </button>
-                        {!ai && (<>
-                          <button onClick={() => void tagItems(pv, edits, { blocks: [b], mainOnly })}
-                            disabled={tagging}
-                            className={MINI} title="只重标这一道，覆盖卡片上的考点/难度">
-                            <Sparkles size={10} />AI 标注这题
+                        <button onClick={() => void tagItems(pv, edits, { blocks: [b], mainOnly })}
+                          disabled={tagging}
+                          className={MINI} title={ai
+                            ? '用 DeepSeek 只重标这一道'
+                            : '只重标这一道，覆盖卡片上的考点/难度'}>
+                          <Sparkles size={10} />{ai ? 'DeepSeek 标这题' : 'AI 标注这题'}
+                        </button>
+                        <button onClick={() => void repairQuestion(b)}
+                          disabled={busy || repairing[b]}
+                          className="press inline-flex h-8 items-center gap-1.5 rounded-lg
+                                     border border-brand-line bg-brand-soft px-3 text-[11.5px]
+                                     font-semibold text-brand-ink hover:bg-brand hover:text-white
+                                     disabled:cursor-not-allowed disabled:opacity-40"
+                          title={repairReasons.length
+                            ? `把这道题的 ${repairReasons.length} 条报错提交给 DeepSeek，只修这一道`
+                            : '让 DeepSeek 按规范检查并修复这道题；不改题意'}>
+                          {repairing[b]
+                            ? <Loader2 size={13} className="animate-spin" />
+                            : <Wrench size={13} />}
+                          {repairing[b] ? 'DeepSeek 修复中…' : 'DeepSeek 修复这道题'}
+                        </button>
+                        {hasFigure && (
+                          <button onClick={() => void repairQuestion(b,
+                            '把题中的位图图片改成可编译的 TikZ：用 tikzpicture 重画，保留图形语义、标注、题干和答案，不要改题意、选项、解析。')}
+                            disabled={busy || repairing[b]}
+                            className="press inline-flex h-8 items-center gap-1.5 rounded-lg
+                                       border border-warn-line bg-warn-soft px-3 text-[11.5px]
+                                       font-semibold text-warn hover:border-warn
+                                       disabled:cursor-not-allowed disabled:opacity-40"
+                            title="把这道题里的图片重画成 TikZ，其他内容不动">
+                            {repairing[b]
+                              ? <Loader2 size={13} className="animate-spin" />
+                              : <Wrench size={13} />}
+                            图片转 TikZ
                           </button>
-                          <button onClick={() => void tagItems(pv, edits, {
-                            blocks: [b], mainOnly, model: 'qwen/qwen3.8-27b',
-                          })}
-                            disabled={tagging}
-                            className={MINI}
-                            title="用 27B 慢标这一道；更准，但会占 16GB 内存">
-                            27B 重标
-                          </button>
-                        </>)}
+                        )}
                         {!picked && hard.length === 0 && !isDup && (
                           <button onClick={() => setPicks({ ...picks, [b]: true })}
                             className={MINI}>选这道</button>
@@ -647,6 +770,20 @@ export default function ReviewStage() {
                           </button>
                         )}
                       </div>
+
+                      {(hard.length > 0 || repairNote[b]) && (
+                        <div className="mt-1.5 rounded-md border border-warn-line bg-warn-soft
+                                        px-2 py-1.5 text-[9.5px] leading-relaxed text-warn">
+                          {repairReasons.length > 0 && (
+                            <div>
+                              将提交给 DeepSeek 的报错：
+                              {repairReasons.slice(0, 3).join('；')}
+                              {repairReasons.length > 3 ? `；…共 ${repairReasons.length} 条` : ''}
+                            </div>
+                          )}
+                          {repairNote[b] && <div className="mt-0.5">修复结果：{repairNote[b]}</div>}
+                        </div>
+                      )}
 
                       {srcOpen[b] && (
                         <div className="mt-2 rounded-md border border-border bg-bg p-2">
@@ -691,6 +828,12 @@ export default function ReviewStage() {
                             {renderBlocks(it.blocks?.answer)}
                           </div>
                           <div className="text-[10.5px] text-ink-faint">解析</div>
+                          {am?.solution_generated && (
+                            <div className="rounded border border-warn-line bg-warn-soft px-2 py-1
+                                            text-[10px] leading-relaxed text-warn">
+                              这份解析由 DeepSeek 根据题干/答案补写，不是原卷原文；入库前请核对。
+                            </div>
+                          )}
                           <div className="text-[11.5px] leading-relaxed">
                             {renderBlocks(it.blocks?.solution)}
                           </div>

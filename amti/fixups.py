@@ -33,10 +33,13 @@ import copy
 import datetime as _dt
 import json
 import re
-from pathlib import Path
+
+from amti.logutil import get_logger
 
 from . import store
 from .schema import Figure, Option, Question
+
+log = get_logger(__name__)
 
 PKG = ROOT
 CHANGE_DIR = PKG / "变更记录"

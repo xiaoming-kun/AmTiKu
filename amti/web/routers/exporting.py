@@ -159,16 +159,13 @@ class ExportBody(BaseModel):
     problem_blank_cm: float | None = None
     mode: str = "gaokao"                # gaokao 高考卷 / test 纯测试题 / handout 讲义
     # 分类子目录（试卷 / 测试卷 / 讲义，见 paths.OUT_KINDS）。留空按卷型推；
-    # 界面把「考点覆盖卷」归到 试卷（它渲染用 test 卷型），所以显式传。
+    # 界面总是显式传（落盘分类跟着界面上的卷型走），所以这里留了口子。
     kind: str = ""
     compile: bool = True
     # 「编译预览」：只编译给人看。产物进 数据/预览/，**不存档、不计使用频次**。
     # 以前预览和导出是同一个请求，点一次预览就在资料夹里留一份 PDF、
     # 还把题目的「用过 N 次」+1（默认排序都跟着变）。
     preview: bool = False
-    # 卷头总分框 + 第一页密封线
-    score_box: bool = True
-    seal_line: bool = True
     # 目标时长（分钟）：0 = 不检查；组完只提示“超了/少了”，不自动改题
     target_minutes: int = 120
 
@@ -196,7 +193,7 @@ def export(body: ExportBody) -> dict:
                                      if body.problem_blank_cm is not None else 4.0),
                    do_compile=body.compile, mode=body.mode, kind=body.kind,
                    preview=body.preview,
-                   score_box=body.score_box, seal_line=body.seal_line)
+                   )
     if not r.get("ok") and r.get("error"):
         raise HTTPException(400, r["error"])
     # 预览**不计**使用频次：那是"看一眼排版"，不代表这套题被用出去了。

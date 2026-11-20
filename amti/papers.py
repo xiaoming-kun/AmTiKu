@@ -134,6 +134,50 @@ def rename(name: str, new: str) -> bool:
         return False
 
 
+# ── 题目的「被组卷」信号 ───────────────────────────────────────────────
+#
+# 卡片上要能一眼看出「这题组过几份卷、最近一份叫什么」。真相是存档
+# （`keys` 列表），所以这里只是**派生索引**：按存档文件的 mtime+size
+# 缓存，存档一变就整份重算（几百条记录，重算 <5ms）。
+_USAGE: dict = {"sig": None, "map": {}}
+
+
+def _archive_sig() -> tuple | None:
+    try:
+        st = ARCHIVE.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def usage_index() -> dict[str, dict]:
+    r"""`key` → `{"n": 被几份存档用到, "last": 最近一份的卷名}`。
+
+    **不写库、不改题**：删掉一份存档，下一次数就少一，派生数据永远跟得上。
+    存档坏了（`ArchiveCorrupt`）就返回空表——列表页不该因为档案坏了整页打不开，
+    真正的报错在试卷库那边给。
+    """
+    sig = _archive_sig()
+    if _USAGE["sig"] == sig:
+        return _USAGE["map"]
+    out: dict[str, dict] = {}
+    try:
+        items = all_items()          # 已按时间倒序：第一次遇到的就是最近一份
+    except ArchiveCorrupt:
+        _USAGE.update({"sig": sig, "map": {}})
+        return {}
+    for rec in items:
+        title = rec.get("title") or rec.get("name") or ""
+        for k in dict.fromkeys(rec.get("keys") or ()):   # 同一份卷里重复的题只算一次
+            d = out.get(k)
+            if d is None:
+                out[k] = {"n": 1, "last": title}
+            else:
+                d["n"] += 1
+    _USAGE.update({"sig": sig, "map": out})
+    return out
+
+
 # ── 自检 ──────────────────────────────────────────────────────────────
 
 def _selftest() -> int:

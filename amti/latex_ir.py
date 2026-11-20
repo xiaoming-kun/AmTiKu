@@ -484,6 +484,36 @@ def derive_figures(*chunks: str) -> list[Figure]:
     return figures
 
 
+def preserve_figures(old: str, new: str) -> tuple[str, list[str]]:
+    r"""把旧正文里、新正文丢掉的配图原样补到新正文末尾。
+
+    单题"重写解析"时模型经常只复述文字、把 `\includegraphics` / TikZ 漏掉。
+    正文是配图的唯一真相，漏掉就等于把图删了。这里做最后一道兜底：
+    旧正文里有、新正文里没有的图，原文追加到末尾；返回补了哪些 id。
+    调用方（AI 校对 / 重写 / 写回接口）都必须过这一道。
+    """
+    if not old or not new:
+        return new, []
+    old_figs = derive_figures(old)
+    if not old_figs:
+        return new, []
+    new_ids = {f.id for f in derive_figures(new)}
+    missing = [f for f in old_figs if f.id not in new_ids]
+    if not missing:
+        return new, []
+    snippets: list[str] = []
+    for f in missing:
+        if f.kind == "tikz" and f.tikz:
+            # Figure.tikz 存的就是完整的 begin/end 源码
+            snippets.append(f.tikz.strip())
+            continue
+        raw = next((m.group(0) for m in FIG_OPT_RE.finditer(old)
+                    if m.group(2).strip() == f.id), "")
+        snippets.append(raw or r"\includegraphics[width=%s]{%s}" % (f.width, f.id))
+    out = (new.rstrip() + "\n\n" + "\n\n".join(snippets)).strip()
+    return out, [f.id for f in missing]
+
+
 def parse_question(text: str) -> Question | None:
     r"""把一段「元数据 + LaTeX」解析成 Question。
 

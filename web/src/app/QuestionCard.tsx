@@ -14,7 +14,7 @@
  *     展开才去拉全量（答案与解析的块 IR 列表接口不带，见 server.py 的说明）
  */
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Check, ChevronDown, Flame, TriangleAlert, Loader2, Maximize2 } from 'lucide-react'
+import { Plus, Check, ChevronDown, Flame, TriangleAlert, Loader2, Maximize2, FileStack } from 'lucide-react'
 import type { Q } from '@/lib/types'
 import { Highlight, renderBlocks } from '@/lib/render'
 import { api, reportErr } from '@/lib/api'
@@ -65,8 +65,9 @@ function answerPreview(ans: string): string {
 }
 
 export default function Card({
-  q, active, inPaper, selectMode, checked, dense, maskAns, kw,
-  onSelect, onDetail, onAdd, onToggle,
+  q, active, inPaper, selectMode, checked, dense, maskAns, kw, index, hideSrc, fullStem,
+  detailText,
+  onSelect, onDetail, onAdd, onToggle, onOpenPaper,
 }: {
   q: Q; active: boolean; inPaper: boolean
   /** 答案是否遮住（「显示」菜单里可统一切换） */
@@ -79,11 +80,22 @@ export default function Card({
   onSelect: () => void
   /** 右上角 ✎：明确打开详情。 */
   onDetail: () => void
+  /** 详情按钮带文字（套卷页用：那里点卡片会跳去题库，图标按钮太不显眼）。 */
+  detailText?: boolean
   onAdd: () => void
+  /** 点「组过 N 卷」：跳到试卷库那份存档（`name` 是卷名）。 */
+  onOpenPaper?: (name: string) => void
   /** `shift` 为真时从上次勾选的那道连选过来 */
   onToggle: (shift?: boolean) => void
   /** 搜索词：命中高亮 + 标出「出处/考点命中」 */
   kw?: string
+  /** 原卷题号（套卷视图用）。给了就在元信息行前面显示，和题库卡片同一张脸。 */
+  index?: number | string
+  /** 出处就是当前这份套卷时不必再印一遍（整页都是它）。 */
+  hideSrc?: boolean
+  /** 题干**不封顶**：套卷是整卷阅读，一道解答题被截成 5 行等于没法读。
+   *  题库列表仍按 10em 封顶（扫题要一屏多道）。 */
+  fullStem?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [full, setFull] = useState<Q | null>(null)
@@ -226,6 +238,10 @@ export default function Card({
             · **重复的年份**——实测 82% 的题 source_label 里已经含年份，
               原来会写成「2024年新高考II卷 · 2024 年」，同一个年份说两遍。 */}
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]">
+          {index != null && (
+            <span className="tnum shrink-0 rounded bg-muted px-1.5 py-[1px] text-[11px]
+                             font-semibold text-ink-soft" title="原卷题号">{index}</span>
+          )}
           {q.point_titles?.length ? (
             q.point_titles.map((t, i) => (
               <span key={i} title={q.point_titles.map(dispPoint).join('、')}
@@ -239,7 +255,7 @@ export default function Card({
             <span className="shrink-0 rounded-full bg-warn-soft px-1.5 py-[1px] text-[11px]
                              font-medium text-warn">无考点</span>
           )}
-          {src && (
+          {src && !hideSrc && (
             <span className="min-w-0 truncate text-ink-faint" title={src}>
               <Highlight text={src} kw={kw} />
             </span>
@@ -251,10 +267,26 @@ export default function Card({
           {!!year && !src.includes(String(year)) && (
             <span className="shrink-0 text-ink-faint">{year} 年</span>
           )}
-          {!!q.used && (
-            <span className="ml-auto flex shrink-0 items-center gap-0.5 pl-2 text-warn"
-              title={`已被导出 ${q.used} 次，是道常考题`}>
-              <Flame size={11} />{q.used}
+          {(!!q.used || !!q.papers?.n) && (
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+              {!!q.used && (
+                <span className="flex items-center gap-0.5 text-warn"
+                  title={`已被导出 ${q.used} 次，是道常考题`}>
+                  <Flame size={11} />{q.used}
+                </span>
+              )}
+              {/* 「组过 N 卷」——**使用信号**，和「导出过几次」不是一回事：
+                  导出次数涨在导出那一下，组卷次数是每次存档 +1，且能点回去
+                  看是哪份卷。找卷时它比难度更说明问题（同题反复被用）。 */}
+              {!!q.papers?.n && (
+                <button type="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenPaper?.(q.papers!.last) }}
+                  title={`被 ${q.papers.n} 份卷子组过；最近一份《${q.papers.last}》，点开看`}
+                  className="press flex items-center gap-0.5 rounded-full bg-brand-soft px-1.5
+                             py-[1px] text-[10.5px] font-medium text-brand-ink hover:brightness-95">
+                  <FileStack size={10} />{q.papers.n} 卷
+                </button>
+              )}
             </span>
           )}
         </div>
@@ -266,20 +298,26 @@ export default function Card({
               卡片本身点一下是"移光标 / 勾选"，多选模式下不该把抽屉也拽出来；
               要看全文、改答案、改考点，就点这颗。 */}
           <button onClick={(e) => { e.stopPropagation(); onDetail() }}
-            title="打开详情（看全文 / 改答案 / 改考点）"
-            className="press icon-btn h-[26px] w-[26px] shrink-0 border border-border
-                       text-ink-faint hover:border-brand-line hover:text-brand-ink">
+            title="打开题目详情（看全文 / 改答案 / 改考点）"
+            className={detailText
+              ? `press flex h-[26px] shrink-0 items-center gap-1 rounded-lg border
+                 border-border bg-surface px-2 text-[11.5px] font-medium text-ink-soft
+                 transition-colors hover:border-brand-line hover:bg-brand-soft/40
+                 hover:text-brand-ink`
+              : `press icon-btn h-[26px] w-[26px] shrink-0 border border-border
+                 text-ink-faint hover:border-brand-line hover:text-brand-ink`}>
             <Maximize2 size={12} />
+            {detailText && <span>详情</span>}
           </button>
           <button onClick={(e) => { e.stopPropagation(); onAdd() }}
             disabled={inPaper}
             title={inPaper ? '已在卷子里' : '加入卷子（⌘↵）'}
             className={`press flex h-[26px] items-center gap-1 rounded-lg border px-2 text-[11.5px] sm:px-2.5
-                        font-medium transition-all ${inPaper
+                        font-medium transition-colors ${inPaper
                           ? 'border-has-line bg-has-soft text-has'
-                          : 'grad-primary border-transparent text-white shadow-[var(--shadow-brand)] hover:brightness-110'}`}>
-            {inPaper ? <Check size={12} strokeWidth={2.8} /> : <Plus size={12} strokeWidth={2.8} />}
-            <span className="hidden sm:inline">{inPaper ? '已入卷' : '加入组卷'}</span>
+                          : 'border-border bg-surface text-ink-soft hover:border-brand-line hover:bg-brand-soft/40 hover:text-brand-ink'}`}>
+            {inPaper ? <Check size={12} strokeWidth={2.8} /> : <Plus size={12} strokeWidth={2.4} />}
+            <span className="hidden sm:inline">{inPaper ? '在卷中' : '加入卷子'}</span>
           </button>
         </div>
       </div>
@@ -288,8 +326,8 @@ export default function Card({
       <div className={`flex flex-wrap items-center gap-1.5 ${dense ? 'px-3.5 pt-1.5' : 'px-4 pt-2'}`}>
         <Tag>{q.type_label}</Tag>
         <Tag>{q.kind}题</Tag>
-        {region && <Tag title="地区/来源类型">{region}</Tag>}
-        {sourceRegion && <Tag title="题目原卷来源省份">源·{sourceRegion}</Tag>}
+        {region && !src.includes(region) && <Tag title="地区/来源类型">{region}</Tag>}
+        {sourceRegion && !src.includes(sourceRegion) && <Tag title="题目原卷来源省份">源·{sourceRegion}</Tag>}
         {q.meta?.paper_complete === false && (
           <Tag title={`该卷仅录入 ${q.meta?.paper_size ?? '?'} 题，按节选处理`}>试卷节选</Tag>
         )}
@@ -321,13 +359,13 @@ export default function Card({
       <div className={`${dense ? 'px-3.5 pt-2' : 'px-4 pt-2.5'}`}>
         <div className="q-stem q-compact text-[14.5px] text-ink">
           <div ref={clampRef} data-over={clamped ? '1' : '0'}
-            className={`q-clamp ${stemOpen ? '' : dense ? 'max-h-[1.7em]' : 'max-h-[10em]'}`}>
+            className={`q-clamp ${fullStem || stemOpen ? '' : dense ? 'max-h-[1.7em]' : 'max-h-[10em]'}`}>
             {renderBlocks(q.blocks?.stem, kw)}
           </div>
           {/* 封顶高度是**折中**：不封顶的话一道三页的题就占满整屏。
               实测 10em（约 5~6 行）能完整放下 87% 的题干，平均每张卡只比
               4.6em 多 18px（一屏仍是 4 道）——剩下那 13% 用这个按钮兜。 */}
-          {(clamped || stemOpen) && (
+          {!fullStem && (clamped || stemOpen) && (
             <button
               onClick={(e) => { e.stopPropagation(); setStemOpen((v) => !v) }}
               className="press mt-1 text-[11.5px] font-medium text-brand-ink hover:underline">

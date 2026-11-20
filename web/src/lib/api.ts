@@ -23,7 +23,13 @@ export async function request<T = any>(url: string, init?: RequestInit): Promise
     let msg = `请求失败（HTTP ${r.status}）`
     try {
       const j = await r.json()
-      if (j?.detail) msg = String(j.detail)
+      const d = j?.detail
+      if (typeof d === 'string') msg = d
+      // 参数校验失败时 FastAPI 给的是**数组**，String() 会变成 [object Object]
+      else if (Array.isArray(d)) {
+        msg = d.map((x: any) => `${(x?.loc || []).slice(1).join('.')}: ${x?.msg || ''}`)
+          .join('；') || msg
+      } else if (d) msg = String(d)
     } catch { /* 响应不是 JSON —— 用默认文案 */ }
     throw new Error(msg)
   }
@@ -51,10 +57,22 @@ let _onGlobalErr: ((msg: string) => void) | null = null
 export function reportErr(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e)
   if (_onGlobalErr) _onGlobalErr(msg)
-  else console.error('[AmTiKu]', msg)
+  else console.error('[AmMath]', msg)
 }
 
 export const enc = encodeURIComponent
+
+/** 拼查询串：**空串/undefined 一律不写**。
+ *  后端有的参数是 bool（如 `incomplete`），`incomplete=` 会直接 422——
+ *  前端把「没选」表达成空串，就得在这里统一丢掉。 */
+export function qs(p: Record<string, string | number | boolean | null | undefined>): string {
+  const out = new URLSearchParams()
+  for (const [k, v] of Object.entries(p)) {
+    if (v === '' || v === undefined || v === null) continue
+    out.set(k, String(v))
+  }
+  return out.toString()
+}
 
 /** App 启动时注册错误提示入口（顶栏那条警告带） */
 export function setGlobalErrHandler(fn: ((msg: string) => void) | null) {
@@ -65,10 +83,14 @@ export const api = {
   /** 列表。`signal` 用来**取消在途请求**——改筛选/翻页时旧请求已经没意义，
    *  它还会白白扫一遍全库（2.8 万道），回来晚了又会覆盖新结果。 */
   list: (p: Record<string, string>, signal?: AbortSignal) =>
-    request(`/api/questions?${new URLSearchParams(p)}`, signal ? { signal } : undefined),
+    request(`/api/questions?${qs(p)}`, signal ? { signal } : undefined),
   /** 改标签（考点/难度）。**只动标签，动不了正文**——后端会校验指纹。 */
   patch: (key: string, body: Record<string, unknown>) =>
     send('/api/questions/' + enc(key), 'PATCH', body),
+  /** 补/改答案与解析；默认干跑。curate 写回时传 source=deepseek。 */
+  solution: (key: string, body: { solution?: string; answer?: string
+    dry_run?: boolean; source?: 'human' | 'deepseek' }) =>
+    send('/api/questions/' + enc(key) + '/solution', 'POST', body),
   /** 批量改标签（考点/难度/星级/年份/地区/书卷名）。**一次写盘**。
    *  正文改不了——后端只接受标签字段，且整批过 conform。 */
   batchPatch: (body: {
@@ -90,6 +112,15 @@ export const api = {
   source: (key: string, body: {
     tex?: string; dry_run?: boolean; expect_hash?: string
   }) => send('/api/questions/' + enc(key) + '/source', 'POST', body),
+  /** 批量改出处：按「来源 + 出处」在全库搜索，题号各自保留。
+   *  默认 `dry_run` 只预览命中；确认后才写库（改名会迁移卷子引用）。 */
+  sourceBatch: (body: {
+    old_book: string; old_label: string
+    new_book: string; new_label: string
+    new_year?: number | string
+    dry_run?: boolean
+    focus_key?: string
+  }) => send('/api/questions/source/batch', 'POST', body),
   facets: (stage = '') =>
     request('/api/facets' + (stage ? `?stage=${encodeURIComponent(stage)}` : '')),
   /** 学段驾驶舱：图谱 / 讲义 / 题库 / 组卷四段流水线汇总。 */
@@ -97,7 +128,7 @@ export const api = {
     request(`/api/overview?stage=${encodeURIComponent(stage)}`),
   /** 小学/初中诊断题库（高中走 /api/questions）。 */
   diagnostics: (p: Record<string, string>) =>
-    request(`/api/diagnostics?${new URLSearchParams(p)}`),
+    request(`/api/diagnostics?${qs(p)}`),
   diagnosticsExport: (body: {
     stage: string; q?: string; book?: string; chapter?: string; point?: string;
     level?: string; limit?: number; title?: string; answers?: boolean
@@ -137,7 +168,7 @@ export const api = {
      复核状态与“编辑过”分开；队列/抽样只读，决定通过下面一个写入口落盘。 */
   reviewStats: () => request('/api/review/stats'),
   reviewQueue: (p: Record<string, string>) =>
-    request(`/api/review/queue?${new URLSearchParams(p)}`),
+    request(`/api/review/queue?${qs(p)}`),
   reviewSample: (body: {
     n: number; seed?: number; book?: string; type?: string;
     year_from?: number; risk?: string
@@ -222,17 +253,46 @@ export const api = {
      **仍然只读不写库**：产物是一段源材料文本，填进录入框后面走同一条管线。 */
   aiStatus: () => request('/api/ai/status'),
   /** 保存配置。`api_key` 传 undefined = 不动；传 "" = 清空。 */
-  aiConfig: (body: {
-    api_key?: string; base_url?: string; model?: string
-    pages_per_call?: number; workers?: number
-  }) => send('/api/ai/config', 'POST', body),
+  aiConfig: (body: { api_key?: string; base_url?: string; model?: string }) =>
+    send('/api/ai/config', 'POST', body),
   aiTest: () => send('/api/ai/test', 'POST'),
-  /** 开一个读资料任务。`answer*` 是**另一份文件**（答案/解析），没有就传空。 */
-  aiRun: (data: string, name: string, answerData = '', answerName = '') =>
+  /** 开一个读资料任务：试题/答案都可多份，后端按选择顺序合成一份 PDF。 */
+  aiRunFiles: (files: { name: string; data: string }[],
+    answerFiles: { name: string; data: string }[] = [],
+    fillSolutions = false) =>
     send('/api/ai/run', 'POST', {
-      data, name, answer_data: answerData, answer_name: answerName,
+      files, answer_files: answerFiles, fill_solutions: fillSolutions,
     }),
   aiJob: (id: string) => request('/api/ai/job/' + encodeURIComponent(id)),
+  /** DeepSeek 整理已有题：只返回建议，不写库。 */
+  aiCurate: (body: { keys: string[]; tasks: string[]; stage?: string }) =>
+    send('/api/ai/curate', 'POST', body),
+  aiUsage: () => request('/api/ai/usage'),
+  aiHistory: (limit = 20) => request('/api/ai/history?limit=' + limit),
+  aiHistoryItem: (id: string) =>
+    request('/api/ai/history/' + encodeURIComponent(id)),
+  /** 单题修复 agent：多轮工具循环；只返回源码。 */
+  aiRepairAgent: (body: { tex: string; problems: string[]; source_no?: string; src_dir?: string }) =>
+    send('/api/ai/repair-agent', 'POST', body),
+  /** 按规范报错修一道题；只返回源码，客户端还要 preview 通过才应用。 */
+  aiRepair: (tex: string, problems: string[], sourceNo = '',
+    instruction = '', srcDir = '') =>
+    send('/api/ai/repair', 'POST', {
+      tex, problems, source_no: sourceNo, instruction, src_dir: srcDir,
+    }),
+  /** AI 录题漏考点时，用 DeepSeek 补（不用本地 qwen）。 */
+  aiTag: (items: { stem: string; options: any[]; type: string }[], stage = 'senior') =>
+    send('/api/ai/tag', 'POST', { items, stage }),
+  /** 只把已有解析重写成规范 LaTeX；不写库。 */
+  aiRewriteSolution: (body: { stem: string; answer: string; solution: string; qtype?: string }) =>
+    send('/api/ai/rewrite-solution', 'POST', body),
+  /** DeepSeek 单题校对：只返回建议，不写库。 */
+  aiProofread: (key: string) => send('/api/ai/proofread', 'POST', { key }),
+  /** 只判断缺不缺图并给 TikZ；不写库。 */
+  aiTikz: (key: string) => send('/api/ai/tikz', 'POST', { key }),
+  /** 把 TikZ 插进题干/解析：走 /source 的检查与写回，dry_run 可只验不写。 */
+  insertTikz: (key: string, body: { tikz: string; placement?: string; dry_run?: boolean }) =>
+    send('/api/questions/' + enc(key) + '/tikz', 'POST', body),
   /** 取消：不再发新请求；已读到的批次保留，已经在飞的请求仍会计费。 */
   aiCancel: (id: string) =>
     send('/api/ai/job/' + encodeURIComponent(id) + '/cancel', 'POST'),
@@ -255,6 +315,10 @@ export const api = {
   /* ── 试卷存档 / 合集 ────────────────────────────
      存档里只存**题号**，所以任何时候都能原样还原那套卷。 */
   papers: () => request('/api/papers'),
+  /** 套卷（原卷）：整份卷子按题号排好。只读，数据来自题目的 meta。 */
+  sets: (p: Record<string, string> = {}) =>
+    request(`/api/sets?${qs(p)}`),
+  set: (id: string) => request('/api/sets/' + enc(id)),
   paper: (name: string) => request('/api/papers/' + enc(name)),
   paperSave: (body: any) => send('/api/papers', 'POST', body),
   paperDelete: (name: string) => send(`/api/papers/${enc(name)}`, 'DELETE'),

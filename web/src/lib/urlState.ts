@@ -16,11 +16,15 @@ export type UrlFilters = {
   type: string
   kind: string
   point: string
+  /** 考点命中方式：'' / 'all'。多个考点时是取并集（任一）还是交集（全都挂）。 */
+  pm: string
   diff: string
   year: string
   source: string
   has: string
   missing: string
+  /** 「待补」：缺答案或缺解析（任一）。'1' 才生效。 */
+  inc: string
   scope: string
   paper: string
   star: string
@@ -42,28 +46,32 @@ export type UrlSnapshot = {
   view: string
   /** 当前学段：primary/junior/senior */
   stage: string
+  /** 录入工作区的来源方式：latex / ai（只在 view=ingest 时有意义） */
+  ingest: string
 }
 
-const EMPTY: UrlFilters = {
-  q: '', type: '', kind: '', point: '', diff: '', year: '', source: '',
-  has: '', missing: '', scope: '', paper: '', star: '', quality: '', psrc: '', asrc: '', reviewed: '',
+/** 一套空筛选。录入/校对这类独立页要「清除全部」时也用它，
+ *  避免每个入口各抄一份字段表（漏一个字段就会清不干净）。 */
+export const EMPTY_FILTERS: UrlFilters = {
+  q: '', type: '', kind: '', point: '', pm: '', diff: '', year: '', source: '',
+  has: '', missing: '', inc: '', scope: '', paper: '', star: '', quality: '', psrc: '', asrc: '', reviewed: '',
 }
 
 /** 短参数名 → filters 字段。地址栏短一点，肉眼也能读懂。 */
 const FILTER_KEYS: [keyof UrlFilters, string][] = [
-  ['q', 'q'], ['type', 'type'], ['kind', 'kind'], ['point', 'point'],
+  ['q', 'q'], ['type', 'type'], ['kind', 'kind'], ['point', 'point'], ['pm', 'pm'],
   ['diff', 'diff'], ['year', 'year'], ['source', 'source'], ['has', 'has'],
-  ['missing', 'missing'], ['scope', 'scope'], ['paper', 'paper'],
+  ['missing', 'missing'], ['inc', 'inc'], ['scope', 'scope'], ['paper', 'paper'],
   ['star', 'star'], ['quality', 'quality'], ['psrc', 'psrc'], ['asrc', 'asrc'],
   ['reviewed', 'rv'],
 ]
 
 function read(): UrlSnapshot {
   if (typeof window === 'undefined') return {
-    filters: { ...EMPTY }, sort: null, page: 1, tab: '', view: '', stage: '',
+    filters: { ...EMPTY_FILTERS }, sort: null, page: 1, tab: '', view: '', stage: '', ingest: '',
   }
   const sp = new URLSearchParams(window.location.search)
-  const filters = { ...EMPTY }
+  const filters = { ...EMPTY_FILTERS }
   for (const [field, key] of FILTER_KEYS) {
     filters[field] = sp.get(key) || ''
   }
@@ -76,6 +84,7 @@ function read(): UrlSnapshot {
     tab: sp.get('tab') || '',
     view: sp.get('view') || '',
     stage: sp.get('stage') || '',
+    ingest: sp.get('ingest') || '',
   }
 }
 
@@ -95,6 +104,7 @@ export function writeUrlState(s: UrlSnapshot): void {
   if (s.page > 1) sp.set('page', String(s.page))
   if (s.tab && s.tab !== 'workbench') sp.set('tab', s.tab)
   if (s.view) sp.set('view', s.view)
+  if (s.ingest) sp.set('ingest', s.ingest)
   if (s.stage && s.stage !== 'senior') sp.set('stage', s.stage)
   const qs = sp.toString()
   const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash

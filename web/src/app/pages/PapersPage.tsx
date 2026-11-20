@@ -17,9 +17,11 @@ type PaperItem = {
   keys: string[]; n: number; at: string; updated?: string; note?: string
 }
 
-export default function PapersPage({ onLoad, onPaper }: {
+export default function PapersPage({ onLoad, onPaper, focus }: {
   onLoad: (items: Q[]) => void
   onPaper: () => void
+  /** 从题库卡片「组过 N 卷」跳过来：直接把搜索框钉在这份卷名上。 */
+  focus?: string
 }) {
   const [items, setItems] = useState<PaperItem[] | null>(null)
   const [q, setQ] = useState('')
@@ -33,6 +35,12 @@ export default function PapersPage({ onLoad, onPaper }: {
       .catch((e) => { reportErr(e); setItems([]) })
   }
   useEffect(load, [])
+
+  // 从别的页面带着卷名跳进来：搜索框直接筛到那一份，不用再让人翻几百条。
+  // 只认**卷名**，不认标题——列表里显示的是 title，用户看到的就是它。
+  useEffect(() => {
+    if (focus) setQ(focus)
+  }, [focus])
 
   const filtered = useMemo(() => {
     const k = q.trim().toLowerCase()
@@ -105,17 +113,21 @@ export default function PapersPage({ onLoad, onPaper }: {
   return (
     <div className="b-scroll h-full overflow-y-auto">
       <div className="b-page">
-        <div className="flex flex-wrap items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <span className="aurora-pill"><span className="live-dot" />组卷 · 存档</span>
-            <h2 className="mt-3 text-[30px] font-semibold leading-[1.1] tracking-[-.04em]">
-              出的卷子，<span className="grad-text">都在这里</span>
-            </h2>
-            <p className="mt-1 text-[11.5px] text-ink-faint">
-              每次导出都会自动存档；载入后回到组卷工作区，可以继续换题、改版式、重导。
-            </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+          <div className="relative">
+            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜卷名 / 备注"
+              className="b-input h-8 w-[220px] pl-7 pr-7 text-[11.5px]" />
+            {q && <button onClick={() => setQ('')} className="icon-btn absolute right-1 top-1/2 h-5 w-5 -translate-y-1/2"><X size={11} /></button>}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {['', '试卷', '测试卷', '合集', '讲义'].map((k) => (
+            <button key={k || 'all'} onClick={() => setKind(k)}
+              className={`b-chip ${kind === k ? 'b-chip-on' : ''}`}>{k || '全部'}</button>
+          ))}
+          <span className="tnum text-[10.5px] text-ink-faint">
+            {items === null ? '读取中…' : `${filtered.length} / ${items.length} 份`}
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <input ref={fileRef} type="file" accept=".zip,.amti-pack.zip"
               onChange={importPack} className="hidden" />
             <button onClick={() => fileRef.current?.click()} disabled={busy === 'import'}
@@ -129,21 +141,8 @@ export default function PapersPage({ onLoad, onPaper }: {
             </button>
           </div>
         </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜卷名 / 备注"
-              className="b-input h-8 w-[240px] pl-7 pr-7 text-[11.5px]" />
-            {q && <button onClick={() => setQ('')} className="icon-btn absolute right-1 top-1/2 h-5 w-5 -translate-y-1/2"><X size={11} /></button>}
-          </div>
-          {['', '试卷', '测试卷', '合集', '讲义'].map((k) => (
-            <button key={k || 'all'} onClick={() => setKind(k)}
-              className={`b-chip ${kind === k ? 'b-chip-on' : ''}`}>{k || '全部'}</button>
-          ))}
-          <span className="tnum ml-auto text-[10.5px] text-ink-faint">
-            {items === null ? '读取中…' : `${filtered.length} / ${items.length} 份`}
-          </span>
+        <div className="mb-3 mt-2 text-[10.5px] text-ink-faint">
+          每次导出都会自动存档；载入后回到组卷工作区，可以继续换题、改版式、重导。
         </div>
 
         <div className="mt-3 b-card overflow-hidden">

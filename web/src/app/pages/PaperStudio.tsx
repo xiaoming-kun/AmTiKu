@@ -40,7 +40,7 @@ export default function PaperStudio({
         <div className="b-page max-w-[1000px]">
           <div className="b-eyebrow flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: meta.color }} />
-            K12 数学题库 · {meta.name} · 组卷
+            AmMath · {meta.name} · 组卷
           </div>
           <h2 className="mt-1.5 text-[30px] font-semibold tracking-tight">诊断卷</h2>
           <p className="mt-1 max-w-[660px] text-[12px] leading-relaxed text-ink-faint">
@@ -117,7 +117,7 @@ export default function PaperStudio({
             </button>
             <button onClick={onExport} disabled={!paper.length}
               className="b-btn b-btn-primary h-8">
-              <FileDown size={13} />导出 PDF
+              <FileDown size={13} />导出
             </button>
           </div>
         </div>
@@ -135,7 +135,7 @@ export default function PaperStudio({
           <p className="mt-1 text-[10.5px] leading-relaxed text-ink-faint">
             {small
               ? '小初正式题量还少，建议直接在题库里挑；诊断卷请回题库页导出。'
-              : '按高考卷面、纯测试或考点覆盖率自动挑题；挑完仍然回到这里，可以逐题换、调顺序，再导出。'}
+              : '按高考卷面或纯测试自动挑题；挑完仍然回到这里，可以逐题换、调顺序，再导出。'}
           </p>
           {!small && (
             <button onClick={onGenerate} className="b-btn b-btn-primary mt-3 w-full">
