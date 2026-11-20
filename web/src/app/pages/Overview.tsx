@@ -310,7 +310,7 @@ export default function OverviewPage({
                 <span className="live-dot" />K12 · {meta.name} · 学段工作台
               </span>
               <h1 className="mt-3 text-[30px] font-semibold leading-[1.15] tracking-[-.035em] md:text-[34px]">
-                {meta.name} <span className="grad-text">工作台</span>
+                {meta.name} 工作台
               </h1>
               <p className="mt-2 max-w-[660px] text-[12px] leading-5 text-ink-soft">
                 先把题找齐，再组卷、导出。{data?.stage.key === 'senior'

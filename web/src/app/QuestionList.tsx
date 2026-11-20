@@ -22,9 +22,10 @@ function PageBtn({ children, onClick, disabled, className = '' }: {
 }) {
   return (
     <button onClick={onClick} disabled={disabled}
-      className={`press inline-flex h-[26px] items-center justify-center rounded-md border
+      className={`press inline-flex h-9 min-w-9 items-center justify-center rounded-md border
                  border-border bg-surface px-2 text-[11.5px] transition-colors
-                 hover:border-border-strong hover:text-ink disabled:opacity-35 ${className}`}>
+                 hover:border-border-strong hover:text-ink disabled:opacity-35
+                 sm:h-[26px] sm:min-w-0 ${className}`}>
       {children}
     </button>
   )

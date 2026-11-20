@@ -359,7 +359,8 @@ export default function Review({ stage, onChanged, onOpenSource }: {
           <Kpi label="需修改" n={stats?.needs_fix || 0} tone="warn" />
           <Kpi label="存疑" n={stats?.flagged || 0} tone="danger" />
           <Kpi label="原复核失效" n={stats?.stale || 0} />
-          <Kpi label="审阅覆盖率" text={stats ? pct(stats.review_rate) : '—'} tone="has" />
+          <Kpi label="审阅覆盖率" text={stats ? pct(stats.review_rate) : '—'}
+            tone={stats && stats.review_rate >= 0.8 ? 'has' : 'warn'} />
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[var(--radius-card)]
@@ -452,7 +453,7 @@ export default function Review({ stage, onChanged, onOpenSource }: {
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {batch.strata.map((s) => (
                   <span key={s.key} className="rounded-full border border-border bg-bg px-2 py-[2px] text-[10.5px] text-ink-faint">
-                    {s.book} · {s.type_label} · 抽 {s.sample}/{s.population}
+                    {s.book} · {s.type_label} · 抽 {s.sample.toLocaleString()}/{s.population.toLocaleString()}
                   </span>
                 ))}
               </div>
@@ -468,7 +469,7 @@ export default function Review({ stage, onChanged, onOpenSource }: {
                 <span className="text-[12px] font-semibold">
                   {mode === 'sample' ? '抽样清单' : '待审队列'}
                 </span>
-                <span className="tnum text-[10.5px] text-ink-faint">{total} 道</span>
+                <span className="tnum text-[10.5px] text-ink-faint">{total.toLocaleString()} 道</span>
               </div>
               <div className="max-h-[calc(100vh-310px)] min-h-[220px] overflow-y-auto">
                 {loading && !items.length && (
@@ -683,7 +684,7 @@ export default function Review({ stage, onChanged, onOpenSource }: {
               <div className="flex items-baseline justify-between">
                 <span className="text-[12px] font-semibold">审阅进度</span>
                 <span className="tnum text-[11px] text-ink-faint">
-                  {stats ? `${stats.reviewed}/${stats.total}` : '—'}
+                  {stats ? `${stats.reviewed.toLocaleString()}/${stats.total.toLocaleString()}` : '—'}
                 </span>
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -709,7 +710,7 @@ export default function Review({ stage, onChanged, onOpenSource }: {
                   return (
                     <div key={t}>
                       <div className="flex items-center justify-between text-[10.5px] text-ink-faint">
-                        <span>{TIER_LABEL[t]}</span><span className="tnum">{n}</span>
+                        <span>{TIER_LABEL[t]}</span><span className="tnum">{n.toLocaleString()}</span>
                       </div>
                       <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-muted">
                         <div className={`h-full rounded-full ${t === 'high' ? 'bg-danger' : t === 'medium' ? 'bg-warn' : 'bg-has'}`}
@@ -727,7 +728,7 @@ export default function Review({ stage, onChanged, onOpenSource }: {
                 {(stats?.by_book || []).slice(0, 7).map((b) => (
                   <div key={b.book} className="flex items-center gap-2 text-[10.5px]">
                     <span className="min-w-0 flex-1 truncate text-ink-soft">{b.book}</span>
-                    <span className="tnum text-ink-faint">{b.pending}/{b.total}</span>
+                    <span className="tnum text-ink-faint">{b.pending.toLocaleString()}/{b.total.toLocaleString()}</span>
                   </div>
                 ))}
               </div>

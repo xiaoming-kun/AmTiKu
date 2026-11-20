@@ -162,12 +162,13 @@ export default function PapersPage({ onLoad, onPaper, focus }: {
               {!items.length && <button onClick={onPaper} className="b-btn b-btn-primary mt-1">去组卷</button>}
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="b-table">
               <thead>
                 <tr>
                   <th>卷名</th>
-                  <th className="w-[90px]">类型</th>
-                  <th className="w-[70px]">题量</th>
+                  <th className="hidden w-[90px] md:table-cell">类型</th>
+                  <th className="hidden w-[70px] sm:table-cell">题量</th>
                   <th className="hidden w-[150px] md:table-cell">时间</th>
                   <th className="w-[150px] text-right">操作</th>
                 </tr>
@@ -181,16 +182,19 @@ export default function PapersPage({ onLoad, onPaper, focus }: {
                         <div className="min-w-0">
                           <div className="truncate text-[12.5px] font-medium text-ink">{p.title}</div>
                           <div className="truncate text-[10px] text-ink-faint">{p.name}</div>
+                          <div className="mt-0.5 text-[10px] text-ink-faint sm:hidden">
+                            {p.kind || '试卷'} · {p.n} 道
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td>
-                      <span className={`rounded-full px-1.5 py-[1px] text-[10px] font-medium
+                    <td className="hidden whitespace-nowrap md:table-cell">
+                      <span className={`whitespace-nowrap rounded-full px-1.5 py-[1px] text-[10px] font-medium
                         ${p.kind === '合集' ? 'bg-[#f5f3ff] text-[#6d28d9]' : 'bg-muted text-ink-soft'}`}>
                         {p.kind || '试卷'}
                       </span>
                     </td>
-                    <td className="tnum text-[11.5px] text-ink-soft">{p.n} 道</td>
+                    <td className="tnum hidden whitespace-nowrap text-[11.5px] text-ink-soft sm:table-cell">{p.n} 道</td>
                     <td className="tnum hidden text-[10.5px] text-ink-faint md:table-cell">
                       <span className="inline-flex items-center gap-1">
                         <CalendarDays size={10} />{(p.updated || p.at || '').slice(0, 16)}
@@ -221,6 +225,7 @@ export default function PapersPage({ onLoad, onPaper, focus }: {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

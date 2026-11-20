@@ -30,8 +30,8 @@
   --color-border-strong: #d1d1d6;
   --color-muted:         #f2f2f7;
   --color-ink:           #1d1d1f;
-  --color-ink-soft:      #6e6e73;
-  --color-ink-faint:     #86868b;
+  --color-ink-soft:      #5d5d63;
+  --color-ink-faint:     #6e6e74;
 
   /* ── 强调色：学院蓝。只出现在选中、链接、主按钮上 ── */
   --color-brand:        #0071e3;
@@ -47,7 +47,7 @@
   --color-has:       #248a3d;
   --color-has-soft:  #e9f8ee;
   --color-has-line:  #b7e3c3;
-  --color-gap:       #8e8e93;
+  --color-gap:       #75757b;
   --color-gap-soft:  #f2f2f7;
   --color-warn:      #b25000;
   --color-warn-soft: #fff4e5;
@@ -69,7 +69,7 @@
                    radial-gradient(50% 65% at 92% 0%, rgb(175 82 222 / .08), transparent 62%),
                    radial-gradient(55% 60% at 55% 100%, rgb(255 45 85 / .04), transparent 60%);
   --grad-surface:  linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
-  --grad-hero:     linear-gradient(135deg, #f5f5f7 0%, #eef6ff 52%, #f6f1ff 100%);
+  --grad-hero:     linear-gradient(135deg, #f5f5f7 0%, #eef6ff 56%, #eaf3ff 100%);
   --glow-cyan:     0 18px 40px -26px rgb(0 113 227 / .28);
   --glow-violet:   0 18px 40px -26px rgb(175 82 222 / .20);
 

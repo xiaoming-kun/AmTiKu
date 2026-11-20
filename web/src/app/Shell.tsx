@@ -608,9 +608,11 @@ export default function Shell({
           {pages.length > 1 && (
             <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border
                             bg-surface px-3 md:px-5" role="tablist" aria-label={`${activeWs.label}子页面`}>
-              <span className="mr-2 hidden text-[10px] font-semibold tracking-[0.08em] text-ink-faint sm:inline">
-                {activeWs.label}
-              </span>
+              {activeWs.label !== PAGE_META[pages[0]].title && (
+                <span className="mr-2 hidden text-[10px] font-semibold tracking-[0.08em] text-ink-faint sm:inline">
+                  {activeWs.label}
+                </span>
+              )}
               {pages.map((p) => {
                 const on = p === page
                 return (

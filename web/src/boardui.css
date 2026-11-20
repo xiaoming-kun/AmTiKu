@@ -307,14 +307,14 @@
   right: -140px;
   top: -200px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgb(196 181 253 / .38), transparent 65%);
+  background: radial-gradient(circle, rgb(185 217 251 / .42), transparent 65%);
   filter: blur(28px);
   pointer-events: none;
 }
 .dark .hero-panel {
   background:
     radial-gradient(80% 120% at 0% 0%, rgb(34 211 238 / .16), transparent 55%),
-    radial-gradient(70% 120% at 100% 0%, rgb(139 92 246 / .18), transparent 55%),
+    radial-gradient(70% 120% at 100% 0%, rgb(10 132 255 / .18), transparent 55%),
     linear-gradient(180deg, rgb(255 255 255 / .04), rgb(255 255 255 / .01)),
     var(--color-surface);
 }

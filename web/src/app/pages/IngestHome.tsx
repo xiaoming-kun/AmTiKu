@@ -163,7 +163,7 @@ export default function IngestHome({ stage, onOpen, onBank }: {
                 <span key={x} className="b-chip">{x}</span>
               ))}
             </div>
-            <div className="mt-4 flex items-center gap-1 text-[11.5px] font-medium text-brand-ink">
+            <div className="mt-auto flex items-center gap-1 pt-4 text-[11.5px] font-medium text-brand-ink">
               开始手工录题 <ArrowRight size={12} />
             </div>
           </button>
@@ -190,7 +190,7 @@ export default function IngestHome({ stage, onOpen, onBank }: {
                 <span key={x} className="b-chip">{x}</span>
               ))}
             </div>
-            <div className="mt-4 flex items-center gap-1 text-[11.5px] font-medium text-[#6d28d9]">
+            <div className="mt-auto flex items-center gap-1 pt-4 text-[11.5px] font-medium text-[#6d28d9]">
               打开 DeepSeek 录题 <ArrowRight size={12} />
             </div>
           </button>
@@ -216,7 +216,7 @@ export default function IngestHome({ stage, onOpen, onBank }: {
                 <span key={x} className="b-chip">{x}</span>
               ))}
             </div>
-            <div className="mt-4 flex items-center gap-1 text-[11.5px] font-medium text-[#c2410c]">
+            <div className="mt-auto flex items-center gap-1 pt-4 text-[11.5px] font-medium text-[#c2410c]">
               打开整理 / 校对 <ArrowRight size={12} />
             </div>
           </button>
