@@ -17,7 +17,7 @@
  * 全量库 20706 题里 25.1% 带列表、2.3% 带表格。在前端打补丁是追不平的，
  * 所以语法解析整体收回 Python，前端不再碰。
  */
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import katex from 'katex'
 import type { ReactNode } from 'react'
 import { send } from '@/lib/api'
@@ -92,31 +92,88 @@ function Math({ tex, display }: { tex: string; display: boolean }) {
 
 /* ══ 行内 ═════════════════════════════════════════════════ */
 
-/** TikZ 在 HTML 里画不了：点一下交给后端渲成 PNG，再审图。 */
+/* TikZ 默认显示：滚到跟前就渲，最多 2 个并发。
+   xelatex 是重活（全库约 1300 处 tikzpicture、图片缓存 426 张），
+   一页 100 题同时拉起会打满 CPU；用 IntersectionObserver 只渲真正
+   进入视口的，再用 2 路并发把首屏的几张排好队。 */
+const TIKZ_MAX_INFLIGHT = 2
+let tikzInflight = 0
+const tikzQueue: Array<() => void> = []
+function tikzAcquire(): Promise<void> {
+  if (tikzInflight < TIKZ_MAX_INFLIGHT) {
+    tikzInflight += 1
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => {
+    tikzQueue.push(() => { tikzInflight += 1; resolve() })
+  })
+}
+function tikzRelease() {
+  tikzInflight = tikzInflight > 0 ? tikzInflight - 1 : 0
+  const next = tikzQueue.shift()
+  if (next) next()
+}
+
+/** TikZ 在 HTML 里画不了：进视口就交给后端渲成 PNG（内容寻址缓存），失败可重试。 */
 function TikzRaw({ tex }: { tex: string }) {
   const [src, setSrc] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const load = async () => {
-    if (busy || !tex.trim()) return
+  const box = useRef<HTMLDivElement>(null)
+  const started = useRef(false)
+  const inflight = useRef(false)
+
+  const load = useCallback(async () => {
+    if (!tex.trim() || inflight.current) return
+    inflight.current = true
     setBusy(true); setErr('')
     try {
-      const r: any = await send('/api/tikz/render', 'POST', { tex })
-      setSrc(`/api/figure?path=${encodeURIComponent(r.path)}`)
+      await tikzAcquire()
+      try {
+        const r: any = await send('/api/tikz/render', 'POST', { tex })
+        setSrc(`/api/figure?path=${encodeURIComponent(r.path)}`)
+      } finally { tikzRelease() }
     } catch (e) {
       setErr(String((e as any)?.message || e))
-    } finally { setBusy(false) }
-  }
+      started.current = false   // 失败不锁死，按钮可重试
+    } finally {
+      inflight.current = false
+      setBusy(false)
+    }
+  }, [tex])
+
+  useEffect(() => {
+    started.current = false
+    setSrc(''); setErr('')
+    const el = box.current
+    if (!el || !tex.trim()) return
+    if (typeof IntersectionObserver === 'undefined') {
+      started.current = true
+      void load()
+      return
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (started.current || !entries.some((e) => e.isIntersecting)) return
+      started.current = true
+      io.disconnect()
+      void load()
+    }, { rootMargin: '320px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [tex, load])
+
   return (
-    <div className="q-raw">
+    <div className="q-raw" ref={box}>
       <span className="q-raw-tag">TikZ 图形</span>
       {src ? (
         <img className="q-img" src={src} alt="TikZ" style={{ maxWidth: '100%' }} />
+      ) : busy ? (
+        <span className="text-[10.5px] text-ink-faint">图形渲染中…</span>
       ) : (
-        <button onClick={load} disabled={busy}
+        <button onClick={() => { started.current = true; void load() }} disabled={busy}
           className="press rounded-md border border-border bg-surface px-2 py-[3px]
                      text-[11px] text-ink-soft hover:border-brand-line disabled:opacity-50">
-          {busy ? '渲染中…' : '显示 TikZ 图'}
+          {err ? '重试显示 TikZ 图' : '显示 TikZ 图'}
         </button>
       )}
       {err && <div className="mt-1 text-[10.5px] text-warn">{err}</div>}
