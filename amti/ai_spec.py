@@ -19,10 +19,9 @@ from .paths import ROOT
 
 JOB_ROOT = ROOT / "数据" / "缓存" / "AI图"
 # 单次请求最多读多少页。DeepSeek 视觉接口本身允许 600 张图/请求，图不是瓶颈；
-# 卡住的是输出长度：模型一次要交整份 .tex（max_tokens=32000），实测每页约
-# 1.3k 输出 token（4+6 页 ≈ 13k）。30 页 ≈ 39k，密集卷子会超过 32k 被截断，
-# 那时报错而不是静默漏题。超过 30 页在入口整卷拒绝，不悄悄分批——半份试题 +
-# 半份答案拼起来，题号和答案会错位。
+# 卡住的是输出长度：模型一次要交整份 .tex（max_tokens=100000），实测每页约
+# 1.3k 输出 token（4+6 页 ≈ 13k，30 页 ≈ 39k，仍留一倍余量）。超过 30 页在
+# 入口整卷拒绝，不悄悄分批——半份试题 + 半份答案拼起来，题号和答案会错位。
 MAX_PAGES = 30
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
@@ -224,7 +223,7 @@ def run(data: bytes, *, name: str = "资料.pdf",
                      fill_solutions, name, title_hint)
     say(0, total, "正在按网页端同款规范生成 .tex…")
     raw = deepseek.chat(prompt, images, system=aispec.pdf_system_prompt(),
-                        timeout=600, max_tokens=32000,
+                        timeout=600, max_tokens=100000,
                         on_usage=add_usage)
     if stopped():
         raise Cancelled("已取消")
