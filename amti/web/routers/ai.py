@@ -463,7 +463,7 @@ def ai_run(body: AIBody) -> dict:
 
     def work() -> None:
         from amti import ai_spec as _ai
-        # 计入"在跑"，看门狗这期间不会把服务退掉（读满 20 页要好几分钟）
+        # 计入"在跑"，看门狗这期间不会把服务退掉（读满 30 页要好几分钟）
         _INFLIGHT[0] += 1
         try:
             res = _ai.run(raw, name=read_name,
