@@ -457,7 +457,7 @@ export function useIngest({ ai, facets, onClose, onDone }: IngestOptions) {
         return
       }
     }
-    setAiErr('等了太久还没读完 —— 关掉重试，或把资料拆小（一次最多 14 页）')
+    setAiErr('等了太久还没读完 —— 关掉重试，或把资料拆小（一次最多 20 页）')
     setAiBusy(false); setAiCancelling(false)
   }
 

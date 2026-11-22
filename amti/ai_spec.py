@@ -18,6 +18,11 @@ from . import ai_format, aispec, deepseek
 from .paths import ROOT
 
 JOB_ROOT = ROOT / "数据" / "缓存" / "AI图"
+# 单次请求最多读多少页。DeepSeek 视觉接口本身允许 600 张图/请求，图不是瓶颈；
+# 卡住的是输出长度：模型一次要交整份 .tex（max_tokens=32000），实测每页约
+# 1.3k 输出 token（4+6 页 ≈ 13k），20 页 ≈ 26k 仍留余量。超过就整卷拒绝，
+# 不悄悄分批——半份试题 + 半份答案拼起来，题号和答案会错位。
+MAX_PAGES = 20
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
 
@@ -184,9 +189,11 @@ def run(data: bytes, *, name: str = "资料.pdf",
     total = len(pngs)
     if not total:
         raise deepseek.AIError("这份 PDF 里没有页面")
-    if total + len(apngs) > 14:
-        raise deepseek.AIError("规范管线目前一次最多处理 14 页（试题 %d + 答案 %d）；请先拆分"
-                               % (total, len(apngs)))
+    if total + len(apngs) > MAX_PAGES:
+        raise deepseek.AIError(
+            "这次共 %d 页（试题 %d + 答案 %d），超过单次上限 %d 页；请拆成多份"
+            "（每份都带上对应的试题页和答案页）分别读取"
+            % (total + len(apngs), total, len(apngs), MAX_PAGES))
     job = "spec-%s" % time.strftime("%Y%m%d-%H%M%S")
     job_dir = JOB_ROOT / job
     page_dir = job_dir / "pages"
@@ -196,7 +203,7 @@ def run(data: bytes, *, name: str = "资料.pdf",
     if stopped():
         raise Cancelled("已取消")
     say(0, total, "正在按规范读取 %d 页…" % total)
-    # 规范管线先按一次请求做；超过 14 页在入口已拒绝，避免悄悄分批漏题。
+    # 规范管线先按一次请求做；超过 MAX_PAGES 在入口已拒绝，避免悄悄分批漏题。
     images = pngs + apngs
     usage: dict = {}
     calls = 0
@@ -317,6 +324,19 @@ def _selftest() -> int:
         assert "\\begin{question}" in res["latex"]
         assert res["title"] == "自检卷", res["title"]
         assert res["stats"]["ok"] == 1
+        # 超限在入口就拒绝，报出真实页数，且不提交模型（fake_chat 没被调用）。
+        big = tmp / "big.pdf"
+        d = _fitz.open()
+        for _ in range(MAX_PAGES + 1):
+            d.new_page(width=595, height=842)
+        d.save(big)
+        d.close()
+        try:
+            run(big.read_bytes(), name="big.pdf")
+            raise AssertionError("超限没有拒绝")
+        except _ds.AIError as e:
+            msg = str(e)
+            assert "%d" % (MAX_PAGES + 1) in msg and "%d" % MAX_PAGES in msg, msg
     finally:
         _ds.load, _ds.chat = old_load, old_chat
     print("ai_spec 自检通过：网页格式 → tex → preview → 标签 1 题")
